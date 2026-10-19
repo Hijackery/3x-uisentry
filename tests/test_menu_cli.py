@@ -139,3 +139,15 @@ def test_set_rejects_unknown_key_even_as_root_message(tmp_path: Path) -> None:
     result = _run("set", "TELEGRAM_TOKEN_WRONG", "x", env_file=tmp_path / ".env")
     assert result.returncode != 0
     assert re.search(r"Нужен root|менять нельзя", result.stderr)
+
+
+def test_show_masks_short_secret_entirely(tmp_path: Path) -> None:
+    """Короткий токен нельзя показывать «6 + 4»: это почти весь секрет."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("PANEL_API_TOKEN=shortsec\n", encoding="utf-8")
+
+    result = _run("show", env_file=env_file)
+
+    assert result.returncode == 0, result.stderr
+    assert "shortsec" not in result.stdout
+    assert "***" in result.stdout

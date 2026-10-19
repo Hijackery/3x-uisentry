@@ -126,10 +126,14 @@ show_setting() {
     value="$(sed -n "s/^${key}=//p" "$ENV_FILE" 2>/dev/null | head -1)"
     case "$key" in
         TELEGRAM_BOT_TOKEN|PANEL_API_TOKEN)
-            if [ -n "$value" ]; then
-                printf '  %-22s %s ···%s\n' "$key" "${value:0:6}" "${value: -4}"
-            else
+            # Короткое значение маскируем целиком: иначе «первые 6 + последние 4»
+            # покажут почти весь секрет.
+            if [ -z "$value" ]; then
                 printf '  %-22s %s\n' "$key" "(пусто)"
+            elif [ "${#value}" -lt 12 ]; then
+                printf '  %-22s *** (%d символов)\n' "$key" "${#value}"
+            else
+                printf '  %-22s %s ···%s\n' "$key" "${value:0:6}" "${value: -4}"
             fi
             ;;
         *)
@@ -170,6 +174,9 @@ cmd_set() {
     case "$value" in
         *$'\n'*) die "значение не должно содержать перевод строки" ;;
     esac
+
+    id "$SERVICE_USER" >/dev/null 2>&1 \
+        || die "нет системного пользователя $SERVICE_USER (переустановите бота)"
 
     local tmp="$ENV_FILE.tmp.$$"
     grep -vE "^${key}=" "$ENV_FILE" >"$tmp" 2>/dev/null || true

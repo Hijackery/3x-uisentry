@@ -227,3 +227,16 @@ def test_scripts_pass_shellcheck(script: Path) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_installer_keeps_local_copy_for_xui_menu_update() -> None:
+    """`xui-menu update` берёт установщик рядом с ботом, а не только из сети."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert '"$SOURCE_DIR/install.sh" "$PREFIX/install.sh"' in text
+
+
+def test_installer_never_asks_to_dump_env_to_terminal() -> None:
+    """Подсказка не должна предлагать вывести .env (в нём токены) на экран."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "grep -v '^#'" not in text
+    assert "не пересылайте" in text

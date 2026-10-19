@@ -596,6 +596,9 @@ if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
 else
     cp -a "$SOURCE_DIR/xui_monitor_bot" "$SOURCE_DIR/install" "$PREFIX/"
 fi
+# Копия установщика лежит рядом с ботом: `xui-menu update` берёт её локально
+# и обновляет сама себя при каждом запуске.
+cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
 cp -a "$SOURCE_DIR/requirements.txt" "$SOURCE_DIR/requirements-dev.txt" \
     "$SOURCE_DIR/pyproject.toml" "$SOURCE_DIR/README.md" "$SOURCE_DIR/.env.example" \
     "$PREFIX/" 2>/dev/null || true
@@ -937,7 +940,7 @@ if (cd "$PREFIX" && "$PY" -c 'from xui_monitor_bot.settings import load_settings
     check_ok "Конфигурация читается ботом без ошибок"
     CFG_OK=1
 else
-    check_fail "Конфигурация не проходит проверку — смотрите: grep -v '^#' $ENV_FILE"
+    check_fail "Конфигурация не проходит проверку — откройте $ENV_FILE редактором (содержимое содержит токены: не пересылайте его третьим лицам)"
 fi
 
 TG_TOKEN_VALUE="$(env_get TELEGRAM_BOT_TOKEN)"
