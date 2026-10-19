@@ -336,3 +336,11 @@ def test_installer_splits_path_out_of_the_panel_address(tmp_path: Path) -> None:
     assert "1:[https://host:5580 panel]" in result.stdout
     assert "2:[https://host:5580 ]" in result.stdout
     assert "3:[http://1.2.3.4:2053 ]" in result.stdout
+
+
+def test_installer_explains_optional_alert_chat() -> None:
+    """Поле «чат для алертов» необязательное — установщик должен это сказать."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "Enter — админам в личку" in text
+    assert "у групп оно отрицательное" in text
+    assert "systemd-юниты через запятую" in text

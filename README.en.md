@@ -336,6 +336,15 @@ Quick check: `curl -fsS -o /dev/null -w '%{http_code}\n' https://your-domain:558
   explicitly (“panel answered with a redirect”) and the bot does not follow
   redirects — just switch the scheme to `https://`.
 
+### Where alerts go
+
+`ALERT_CHAT_ID` may be left empty: alerts then go to the private chats of every ID
+in `TELEGRAM_ADMIN_IDS`. If you want a shared chat, add the bot there, send any
+message and find the chat ID (`@userinfobot`, `@getidsbot`); group and channel IDs
+are negative, e.g. `-1001234567890`. Remember that alerts contain addresses,
+subscriptions and traffic — in a group every member sees them, while commands are
+still accepted only in the administrator's private chat.
+
 Process environment variables take precedence over the `.env` file.
 
 ## Security

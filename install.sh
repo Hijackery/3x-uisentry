@@ -871,9 +871,17 @@ else
     if systemctl list-unit-files 2>/dev/null | grep -q '^fail2ban\.service'; then
         DETECTED_SERVICES="x-ui,fail2ban"
     fi
-    question SERVICES_LIST "Сервисы под наблюдением" \
+    info "Сервисы — это systemd-юниты через запятую. Обычно достаточно x-ui;"
+    info "fail2ban подставится сам, если он установлен."
+    question SERVICES_LIST "Сервисы под наблюдением (Enter — оставить как есть)" \
         "${SERVICES:-${DETECTED_SERVICES}}"
-    question START_CHAT "Чат для алертов (пусто = писать администраторам в личку)" ""
+
+    info "Чат для алертов — необязательное поле: Enter — алерты придут в личку"
+    info "всем ID из TELEGRAM_ADMIN_IDS."
+    info "Нужен общий чат? Впишите его ID (число, у групп оно отрицательное,"
+    info "например -1001234567890). Узнать: добавьте бота в группу, отправьте там"
+    info "сообщение и посмотрите ID у @userinfobot или @getidsbot."
+    question START_CHAT "Чат для алертов (Enter — админам в личку)" ""
 
     info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_URL_VALUE${PANEL_BASE:+/$PANEL_BASE}, сервисы $SERVICES_LIST, токен панели ***${PANEL_TOKEN: -4}"
 
