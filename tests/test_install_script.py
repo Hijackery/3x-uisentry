@@ -154,6 +154,17 @@ def test_candidates_fall_back_to_main_and_master() -> None:
     assert "/refs/heads/master" in candidates
 
 
+def test_github_tarball_download_is_cache_busted() -> None:
+    """Регрессия: codeload кэширует архив ветки и отдаёт устаревший снимок.
+
+    Без метки времени установка сразу после обновления репозитория ставила бы
+    прошлую версию кода.
+    """
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert '_fetch_url="${_fetch_url}?t=$(date +%s)"' in text
+    assert "*codeload.github.com/*)" in text
+
+
 @pytest.mark.skipif(
     shutil.which("shellcheck") is None, reason="shellcheck не установлен"
 )

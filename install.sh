@@ -445,8 +445,17 @@ if [ -z "$SOURCE_DIR" ]; then
     if command -v curl >/dev/null 2>&1 && [ -n "$TARBALL_URL" ]; then
         while IFS= read -r _candidate; do
             [ -n "$_candidate" ] || continue
+            # У codeload.github.com кэшируется архив ветки: сразу после push по
+            # refs/heads/* может прилететь прошлый снимок. Параметр-«метка
+            # времени» меняет ключ кэша, поэтому версия всегда свежая.
+            _fetch_url="$_candidate"
+            case "$_fetch_url" in
+                *codeload.github.com/*)
+                    _fetch_url="${_fetch_url}?t=$(date +%s)"
+                    ;;
+            esac
             info "Скачиваю исходники: $_candidate"
-            if curl -fsSL --max-time 120 "$_candidate" -o "$TMP_DIR/src.tar.gz" \
+            if curl -fsSL --max-time 120 "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
                 SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name xui_monitor_bot \
                     -type d -exec dirname {} \; | head -1)"
