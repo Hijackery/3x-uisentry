@@ -1,0 +1,55 @@
+[Unit]
+Description=Telegram monitor bot for 3X-UI panel and server
+After=network-online.target x-ui.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xui-monitor
+Group=xui-monitor
+WorkingDirectory=/opt/xui-monitor-bot
+EnvironmentFile=/opt/xui-monitor-bot/.env
+# Каталог состояния создаёт systemd с нужным владельцем: база и логи лежат
+# вне каталога с кодом, поэтому бот не может переписать сам себя.
+StateDirectory=xui-monitor
+StateDirectoryMode=0750
+# Без unbuffered логи в journalctl появляются с задержкой в несколько минут.
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/xui-monitor-bot/.venv/bin/python -m xui_monitor_bot
+SyslogIdentifier=xui-monitor-bot
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Всё, кроме каталога состояния, только для чтения.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/xui-monitor
+ProtectHome=true
+PrivateTmp=true
+# Бот не должен видеть устройства, часы, hostname и чужие процессы.
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# AF_NETLINK нужен glibc для проверки интерфейсов при резолве DNS.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# База и лог создаются с правами 0600, даже если umask в системе мягкий.
+UMask=0077
+# NoNewPrivileges намеренно не включён: иначе sudo (setuid root) не сможет
+# получить права, и привилегированные операции бота перестанут работать.
+RestrictSUIDSGID=false
+
+# Умеренные ограничения памяти: при утечке бот не утащит за собой сервер.
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

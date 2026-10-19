@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Единственная точка входа для привилегированных операций бота.
+#
+# Бот вызывает только подкоманды этого скрипта и никогда не передаёт
+# произвольные строки в shell: sudo-правило в install/xui-monitor-sudoers
+# разрешает ровно этот список. Аргументы здесь тоже проверяются — даже при
+# ошибке в коде бота выполнить что-то незапланированное не получится.
+#
+# Установка:
+#   sudo install -o root -g root -m 0755 xui-ctl /usr/local/bin/xui-ctl
+set -euo pipefail
+
+log() {
+    logger -t xui-ctl -- "$*" 2>/dev/null || true
+}
+
+die() {
+    echo "xui-ctl: $*" >&2
+    exit 2
+}
+
+# expected — сколько аргументов ожидается ПОСЛЕ подкоманды.
+# Вызывается как require_no_extra_args N "$@", поэтому в "$@" лежит весь
+# список аргументов скрипта, начиная с самой подкоманды: её не считаем.
+require_no_extra_args() {
+    local expected="$1"
+    shift
+    [ "$(( $# - 1 ))" -eq "$expected" ] || die "неверное число аргументов"
+}
+
+safe_unit() {
+    local unit="$1"
+    # Только имя systemd-юнита: буквы, цифры, дефис, точка, подчёркивание.
+    [[ "$unit" =~ ^[a-zA-Z0-9._@-]+$ ]] || die "недопустимое имя сервиса: $unit"
+    printf '%s' "$unit"
+}
+
+safe_int() {
+    local value="$1"
+    [[ "$value" =~ ^[0-9]{1,6}$ ]] || die "ожидалось число: $value"
+    printf '%s' "$value"
+}
+
+cmd="${1:-}"
+[ -n "$cmd" ] || die "не указана подкоманда"
+
+case "$cmd" in
+    restart_service)
+        require_no_extra_args 1 "$@"
+        unit="$(safe_unit "$2")"
+        log "restart $unit"
+        systemctl restart "$unit"
+        systemctl is-active --quiet "$unit"
+        echo "Сервис $unit перезапущен"
+        ;;
+
+    is_active)
+        # Безопасная проверка для самопроверки установки: ничего не меняет.
+        require_no_extra_args 1 "$@"
+        unit="$(safe_unit "$2")"
+        if systemctl is-active --quiet "$unit"; then
+            echo "active"
+        else
+            echo "inactive"
+            exit 1
+        fi
+        ;;
+
+    journal)
+        require_no_extra_args 2 "$@"
+        unit="$(safe_unit "$2")"
+        lines="$(safe_int "$3")"
+        if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
+            die "lines вне 1..500"
+        fi
+        journalctl -u "$unit" -n "$lines" --no-pager -o short-iso
+        ;;
+
+    apt_upgrade)
+        # Сервис бота работает с ProtectSystem=strict: его дочерние процессы
+        # не могут писать в /var/lib/dpkg, /usr и /boot. Поэтому apt запускается
+        # отдельным transient-юнитом — systemd создаёт для него своё окружение,
+        # а бот лишь ставит задачу в очередь и сразу получает управление.
+        require_no_extra_args 0 "$@"
+        unit="xui-monitor-apt-upgrade"
+        log "apt full-upgrade requested"
+
+        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+            echo "Обновление уже выполняется, следите: journalctl -u $unit"
+            exit 3
+        fi
+
+        if ! command -v systemd-run >/dev/null 2>&1; then
+            die "systemd-run недоступен, обновление нельзя запустить безопасно"
+        fi
+
+        systemd-run --quiet --unit="$unit" --collect \
+            --description="apt full-upgrade по команде бота" \
+            --property=Type=exec \
+            --property=TimeoutStartSec=3600 \
+            "$0" _apt_worker ||
+            die "не удалось поставить обновление в очередь"
+
+        echo "Обновление поставлено в очередь systemd."
+        echo "Следить за ходом: journalctl -u $unit -f"
+        ;;
+
+    _apt_worker)
+        # Внутренняя подкоманда для transient-юнита. Через sudo она недостижима
+        # (в sudoers её нет), а проверка SUDO_USER закрывает путь даже при
+        # попытке вызвать напрямую из-под сервисного пользователя.
+        [ "$(id -u)" -eq 0 ] || die "_apt_worker требует root"
+        [ -z "${SUDO_USER:-}" ] || die "_apt_worker недоступен через sudo"
+        require_no_extra_args 0 "$@"
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get -y -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold full-upgrade
+        apt-get -y autoremove
+        apt-get clean
+        echo "full-upgrade завершён"
+        ;;
+
+    dist_upgrade)
+        require_no_extra_args 0 "$@"
+        export DEBIAN_FRONTEND=noninteractive
+        if ! command -v do-release-upgrade >/dev/null 2>&1; then
+            echo "do-release-upgrade не установлен (это не Ubuntu либо пакет update-manager отсутствует)"
+            exit 0
+        fi
+        # Шаг «Start upgrade» спрашивает подтверждение и правит конфиги в
+        # интерактивном режиме. У бота нет терминала, поэтому мы только
+        # проверяем доступность обновления и объясняем, что делать дальше.
+        if do-release-upgrade --check-dist-upgrade-only; then
+            echo "Доступно релиз-обновление (например, 22.04 -> 24.04)."
+            echo "Автоматически выполнить его нельзя: do-release-upgrade требует терминала."
+            echo "Выполните вручную по SSH:"
+            echo "    sudo service unattended-upgrades stop"
+            echo "    sudo do-release-upgrade"
+            echo "После этого нажмите в боте «Перезагрузить сервер»."
+            exit 0
+        fi
+        echo "Релиз-обновлений нет"
+        ;;
+
+    reboot)
+        require_no_extra_args 0 "$@"
+        log "reboot requested by monitor bot"
+        sync
+        # systemd выключит бота и панель штатно, без обрыва файловой системы.
+        systemctl reboot
+        echo "reboot отправлен"
+        ;;
+
+    run_command)
+        # Ровно один аргумент: команда приходит одной строкой и сверяется со
+        # списком ниже. Никаких дополнительных аргументов принять нельзя.
+        require_no_extra_args 1 "$@"
+        command="$2"
+        # Строгий белый список: сравнение с заранее одобренными строками.
+        case "$command" in
+            "journalctl --disk-usage" | \
+            "systemctl list-timers --all" | \
+            "df -h" | \
+            "free -h" | \
+            "uptime" | \
+            "x-ui status")
+                log "run allowed: $command"
+                # shellcheck disable=SC2086
+                exec bash -c "$command"
+                ;;
+            *)
+                die "команда не разрешена: $command"
+                ;;
+        esac
+        ;;
+
+    *)
+        die "неизвестная подкоманда: $cmd"
+        ;;
+esac

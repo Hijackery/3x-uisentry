@@ -1,0 +1,945 @@
+"""Telegram-бот мониторинга сервера и панели 3X-UI."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+from datetime import timedelta
+from typing import Any
+
+from telegram import CallbackQuery, InlineKeyboardMarkup, Message, Update, User
+from telegram.constants import ChatAction, ParseMode
+from telegram.error import TelegramError
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CallbackContext,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    Defaults,
+    MessageHandler,
+    filters,
+)
+
+from . import ui
+from .actions import (
+    ACTION_COMMAND,
+    ACTION_DIST_UPGRADE,
+    ACTION_REBOOT,
+    ACTION_RESTART_SERVICE,
+    ACTION_RESTART_XRAY,
+    ACTION_UPGRADE,
+    ActionError,
+    ActionManager,
+)
+from .alerts import AlertEngine, Finding
+from .models import MonitorSnapshot, Severity
+from .monitor import Monitor
+from .settings import Settings, load_settings
+from .storage import Storage
+
+#: PTB обобщает Application шестью параметрами; конкретные типы здесь не важны.
+BotApplication = Application[Any, Any, Any, Any, Any, Any]
+
+logger = logging.getLogger(__name__)
+
+
+def _user_id(update: Update) -> int | None:
+    """ID автора апдейта или None, если его нет."""
+    return update.effective_user.id if update.effective_user else None
+
+
+SNAPSHOT_MAX_AGE = 30.0
+SAMPLE_RETENTION_DAYS = 7
+REBOOT_WATCH_ATTEMPTS = 20
+REBOOT_WATCH_STEP = 30
+REBOOT_WATCH_GRACE = 1200
+
+HELP_COMMANDS: list[tuple[str, str]] = [
+    ("/status", "сводка: сервер, сервисы, панель, трафик"),
+    ("/services", "состояние systemd-юнитов"),
+    ("/panel", "доступность и версии панели 3X-UI"),
+    ("/subs", "подписки: сроки, трафик, отключённые"),
+    ("/history", "почасовые средние CPU/RAM/диск"),
+    ("/logs", "журнал сервиса (админ)"),
+    ("/audit", "журнал действий бота (админ)"),
+    ("/maint", "меню обслуживания (админ)"),
+]
+
+CONFIRM_DESCRIPTIONS: dict[str, str] = {
+    ACTION_RESTART_SERVICE: "Перезапустить сервис",
+    ACTION_RESTART_XRAY: "Перезапустить xray через API панели",
+    ACTION_UPGRADE: "Поставить apt update + full-upgrade в очередь systemd",
+    ACTION_DIST_UPGRADE: "Проверить доступность релиз-обновления ОС",
+    ACTION_REBOOT: "Перезагрузить сервер",
+}
+
+
+class MonitorBot:
+    """Собирает хендлеры, фоновые задачи и подтверждение опасных действий."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self.storage = Storage(settings.state_path)
+        self.monitor = Monitor(settings)
+        self.engine = AlertEngine(settings, self.storage)
+        self.actions = ActionManager(settings)
+        self._snapshot: MonitorSnapshot | None = None
+        self._snapshot_at: float = 0.0
+        self.app: BotApplication = self._build()
+
+    # ------------------------------------------------------------ сборка
+
+    def _build(self) -> BotApplication:
+        app = (
+            ApplicationBuilder()
+            .token(self.settings.telegram_token)
+            # Свой Bot API (локальный сервер, корпоративный прокси): базовый URL
+            # плюс «/bot», как у официального api.telegram.org.
+            .base_url(f"{self.settings.telegram_api_url.rstrip('/')}/bot")
+            .concurrent_updates(False)
+            # HTML по умолчанию: разметка в отчётах не требует указания mode
+            # в каждом вызове send_message.
+            .defaults(Defaults(parse_mode=ParseMode.HTML))
+            .post_init(self._post_init)
+            .post_shutdown(self._post_shutdown)
+            .build()
+        )
+        app.bot_data["bot"] = self
+        for name, handler in (
+            ("start", self.cmd_start),
+            ("help", self.cmd_help),
+            ("status", self.cmd_status),
+            ("services", self.cmd_services),
+            ("panel", self.cmd_panel),
+            ("subs", self.cmd_subs),
+            ("history", self.cmd_history),
+            ("audit", self.cmd_audit),
+            ("logs", self.cmd_logs),
+            ("maint", self.cmd_maintenance),
+        ):
+            app.add_handler(CommandHandler(name, handler))
+        app.add_handler(CallbackQueryHandler(self.on_callback))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_text))
+        app.add_error_handler(self.on_error)
+
+        job_queue = app.job_queue
+        if job_queue is None:  # требуется python-telegram-bot[job-queue]
+            raise RuntimeError(
+                "JobQueue недоступен: поставьте python-telegram-bot[job-queue]"
+            )
+        job_queue.run_repeating(
+            self.job_check,
+            interval=timedelta(seconds=self.settings.check_interval),
+            first=timedelta(seconds=10),
+            name="periodic-check",
+        )
+        job_queue.run_repeating(
+            self.job_prune,
+            interval=timedelta(hours=6),
+            first=timedelta(minutes=10),
+            name="prune",
+        )
+        return app
+
+    async def _post_init(self, _app: BotApplication) -> None:
+        logger.info(
+            "Бот запущен. Сервисы: %s, панель: %s, админов: %s",
+            ", ".join(self.settings.services),
+            self.settings.api_base,
+            len(self.settings.admin_ids),
+        )
+        await self._verify_after_reboot()
+
+    async def _post_shutdown(self, _app: BotApplication) -> None:
+        await self.monitor.close()
+        self.storage.close()
+        logger.info("Бот остановлен")
+
+    async def _verify_after_reboot(self) -> None:
+        """Если перед ребутом нажали «Перезагрузить», подтверждаем возврат.
+
+        Сама перезагрузка убивает процесс бота, поэтому проверять сервер
+        приходится уже после старта: так сообщение о возврате точно дойдёт.
+        """
+        job_queue = self.app.job_queue
+        if job_queue is None:  # pragma: no cover - JobQueue проверяется при сборке
+            return
+        rows = await asyncio.to_thread(self.storage.recent_audit, 5)
+        reboot = next(
+            (row for row in rows if row["action"] == ACTION_REBOOT and row["ok"]),
+            None,
+        )
+        if reboot is None or time.time() - reboot["ts"] > REBOOT_WATCH_GRACE:
+            return
+        job_queue.run_once(
+            self._job_reboot_watch,
+            timedelta(seconds=REBOOT_WATCH_STEP),
+            name="reboot-watch-after-start",
+            data={"chat_id": int(reboot["telegram_id"] or 0), "attempt": 0},
+        )
+
+    # -------------------------------------------------------- снапшоты
+
+    async def snapshot(self, *, force: bool = False) -> MonitorSnapshot:
+        """Отдаёт свежий снимок или кэш, если он не старше SNAPSHOT_MAX_AGE."""
+        age = time.monotonic() - self._snapshot_at
+        if not force and self._snapshot is not None and age < SNAPSHOT_MAX_AGE:
+            return self._snapshot
+        snapshot = await self.monitor.snapshot()
+        self._snapshot = snapshot
+        self._snapshot_at = time.monotonic()
+        return snapshot
+
+    def invalidate(self) -> None:
+        self._snapshot = None
+        self._snapshot_at = 0.0
+
+    # -------------------------------------------------------------- utils
+
+    def is_admin(self, user_id: int | None) -> bool:
+        return self.settings.is_admin(user_id)
+
+    async def _notify(self, chat_id: int, text: str) -> bool:
+        delivered = True
+        for chunk in _split(text, 3500):
+            try:
+                await self.app.bot.send_message(
+                    chat_id=chat_id, text=chunk, parse_mode=ParseMode.HTML
+                )
+            except TelegramError as exc:
+                logger.error("Не удалось отправить сообщение в %s: %s", chat_id, exc)
+                delivered = False
+        return delivered
+
+    async def _alert_targets(self) -> list[int]:
+        if self.settings.alert_chat_id:
+            return [self.settings.alert_chat_id]
+        return list(self.settings.admin_ids)
+
+    # --------------------------------------------------------- хендлеры
+
+    async def on_error(
+        self, update: object, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        logger.error("Ошибка при обработке апдейта", exc_info=context.error)
+        message = getattr(update, "effective_message", None)
+        if isinstance(message, Message):
+            await message.reply_text("❌ Внутренняя ошибка, подробности в логах.")
+
+    async def cmd_start(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None:
+            return
+        user = update.effective_user
+        allowed = self.is_admin(user.id if user else None)
+        await message.reply_text(
+            "🛰 Бот мониторинга сервера и панели 3X-UI.\n\n"
+            + (
+                "Показывает состояние системы, сервисов, панели, подписок и "
+                "трафика, а также позволяет перезапускать сервисы и обновлять "
+                "систему."
+                if allowed
+                else "⛔ Этот бот доступен только администратору сервера."
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.main_menu(allowed),
+        )
+
+    async def cmd_help(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None:
+            return
+        await message.reply_text(
+            ui.update_commands_help(HELP_COMMANDS), parse_mode=ParseMode.HTML
+        )
+
+    async def cmd_status(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await message.reply_chat_action(ChatAction.TYPING)
+        await message.reply_text(
+            ui.render_overview(await self.snapshot(), self.settings),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=ui.server_menu(),
+        )
+
+    async def cmd_services(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await message.reply_text(
+            ui.render_services(await self.snapshot()),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=ui.services_menu(
+                self.settings.services, self.is_admin(_user_id(update))
+            ),
+        )
+
+    async def cmd_panel(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        text = ui.render_panel(await self.snapshot())
+        try:
+            update_info = await self.monitor.panel.panel_update_info()
+        except Exception as exc:  # доп. информация не критична
+            logger.debug("getPanelUpdateInfo недоступен: %s", exc)
+            update_info = {}
+        if update_info:
+            latest = update_info.get("tagName") or update_info.get("version") or "?"
+            text += f"\nПоследний релиз панели: {ui.esc(latest)}"
+        await message.reply_text(text, parse_mode=ParseMode.HTML)
+
+    async def cmd_subs(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await message.reply_text(
+            ui.render_subscriptions(
+                (await self.snapshot()).subscriptions,
+                soon_days=self.settings.expiring_soon_days,
+            ),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+
+    async def cmd_history(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        rows = await asyncio.to_thread(
+            self.storage.get_series, time.time() - 24 * 3600, 24
+        )
+        await message.reply_text(
+            ui.render_history(rows, title="Последние 24 часа"),
+            parse_mode=ParseMode.HTML,
+        )
+
+    async def cmd_audit(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        rows = await asyncio.to_thread(self.storage.recent_audit, 15)
+        await message.reply_text(ui.render_audit(rows), parse_mode=ParseMode.HTML)
+
+    async def cmd_logs(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await message.reply_text(
+            "📜 <b>Журналы сервисов</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.logs_menu(self.settings.services),
+        )
+
+    async def cmd_maintenance(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await message.reply_text(
+            "🛠 <b>Обслуживание</b>\n\n"
+            "Все действия требуют подтверждения и пишутся в журнал.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.maintenance_menu(),
+        )
+
+    async def _guard(self, message: Message, user: User | None) -> bool:
+        """Пропускает только администратора; отвечает отказом и возвращает False."""
+        if self.is_admin(user.id if user else None):
+            return True
+        await message.reply_text("⛔ Только для администраторов")
+        return False
+
+    # ---------------------------------------------------------- callbacks
+
+    async def on_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query: CallbackQuery | None = update.callback_query
+        if query is None or query.data is None:
+            return
+        await query.answer()
+        data = query.data
+        user_id = query.from_user.id
+
+        # Гейт стоит до разбора callback_data: иначе гость, угадав токен
+        # подтверждения, мог отменить действие администратора.
+        if not self.is_admin(user_id):
+            await self._edit(
+                query,
+                "⛔ Только для администраторов.",
+                markup=ui.main_menu(False),
+            )
+            return
+
+        if data.startswith("ask:"):
+            await self._ask_confirmation(query, data)
+            return
+        if data.startswith("do:"):
+            await self._run_confirmed(query, data, user_id)
+            return
+        if data.startswith("no:"):
+            self.actions.cancel(data[3:])
+            await self._edit(query, "❌ Отменено.")
+            return
+
+        if data == "refresh":
+            self.invalidate()
+            await self._edit(
+                query,
+                ui.render_overview(await self.snapshot(force=True), self.settings),
+                markup=ui.server_menu(),
+            )
+        elif data == "server":
+            await self._edit(
+                query,
+                ui.render_overview(await self.snapshot(), self.settings),
+                markup=ui.server_menu(),
+            )
+        elif data == "services":
+            await self._edit(
+                query,
+                ui.render_services(await self.snapshot()),
+                markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
+            )
+        elif data == "panel":
+            await self._edit(query, ui.render_panel(await self.snapshot()))
+        elif data == "traffic":
+            await self._edit(query, ui.render_traffic(await self.snapshot()))
+        elif data == "subs":
+            await self._edit(
+                query,
+                ui.render_subscriptions(
+                    (await self.snapshot()).subscriptions,
+                    soon_days=self.settings.expiring_soon_days,
+                ),
+            )
+        elif data == "history":
+            rows = await asyncio.to_thread(
+                self.storage.get_series, time.time() - 24 * 3600, 24
+            )
+            await self._edit(query, ui.render_history(rows, title="Последние 24 часа"))
+        elif data == "logs_menu":
+            await self._edit(
+                query, "📜 Выберите сервис", markup=ui.logs_menu(self.settings.services)
+            )
+        elif data.startswith("logs:"):
+            await self._show_logs(query, data[5:])
+        elif data == "command_prompt":
+            await self._prompt_command(query, context)
+        else:
+            await self._edit(query, "Неизвестная кнопка.")
+
+    # ------------------------------------------------------- подтверждения
+
+    async def _ask_confirmation(self, callback: CallbackQuery, data: str) -> None:
+        if not self.is_admin(callback.from_user.id):
+            await self._edit(callback, "⛔ Только для администраторов.")
+            return
+
+        _, action, arg = data.split(":", 2)
+        base = CONFIRM_DESCRIPTIONS.get(action)
+        if base is None:
+            await self._edit(callback, "Неизвестное действие.")
+            return
+
+        description = (
+            f"{base} <code>{ui.esc(arg)}</code>?"
+            if action == ACTION_RESTART_SERVICE
+            else f"{base}?"
+        )
+        if action == ACTION_REBOOT:
+            description = (
+                "<b>Перезагрузить сервер?</b> "
+                "Бот и панель будут недоступны ~1-2 минуты."
+            )
+
+        pending = self.actions.request(
+            action, description, arg, owner_id=callback.from_user.id
+        )
+        await self._edit(
+            callback,
+            f"⚠️ {description}",
+            markup=ui.confirm_menu(action, pending.token),
+        )
+
+    async def _run_confirmed(
+        self, callback: CallbackQuery, data: str, user_id: int
+    ) -> None:
+        if not self.is_admin(user_id):
+            await self._edit(callback, "⛔ Только для администраторов.")
+            return
+
+        _, action, token = data.split(":", 2)
+        try:
+            pending = self.actions.consume(token, user_id)
+        except ActionError as exc:
+            await self._edit(callback, f"⏳ {ui.esc(str(exc))}")
+            return
+        if pending is None:
+            await self._edit(
+                callback, "⏳ Подтверждение не найдено или уже использовано."
+            )
+            return
+        if pending.action != action:
+            await self._edit(callback, "⛔ Действие не совпадает с подтверждением.")
+            return
+
+        await self._dispatch(callback, pending.action, pending.args, user_id)
+
+    async def _dispatch(
+        self,
+        query: CallbackQuery,
+        action: str,
+        args: tuple[str, ...],
+        user_id: int,
+    ) -> None:
+        chat_id = _chat_id(query)
+        status = await _message_of(query).reply_text("⏳ Выполняю…")
+        await _clear_markup(query)
+        self.invalidate()
+
+        try:
+            if action == ACTION_REBOOT:
+                await self._do_reboot(status, user_id)
+                return
+            if action in (ACTION_UPGRADE, ACTION_DIST_UPGRADE):
+                self._schedule_long_action(action, chat_id, user_id)
+                await _safe_edit(
+                    status, "⏳ Запущено в фоне, отчёт придёт по завершении…"
+                )
+                return
+            if action == ACTION_COMMAND:
+                result = await self.actions.run_allowed_command(args[0])
+            elif action == ACTION_RESTART_SERVICE:
+                result = await self.actions.restart_service(args[0])
+                self.monitor.services.forget(args[0])
+            else:
+                result = await self.actions.restart_xray()
+        except (ActionError, TelegramError) as exc:
+            logger.error("Действие %s не удалось: %s", action, exc)
+            await asyncio.to_thread(
+                self.storage.audit,
+                action,
+                telegram_id=user_id,
+                ok=False,
+                result=str(exc),
+            )
+            await _safe_edit(status, f"❌ {ui.esc(str(exc))}")
+            return
+
+        icon = "✅" if result.ok else "⚠️"
+        body = ui.esc(result.summary(1500))
+        await _safe_edit(
+            status,
+            f"{icon} <b>{ui.esc(result.action)}</b>"
+            f" — код возврата {result.returncode}\n"
+            f"<code>{ui.esc(result.command)}</code>\n\n<pre>{body}</pre>",
+        )
+        await asyncio.to_thread(
+            self.storage.audit,
+            action,
+            telegram_id=user_id,
+            params={"args": list(args)},
+            ok=result.ok,
+            result=result.summary(500),
+        )
+
+    # ------------------------------------------------------- долгие операции
+
+    def _schedule_long_action(self, action: str, chat_id: int, user_id: int) -> None:
+        job_queue = self.app.job_queue
+        if job_queue is None:  # pragma: no cover - JobQueue проверяется при сборке
+            return
+        job_queue.run_once(
+            self._job_long_action,
+            timedelta(seconds=1),
+            name=f"long-{action}",
+            data={"action": action, "chat_id": chat_id, "user_id": user_id},
+        )
+
+    async def _job_long_action(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        data = dict(getattr(context.job, "data", None) or {})
+        action = str(data.get("action", ""))
+        chat_id = int(data.get("chat_id", 0) or 0)
+        user_id = int(data.get("user_id", 0) or 0)
+
+        try:
+            result = (
+                await self.actions.apt_upgrade()
+                if action == ACTION_UPGRADE
+                else await self.actions.dist_upgrade()
+            )
+        except ActionError as exc:
+            await self._notify(chat_id, f"❌ {ui.esc(str(exc))}")
+            await asyncio.to_thread(
+                self.storage.audit,
+                action,
+                telegram_id=user_id,
+                ok=False,
+                result=str(exc),
+            )
+            return
+
+        icon = "✅" if result.ok else "⚠️"
+        text = (
+            f"{icon} <b>{ui.esc(result.command)}</b>\n"
+            f"код возврата {result.returncode},"
+            f" длительность {result.duration:.0f} с\n\n"
+            f"<pre>{ui.esc(result.summary(2500))}</pre>"
+        )
+        if _needs_reboot():
+            text += (
+                "\n\n🔁 <b>Требуется перезагрузка</b> для применения ядра/пакетов. "
+                "Кнопка «Перезагрузить» в разделе Обслуживание."
+            )
+        delivered = await self._notify(chat_id, text)
+        await asyncio.to_thread(
+            self.storage.audit,
+            action,
+            telegram_id=user_id,
+            params={"background": True},
+            ok=result.ok,
+            result=result.summary(500),
+        )
+        self.invalidate()
+        if not delivered:
+            logger.warning("Отчёт по %s не доставлен", action)
+
+    # --------------------------------------------------------------- reboot
+
+    async def _do_reboot(self, status: Message, user_id: int) -> None:
+        chat_id = status.chat_id
+        await _safe_edit(status, "🔁 Перезагружаю сервер…")
+        try:
+            result = await self.actions.reboot()
+        except ActionError as exc:
+            await asyncio.to_thread(
+                self.storage.audit,
+                ACTION_REBOOT,
+                telegram_id=user_id,
+                ok=False,
+                result=str(exc),
+            )
+            await _safe_edit(status, f"❌ {ui.esc(str(exc))}")
+            return
+
+        await asyncio.to_thread(
+            self.storage.audit,
+            ACTION_REBOOT,
+            telegram_id=user_id,
+            ok=result.ok,
+            result=result.summary(300),
+        )
+        if not result.ok:
+            await _safe_edit(
+                status, f"⚠️ Reboot не выполнен: {ui.esc(result.summary(300))}"
+            )
+            return
+
+        await _safe_edit(
+            status,
+            "🔁 Сервер перезагружается. После старта я проверю, что всё поднялось.",
+        )
+        self._schedule_reboot_watch(chat_id, verify=True)
+
+    def _schedule_reboot_watch(self, chat_id: int, *, verify: bool) -> None:
+        job_queue = self.app.job_queue
+        if job_queue is None:  # pragma: no cover
+            return
+        job_queue.run_once(
+            self._job_reboot_watch,
+            timedelta(seconds=REBOOT_WATCH_STEP),
+            name="reboot-watch",
+            data={"chat_id": chat_id, "attempt": 0, "verify": verify},
+        )
+
+    async def _job_reboot_watch(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Проверяет возврат сервера, не блокируя очередь задач.
+
+        Пока сервер не поднялся, задача перепланирует сама себя: sleep внутри
+        JobQueue остановил бы плановые проверки и алерты.
+        """
+        job_queue = context.job_queue
+        if job_queue is None:  # pragma: no cover - очередь есть при run_polling
+            return
+        data = dict(getattr(context.job, "data", None) or {})
+        chat_id = int(data.get("chat_id", 0) or 0)
+        attempt = int(data.get("attempt", 0)) + 1
+        verify = bool(data.get("verify", False))
+
+        if not await self.monitor.services.is_active(self.settings.services[0]):
+            if attempt < REBOOT_WATCH_ATTEMPTS:
+                job_queue.run_once(
+                    self._job_reboot_watch,
+                    timedelta(seconds=REBOOT_WATCH_STEP),
+                    name="reboot-watch",
+                    data={"chat_id": chat_id, "attempt": attempt, "verify": verify},
+                )
+                return
+            await self._notify(
+                chat_id,
+                "⚠️ Сервер не поднялся дольше 10 минут. Проверьте консоль VDS.",
+            )
+            return
+
+        if not verify:
+            return
+
+        snapshot = await self.snapshot(force=True)
+        services_ok = all(service.active for service in snapshot.services)
+        panel_ok = snapshot.panel.reachable
+        verdict = (
+            "✅ Сервер вернулся" if services_ok and panel_ok else "⚠️ Вернулся частично"
+        )
+        await self._notify(
+            chat_id,
+            f"{verdict}\n"
+            f"Сервисы: {'ок' if services_ok else 'есть проблемы'} · "
+            f"панель: {'отвечает' if panel_ok else 'не отвечает'}",
+        )
+
+    # ------------------------------------------------------------- текст
+
+    async def on_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.effective_message
+        user = update.effective_user
+        if message is None or user is None:
+            return
+        user_data = context.user_data or {}
+        if not self.is_admin(user.id) or not user_data.pop("awaiting_command", False):
+            return
+        command = " ".join((message.text or "").split())
+        if not command:
+            return
+        pending = self.actions.request(
+            ACTION_COMMAND, command, command, owner_id=user.id
+        )
+        allowed = ", ".join(self.settings.command_allowlist) or "пусто"
+        await message.reply_text(
+            f"⚠️ Выполнить команду?\n<code>{ui.esc(command)}</code>\n\n"
+            f"Список разрешённых: <code>{ui.esc(allowed)}</code>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.confirm_menu(ACTION_COMMAND, pending.token),
+        )
+
+    async def _prompt_command(
+        self,
+        callback: CallbackQuery,
+        context: CallbackContext[Any, Any, Any, Any],
+    ) -> None:
+        if not self.is_admin(callback.from_user.id):
+            await self._edit(callback, "⛔ Только для администраторов.")
+            return
+        if context.user_data is not None:
+            context.user_data["awaiting_command"] = True
+        allowed = ", ".join(self.settings.command_allowlist) or "—"
+        await self._edit(
+            callback,
+            "💻 Пришлите команду списком сообщением.\n"
+            f"Разрешено: <code>{ui.esc(allowed)}</code>",
+        )
+
+    # ---------------------------------------------------------- фоновые
+
+    async def job_check(self, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        try:
+            snapshot = await self.monitor.snapshot()
+        except Exception:  # фоновая задача не должна падать
+            logger.exception("Плановый сбор не удался")
+            return
+
+        self._snapshot = snapshot
+        self._snapshot_at = time.monotonic()
+
+        if snapshot.system is not None:
+            await asyncio.to_thread(self.storage.record_sample, snapshot.system)
+            await asyncio.to_thread(
+                self.storage.prune_samples,
+                time.time() - SAMPLE_RETENTION_DAYS * 86400,
+            )
+
+        findings = self.engine.evaluate(snapshot)
+        outbox = await asyncio.to_thread(self.engine.update, findings)
+        if not outbox:
+            return
+
+        chunks = _split_alerts(outbox)
+        delivered = True
+        for chat_id in await self._alert_targets():
+            for chunk in chunks:
+                delivered = await self._notify(chat_id, chunk) and delivered
+
+        if delivered:
+            await asyncio.to_thread(
+                self.engine.mark_sent, [finding.state_key for finding in outbox]
+            )
+        else:
+            logger.warning("Часть алертов не доставлена — повторим на следующем цикле")
+
+    async def job_prune(self, _context: ContextTypes.DEFAULT_TYPE) -> None:
+        await asyncio.to_thread(
+            self.storage.prune_samples, time.time() - SAMPLE_RETENTION_DAYS * 86400
+        )
+
+    # ---------------------------------------------------------- рендеринг
+
+    async def _show_logs(self, callback: CallbackQuery, unit: str) -> None:
+        if not self.is_admin(callback.from_user.id):
+            await self._edit(callback, "⛔ Только для администраторов.")
+            return
+        await self._edit(callback, f"📜 Журнал <code>{ui.esc(unit)}</code>…")
+        try:
+            output = await self.actions.journal(unit, 40)
+        except ActionError as exc:
+            await self._edit(callback, f"❌ {ui.esc(str(exc))}")
+            return
+        await self._edit(
+            callback,
+            f"📜 <b>{ui.esc(unit)}</b>\n<pre>{ui.esc(output[-2500:])}</pre>",
+            markup=ui.logs_menu(self.settings.services),
+        )
+
+    async def _edit(
+        self,
+        callback: CallbackQuery,
+        text: str,
+        *,
+        markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
+        try:
+            await callback.edit_message_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+        except TelegramError as exc:
+            logger.warning("Не удалось обновить сообщение: %s", exc)
+            message = _message_of(callback)
+            if message is not None:
+                await message.reply_text(
+                    text, parse_mode=ParseMode.HTML, reply_markup=markup
+                )
+
+
+# --------------------------------------------------------------- утилиты
+
+
+def _message_of(query: CallbackQuery) -> Message:
+    message = query.message
+    if isinstance(message, Message):
+        return message
+    raise RuntimeError("Кнопка не привязана к обычному сообщению")
+
+
+def _chat_id(query: CallbackQuery) -> int:
+    try:
+        return _message_of(query).chat_id
+    except RuntimeError:
+        return 0
+
+
+async def _clear_markup(query: CallbackQuery) -> None:
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except TelegramError as exc:
+        logger.debug("Не удалось убрать кнопки: %s", exc)
+
+
+async def _safe_edit(status: Message, text: str) -> None:
+    try:
+        await status.edit_text(text, parse_mode=ParseMode.HTML)
+    except TelegramError as exc:
+        logger.warning("Не удалось обновить статус: %s", exc)
+
+
+def _needs_reboot() -> bool:
+    return os.path.exists("/var/run/reboot-required")
+
+
+def _split(text: str, limit: int = 3500) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+    return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+
+def _split_alerts(findings: list[Finding]) -> list[str]:
+    order = {
+        Severity.critical: 0,
+        Severity.warning: 1,
+        Severity.unknown: 2,
+        Severity.ok: 3,
+    }
+    ordered = sorted(findings, key=lambda item: order[item.severity])
+    header = "🔔 <b>Алерты мониторинга</b>"
+    body = "\n\n".join(ui.render_finding(finding) for finding in ordered)
+    return _split(header + "\n\n" + body)
+
+
+def create_app(settings: Settings) -> BotApplication:
+    return MonitorBot(settings).app
+
+
+def main() -> None:
+    # Секреты (база, лог) не должны быть доступны другим пользователям хоста,
+    # даже если файлы создаются с учёткой по умолчанию.
+    os.umask(0o077)
+    settings = load_settings()
+    _setup_logging(settings)
+    if not settings.panel_verify_tls:
+        logger.warning(
+            "PANEL_VERIFY_TLS=false: TLS-сертификат панели не проверяется — "
+            "бот уязвим к подмене панели в сети. Включайте только для отладки."
+        )
+    app = create_app(settings)
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+def _setup_logging(settings: Settings) -> None:
+    settings.log_path.parent.mkdir(parents=True, exist_ok=True)
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    handlers.append(logging.FileHandler(settings.log_path, encoding="utf-8"))
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level, logging.INFO),
+        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+    # Сторонние библиотеки на DEBUG печатают то, что обязано остаться в тайне:
+    # telegram логирует «Set Bot API URL: https://api.telegram.org/bot<TOKEN>»,
+    # httpx — полные URL запросов. Приглушаем их независимо от LOG_LEVEL,
+    # иначе включённый для отладки DEBUG сливает токен бота в файл лога.
+    for noisy in ("httpx", "httpcore", "telegram", "telegram.ext", "apscheduler"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+if __name__ == "__main__":
+    main()

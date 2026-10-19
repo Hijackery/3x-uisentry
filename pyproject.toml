@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 88
+# Минимум, который обещан в README/установщике: Python 3.10 (Ubuntu 22.04, RHEL9+python3.11).
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+# Иначе ruff выводит порядок импортов от cwd и ломается при запуске из другого каталога.
+known-first-party = ["xui_monitor_bot"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# У этих библиотек нет type stubs.
+module = ["psutil", "respx", "dotenv"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

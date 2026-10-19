@@ -1,0 +1,83 @@
+"""Системные метрики локального сервера через psutil."""
+
+from __future__ import annotations
+
+import os
+import time
+from typing import Any
+
+import psutil
+
+from ..models import SystemMetrics
+
+#: Сколько секунд ждём замер CPU: без интервала первое значение — среднее
+#: с момента загрузки, а не текущая нагрузка.
+CPU_SAMPLE_SECONDS = 0.3
+
+
+class SystemCollector:
+    """Снимает метрики CPU/RAM/диска/сети. Первый вызов прогревает счётчики сети."""
+
+    def __init__(self, disk_path: str = "/") -> None:
+        self.disk_path = disk_path
+        self._cores = max(1, psutil.cpu_count() or 1)
+        self._prev_net: Any = None
+        self._prev_net_time: float = 0.0
+
+    @staticmethod
+    def load1() -> float:
+        try:
+            return os.getloadavg()[0]
+        except (OSError, AttributeError):
+            # В контейнерах без /proc/loadavg getloadavg может отсутствовать.
+            return 0.0
+
+    def collect(self) -> SystemMetrics:
+        # psutil отдаёт проценты от одного ядра (на 4 ядрах может быть 400%),
+        # а пороги в конфиге рассчитаны на «загрузку в процентах от всех ядер».
+        raw_cpu = psutil.cpu_percent(interval=CPU_SAMPLE_SECONDS)
+        cpu_percent = min(100.0, raw_cpu / self._cores)
+        virtual = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        disk = psutil.disk_usage(self.disk_path)
+        net = psutil.net_io_counters()
+        now = time.time()
+
+        up_bps, down_bps = 0.0, 0.0
+        if self._prev_net is not None:
+            elapsed = now - self._prev_net_time
+            if elapsed > 0:
+                up_bps = max(
+                    0.0, (net.bytes_sent - self._prev_net.bytes_sent) / elapsed
+                )
+                down_bps = max(
+                    0.0, (net.bytes_recv - self._prev_net.bytes_recv) / elapsed
+                )
+
+        self._prev_net = net
+        self._prev_net_time = now
+
+        connections = 0
+        try:
+            connections = len(psutil.net_connections(kind="tcp"))
+        except (psutil.AccessDenied, PermissionError, RuntimeError):
+            # net_connections требует CAP_NET_ADMIN; на VDS обычно доступно,
+            # но в контейнерах может быть запрещено — это не повод ронять сбор.
+            connections = -1
+
+        return SystemMetrics(
+            cpu_percent=round(cpu_percent, 1),
+            mem_percent=round(virtual.percent, 1),
+            mem_total_bytes=virtual.total,
+            swap_percent=round(swap.percent, 1),
+            disk_percent=round(disk.percent, 1),
+            disk_free_bytes=disk.free,
+            load1=round(self.load1(), 2),
+            uptime_seconds=time.time() - psutil.boot_time(),
+            tcp_connections=connections,
+            net_sent_bytes=net.bytes_sent,
+            net_recv_bytes=net.bytes_recv,
+            net_up_bps=round(up_bps, 1),
+            net_down_bps=round(down_bps, 1),
+            collected_at=now,
+        )

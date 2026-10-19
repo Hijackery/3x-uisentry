@@ -1,0 +1,24 @@
+# Правила sudo для бота мониторинга.
+#
+# Установка (заменив имя пользователя, если оно другое):
+#   sudo install -o root -g root -m 0440 xui-monitor-sudoers /etc/sudoers.d/xui-monitor
+#   sudo visudo -cf /etc/sudoers.d/xui-monitor
+#
+# Бот работает непривилегированным и умеет только то, что перечислено ниже.
+# Рестарт xray намеренно отсутствует: панель умеет делать это через API,
+# и sudo для этого не нужен.
+
+User_Alias XUI_MONITOR_USERS = xui-monitor
+Cmnd_Alias XUI_MONITOR_CMNDS = \
+    /usr/local/bin/xui-ctl is_active *, \
+    /usr/local/bin/xui-ctl restart_service *, \
+    /usr/local/bin/xui-ctl journal * *, \
+    /usr/local/bin/xui-ctl apt_upgrade, \
+    /usr/local/bin/xui-ctl dist_upgrade, \
+    /usr/local/bin/xui-ctl reboot, \
+    /usr/local/bin/xui-ctl run_command *
+
+XUI_MONITOR_USERS ALL=(root) NOPASSWD: XUI_MONITOR_CMNDS
+
+# Defaults
+Defaults:XUI_MONITOR_USERS !requiretty, log_output, log_input
