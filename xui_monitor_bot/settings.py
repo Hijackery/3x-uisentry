@@ -277,6 +277,11 @@ def _validate(settings: Settings) -> list[str]:
         problems.append("PANEL_URL должен начинаться с http:// или https://")
     if not settings.panel_api_token:
         problems.append("PANEL_API_TOKEN не задан (создайте токен в 3X-UI)")
+    if "://" in settings.panel_base_path:
+        problems.append(
+            "PANEL_BASE_PATH выглядит как адрес — здесь нужен только путь панели "
+            "(например /panel), а адрес указывается в PANEL_URL"
+        )
     if settings.panel_ca_bundle and not Path(settings.panel_ca_bundle).is_file():
         problems.append(
             f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "

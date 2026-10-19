@@ -41,6 +41,10 @@ interrupted run, the wizard fills in the missing values (existing ones become th
 defaults), so there is no need to edit the file by hand. The questions are read from the terminal,
 so the dialogue works both with a pipe and with process substitution.
 
+Trailing slashes and spaces in the address (`https://host:5580/`) are stripped by
+the installer itself; `webBasePath` is a path (`/panel`, no slashes), and if you
+paste an address into that field the installer notices and fixes it.
+
 The panel API token must have the `node-sync` scope, otherwise the bot will not
 see inbounds and subscriptions:
 

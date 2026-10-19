@@ -145,6 +145,18 @@ check_note() { printf '      %s•%s %s\n' "$DIM" "$RESET" "$1"; }
 
 # Печатает IP-адреса хоста через пробел. `hostname -I` есть не везде
 # (BusyBox и урезанные системы), поэтому есть запасной путь через `ip`.
+#: Приводит адрес к каноническому виду: без пробелов и завершающих слешей.
+#: Без этого вставленный «https://host:5580/» и путь «/panel/» давали в проверке
+#: двойной слеш, а бот потом строил кривой API-адрес.
+normalize_url() {
+    printf '%s' "$1" | tr -d '[:space:]' | sed -E 's#/*$##'
+}
+
+#: Путь webBasePath: без пробелов и слешей по краям (пусто — значит не задан).
+normalize_path() {
+    printf '%s' "$1" | tr -d '[:space:]' | sed -E 's#^/*##; s#/*$##'
+}
+
 detect_ips() {
     if command -v hostname >/dev/null 2>&1 && hostname -I >/dev/null 2>&1; then
         hostname -I 2>/dev/null | tr -s ' \n' ' ' | sed 's/ *$//'
@@ -778,21 +790,32 @@ else
         || fail "ADMIN_IDS должны быть числами через запятую, получено: $ADMIN_IDS"
 
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
+    PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"
     case "$PANEL_URL_VALUE" in
         http://*|https://*) ;;
-        *) PANEL_URL_VALUE="$SUGGESTED_URL"
+        *) PANEL_URL_VALUE="$(normalize_url "$SUGGESTED_URL")"
            warn "Некорректный адрес, беру автоопределённый: $PANEL_URL_VALUE" ;;
     esac
 
-    question PANEL_BASE "webBasePath панели, если он задан (пусто — если нет)" \
+    question PANEL_BASE "webBasePath панели (путь, например /panel; без слэшей, пусто — если не задан)" \
         "${PANEL_BASE_PATH:-${DETECTED_BASE}}"
+    PANEL_BASE="$(normalize_path "$PANEL_BASE")"
+    case "$PANEL_BASE" in
+        *://*)
+            # Частая ошибка: в webBasePath вставили полный адрес панели.
+            warn "В webBasePath вставлен адрес — использую его как адрес панели, путь очищаю"
+            PANEL_URL_VALUE="$(normalize_url "$PANEL_BASE")"
+            PANEL_BASE=""
+            ;;
+    esac
 
-    PROBE_BASE="${PANEL_URL_VALUE%/}"
-    [ -n "$PANEL_BASE" ] && PROBE_BASE="$PROBE_BASE/${PANEL_BASE#/}"
-    if curl -sS --max-time 5 -o /dev/null "$PROBE_BASE/" 2>/dev/null; then
-        ok "Панель отвечает: $PROBE_BASE"
+    # Ровно один слеш между адресом и путём: иначе панель отвечает 404.
+    PROBE_URL="$PANEL_URL_VALUE"
+    [ -n "$PANEL_BASE" ] && PROBE_URL="$PANEL_URL_VALUE/$PANEL_BASE"
+    if curl -sS --max-time 5 -o /dev/null "$PROBE_URL/" 2>/dev/null; then
+        ok "Панель отвечает: $PROBE_URL"
     else
-        warn "Панель не ответила на $PROBE_BASE/ — если адрес верный, это заметит самопроверка"
+        warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
     fi
 
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"

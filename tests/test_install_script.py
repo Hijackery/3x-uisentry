@@ -273,3 +273,33 @@ def test_incomplete_env_does_not_block_install() -> None:
         "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN"
         in text
     )
+
+
+def test_url_normalizers_strip_slashes_and_whitespace(tmp_path: Path) -> None:
+    """Регрессия: «https://host:5580/» + webBasePath «/panel/» давали двойной слеш.
+
+    На реальной машине это выглядело как «Панель не ответила на
+    https://host:5580//» и ломало адрес API.
+    """
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("normalize_url() {")
+    end = script.index("\n}\n", script.index("normalize_path() {")) + 3
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{script[start:end]}\n"
+        'printf "1:%s\\n" "$(normalize_url " https://host:5580/// ")"\n'
+        'printf "2:%s\\n" "$(normalize_path "/panel/")"\n'
+        'printf "3:[%s]\\n" "$(normalize_path "/")"\n'
+        'printf "4:%s\\n" "$(normalize_path "https://host:5580/")"\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1:https://host:5580" in result.stdout
+    assert "2:panel" in result.stdout
+    assert "3:[]" in result.stdout, "«/» должен означать «путь не задан»"
+    assert "4:https://host:5580" in result.stdout

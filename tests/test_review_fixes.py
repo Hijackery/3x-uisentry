@@ -525,3 +525,40 @@ def test_log_view_menu_offers_filters() -> None:
     ]
     assert "logs_err:x-ui" in data
     assert "logs200:x-ui" in data
+
+
+# ------------------------------------------- адрес панели: слеши и base path
+
+
+def test_base_path_cannot_be_an_address(tmp_path: Path) -> None:
+    """Регрессия: адрес в webBasePath приводил к непонятному HTTP-сбою."""
+    path = tmp_path / ".env"
+    path.write_text(
+        "TELEGRAM_BOT_TOKEN=123456789:AArealish\n"
+        "TELEGRAM_ADMIN_IDS=42\n"
+        "PANEL_URL=https://panel.example.com:2053\n"
+        "PANEL_BASE_PATH=https://panel.example.com:2053/\n"
+        "PANEL_API_TOKEN=token\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="PANEL_BASE_PATH"):
+        load_settings(path)
+
+
+def test_extra_slashes_do_not_build_double_slash_urls(tmp_path: Path) -> None:
+    """Лишние слеши в .env не должны превращаться в «//» в адресе API."""
+    path = tmp_path / ".env"
+    path.write_text(
+        "TELEGRAM_BOT_TOKEN=123456789:AArealish\n"
+        "TELEGRAM_ADMIN_IDS=42\n"
+        "PANEL_URL=https://panel.example.com:2053///\n"
+        "PANEL_BASE_PATH=/panel/\n"
+        "PANEL_API_TOKEN=token\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(path)
+
+    assert settings.api_base == "https://panel.example.com:2053/panel/panel/api"
+    assert "//" not in settings.api_base.split("://", 1)[1]
