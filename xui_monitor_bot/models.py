@@ -118,6 +118,9 @@ class MonitorSnapshot:
     inbounds: list[InboundSummary]
     subscriptions: list[Subscription]
     warnings: list[str] = field(default_factory=list)
+    #: Источники, которые в этом срезе не удалось опросить. Их прошлые
+    #: состояния нельзя объявлять «восстановленными».
+    unavailable: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def total_used_bytes(self) -> int:
@@ -150,6 +153,6 @@ class CommandResult:
         if self.stderr.strip():
             parts.append(f"stderr:\n{self.stderr.strip()}")
         text = "\n".join(parts) or "(пустой вывод)"
-        if len(text) > limit:
+        if limit > 0 and len(text) > limit:
             text = text[-limit:]
         return text

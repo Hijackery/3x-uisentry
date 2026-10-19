@@ -31,7 +31,7 @@ require_no_extra_args() {
 safe_unit() {
     local unit="$1"
     # Только имя systemd-юнита: буквы, цифры, дефис, точка, подчёркивание.
-    [[ "$unit" =~ ^[a-zA-Z0-9._@-]+$ ]] || die "недопустимое имя сервиса: $unit"
+    [[ "$unit" =~ ^[a-zA-Z0-9][a-zA-Z0-9._@-]*$ ]] || die "недопустимое имя сервиса: $unit"
     printf '%s' "$unit"
 }
 
@@ -222,7 +222,7 @@ case "$cmd" in
 
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
-            echo "Обновление уже выполняется, следите: journalctl -u $unit"
+            echo "Обновление уже выполняется. Журнал: sudo xui-menu apt-logs"
             exit 3
         fi
 
@@ -266,7 +266,7 @@ case "$cmd" in
 
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
-            echo "Обновление уже выполняется, следите: journalctl -u $unit"
+            echo "Обновление уже выполняется. Журнал: sudo xui-menu apt-logs"
             exit 3
         fi
 
@@ -384,7 +384,14 @@ case "$cmd" in
             systemctl stop unattended-upgrades >/dev/null 2>&1 || true
         fi
         rc=0
-        do-release-upgrade -f DistUpgradeViewNonInteractive || rc=$?
+        _dr_out="$(do-release-upgrade -f DistUpgradeViewNonInteractive 2>&1)" || rc=$?
+        printf '%s\n' "$_dr_out"
+        # Штатный «нет нового релиза» — это код 1, но не ошибка.
+        if [ "$rc" -ne 0 ] \
+            && printf '%s' "$_dr_out" | grep -qiE 'no new release found'; then
+            rc=0
+            echo "Релиз-обновлений нет — это не ошибка."
+        fi
         apt_status_write release "$rc"
         echo "do-release-upgrade завершён (код $rc)"
         exit "$rc"
@@ -431,7 +438,13 @@ case "$cmd" in
         log "reboot requested by monitor bot"
         sync
         # systemd выключит бота и панель штатно, без обрыва файловой системы.
-        systemctl reboot
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl reboot
+        elif command -v shutdown >/dev/null 2>&1; then
+            shutdown -r now
+        else
+            reboot
+        fi
         echo "reboot отправлен"
         ;;
 
@@ -443,6 +456,8 @@ case "$cmd" in
         command="$2"
         # Ключи (пробелы заменены на «_») — то, что перечисляет sudoers;
         # строки команд поддержаны для обратной совместимости.
+        # Только чтение: ни одна ветка не пишет, не перезапускает и не удаляет.
+        # Псевдонимы короче и не ломают sudoers (пробелы → «_»).
         case "$command" in
             "journalctl_--disk-usage" | "journalctl --disk-usage")
                 set -- journalctl --disk-usage ;;
@@ -452,8 +467,33 @@ case "$cmd" in
             "free_-h" | "free -h")         set -- free -h ;;
             "uptime")                      set -- uptime ;;
             "x-ui_status" | "x-ui status") set -- x-ui status ;;
+            "os_logs")        set -- journalctl -p warning -n 100 --no-pager ;;
+            "os_errors")      set -- journalctl -p err -n 100 --no-pager ;;
+            "kernel_logs")    set -- journalctl -k -n 100 --no-pager ;;
+            "xui_logs")       set -- journalctl -u x-ui -n 100 --no-pager ;;
+            "dmesg")          set -- dmesg --ctime ;;
+            "sockets")        set -- ss -tulpn ;;
+            "net_summary")    set -- ss -s ;;
+            "addresses")      set -- ip -br a ;;
+            "routes")         set -- ip route ;;
+            "failed_units")   set -- systemctl --failed --no-pager ;;
+            "xui_service")    set -- systemctl status x-ui --no-pager -l ;;
+            "uname")          set -- uname -a ;;
+            "top_cpu")        set -- ps -eo pid,comm,pcpu,pmem --sort=-pcpu ;;
+            "log_size")       set -- du -sh /var/log ;;
+            "inodes")         set -- df -i ;;
+            "upgradable")     set -- apt list --upgradable ;;
+            "upgrade_sim")    set -- apt-get -s upgrade ;;
+            "vmstat")         set -- vmstat 1 3 ;;
+            "time_status")    set -- timedatectl ;;
+            "logged_in")      set -- w ;;
+            "boot_time")      set -- who -b ;;
+            "cpu_info")       set -- lscpu ;;
+            "block_devices")  set -- lsblk ;;
             *) die "команда не разрешена: $command" ;;
         esac
+        command -v "$1" >/dev/null 2>&1 \
+            || die "команда «$1» не установлена на этом сервере"
         log "run allowed: $command"
         exec "$@"
         ;;

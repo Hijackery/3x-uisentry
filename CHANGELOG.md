@@ -60,6 +60,31 @@
 
 ### Исправлено
 
+- Трафик: экран показывает итоги по inbound'ам и топ клиентов по расходу; при
+  пустом ответе объясняет, что проверить (scope, webBasePath, токен).
+- Одно действие — одно сообщение: «в очереди» → «запущено» → отчёт (раньше
+  копились «Запущено в фоне» и «… запущено»). Заголовки приведены в порядок.
+- Убрана дублирующая кнопка проверки релиза: `do-release-upgrade` сам проверяет
+  версию; «No new release found» (код 1) считается успехом, а не ошибкой.
+- Алерты не объявляют «восстановлено», если сборщик не опрошен (`unknown`
+  вместо `ok`); убраны дубли «Системные метрики недоступны».
+- Подписки: один клиент в нескольких inbound'ах больше не дублируется, трафик
+  и лимит агрегируются.
+- Панель: `api_authorized` сбрасывается между опросами; `xray` строкой/словарём
+  больше не роняет проверку.
+- Система: сбой `DISK_PATH` или сети не обнуляет остальные метрики; `is_active`
+  работает на OpenRC/SysV.
+- Меню: «Обновить/В меню» не оставляют экран без клавиатуры при throttle;
+  длинные HTML-сообщения режутся с закрытием/повторным открытием тегов.
+- Кулдаун считается по цели (x-ui и fail2ban не блокируют друг друга), TTL и
+  кулдаун — на `monotonic`; несовпадение действия не сжигает подтверждение;
+  имя юнита не может начинаться с `-`; `summary(0)` не возвращает весь вывод;
+  неудачный рестарт xray тоже учитывается кулдауном.
+- Безопасные команды расширены и документированы: логи ОС/ядра/x-ui, сеть,
+  службы, обновления, железо — только чтение, без shell.
+
+### Исправлено (старое)
+
 - Удаление бота: отчёт теперь короткий — одна строка «Бот удалён.» вместо
   списка того, что и где стёрто (`--keep-state` по-прежнему предупреждает об
   оставшихся базе и пользователе). `xui-menu` после удаления завершается, а не
@@ -117,6 +142,15 @@
   упрощённый вариант правил — бот устанавливается в любом случае.
 
 ### Безопасность
+
+- Установщик проверяет `--prefix` и `STATE_DIR`: `/`, `/etc`, `/usr`, `/var` и
+  подобные пути отклоняются (обход — `ALLOW_UNSAFE_PREFIX=1`). Раньше
+  `--prefix /etc` мог сделать `chmod -R` и `rm -rf` по системному каталогу.
+- При заданном `--sha256` git-fallback отключён: непроверенный код не ставится.
+- init-скрипт больше не выполняет `.env` как shell-скрипт; `reboot` работает
+  через OpenRC/SysV; `STATE_DIR` подставляется в юнит.
+- Токен панели при проверке пишется во временный `mktemp`-файл, а не в
+  предсказуемый `/tmp/.xui-mon-bot-tok`.
 
 - Секреты не попадают в логи, Telegram ID маскируются, `xui-menu show/check` не
   печатают значения токенов.
@@ -184,6 +218,31 @@ tags are published — the current version is always the `main` branch; update v
 
 ### Fixed
 
+- Traffic screen shows per-inbound totals and top clients by usage; when the
+  panel returns nothing it explains what to check (scope, webBasePath, token).
+- One action is one message: “queued” → “running” → report (previously both
+  “Запущено в фоне” and “… запущено” piled up). Running titles fixed.
+- Removed the duplicate release-check button: `do-release-upgrade` checks the
+  version itself; “No new release found” (exit 1) is treated as success.
+- Alerts no longer report “recovered” when a collector was not observed
+  (`unknown` instead of `ok`); duplicate “system metrics unavailable” removed.
+- Subscriptions: a client attached to several inbounds is no longer duplicated;
+  traffic and quota are aggregated.
+- Panel: `api_authorized` is reset between polls; a non-dict `xray` no longer
+  breaks the check.
+- System: a failing `DISK_PATH` or network does not wipe other metrics;
+  `is_active` works on OpenRC/SysV.
+- Menu: “Refresh/Menu” no longer strands a screen without a keyboard on throttle;
+  long HTML messages are split with tags closed and reopened.
+- Cooldown is per target (x-ui and fail2ban do not block each other), TTL and
+  cooldown use `monotonic`; an action mismatch no longer burns the confirmation;
+  unit names cannot start with `-`; `summary(0)` no longer returns everything;
+  a failed xray restart is also rate-limited.
+- The safe command set is expanded and documented: OS/kernel/x-ui logs, network,
+  services, updates, hardware — read-only, no shell.
+
+### Fixed (older)
+
 - Clean-machine install: `/opt/xui-monitor-bot` is created before `.env` is
   written; an incomplete `.env` after an aborted run is completed by the wizard.
 - Panel address handling: spaces/trailing slashes stripped, a path pasted with the
@@ -217,6 +276,15 @@ tags are published — the current version is always the `main` branch; update v
   fallbacks.
 
 ### Security
+
+- The installer validates `--prefix` and `STATE_DIR`: `/`, `/etc`, `/usr`, `/var`
+  and similar paths are rejected (`ALLOW_UNSAFE_PREFIX=1` to override). Previously
+  `--prefix /etc` could run `chmod -R` and `rm -rf` on a system directory.
+- With `--sha256`, the git fallback is disabled: unverified code is never installed.
+- The init script no longer sources `.env` as shell code; `reboot` works on
+  OpenRC/SysV; `STATE_DIR` is templated into the unit.
+- The panel token probe uses a `mktemp` file instead of a predictable
+  `/tmp/.xui-mon-bot-tok`.
 
 - Secrets never reach logs (scrubbing formatter), Telegram IDs masked,
   `xui-menu show/check` never print secrets.

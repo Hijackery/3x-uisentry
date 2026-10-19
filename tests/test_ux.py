@@ -301,7 +301,12 @@ def test_split_keeps_html_tags_whole() -> None:
     chunks = _split(text, 500)
     assert len(chunks) > 1
     assert all(len(chunk) <= 500 for chunk in chunks)
-    assert "\n".join(chunks) == text
+
+    # Видимый текст сохраняется; на границах теги закрываются и открываются.
+    def strip(value: str) -> str:
+        return re.sub(r"<[^>]+>", "", value)
+
+    assert strip("".join(chunks)) == strip(text)
     for chunk in chunks:
         # Каждая часть самодостаточна по разметке: открытые теги закрыты.
         assert chunk.count("<b>") == chunk.count("</b>"), chunk[:80]
@@ -375,7 +380,7 @@ def test_maintenance_has_separate_apt_update_and_release() -> None:
     assert "ask:apt_update:" in data
     assert "ask:apt_upgrade:" in data
     assert "ask:apt_upgrade_phased:" in data
-    assert "ask:dist_upgrade:" in data
+    assert "ask:dist_upgrade:" not in data  # проверка входит в запуск релиза
     assert "ask:release_upgrade:" in data
 
 

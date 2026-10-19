@@ -259,7 +259,7 @@ Telegram  ⇄  bot (unprivileged user xui-monitor)
 | Command | What it shows |
 |---|---|
 | `/status` | a one-line verdict, issues, metrics, services and panel |
-| `/traffic` | inbounds, clients and consumed traffic |
+| `/traffic` | per-inbound totals and top clients by traffic |
 | `/services` | service state; restart and log next to each |
 | `/panel` | panel and xray availability, versions, updates |
 | `/subs` | subscriptions: expiry, traffic, depleted and disabled |
@@ -280,6 +280,31 @@ they expand the same screen).
 diagnostic commands from `COMMAND_ALLOWLIST` are allowed; `/run` without arguments
 lists them. There is no arbitrary shell.
 
+### Safe diagnostic commands
+
+`/run <command>` (or just send it as a message) executes only commands from
+`COMMAND_ALLOWLIST`. All of them are **read-only** and run as argv without a
+shell: no pipes, redirects or writes. If a command is not installed, the bot says
+so explicitly.
+
+| Command | What it shows |
+|---|---|
+| `os_logs` / `os_errors` | OS journal: warnings / errors only (100 lines) |
+| `kernel_logs` / `dmesg` | kernel messages |
+| `xui_logs` | the `x-ui` service journal |
+| `xui_service` / `x-ui status` | panel status |
+| `failed_units` | failed systemd units |
+| `sockets` / `net_summary` | listening ports / socket summary |
+| `addresses` / `routes` | IP addresses / routes |
+| `top_cpu` | processes by CPU and memory |
+| `uname` / `cpu_info` / `block_devices` | system, CPU, disks |
+| `log_size` / `inodes` / `df -h` / `free -h` / `uptime` | space and resources |
+| `upgradable` / `upgrade_sim` | available updates / `apt` simulation |
+| `vmstat` / `time_status` / `logged_in` / `boot_time` | load, time, sessions |
+| `journalctl --disk-usage` / `systemctl list-timers --all` | journal and timers |
+
+Examples: `/run os_logs`, `/run failed_units`, `/run sockets`.
+
 **Commands and buttons work only in the administrator's private chat.** In a group
 the bot refuses: addresses, subscriptions and traffic must not leak into a shared
 chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only — management there
@@ -287,11 +312,12 @@ is unavailable.
 
 **Maintenance actions are separate and report to the chat.** `apt update` refreshes
 indexes only; `full-upgrade` installs everything; `phased` allows Ubuntu phased
-updates; “check release” runs `do-release-upgrade --check`; “run release” runs
-`do-release-upgrade` itself. These are different things: `apt update` does not
-check for a new OS version. The bot watches the background systemd unit and sends
-the exit code plus the log tail when it finishes — no `journalctl` needed. To look
-manually: `sudo xui-menu apt-logs`.
+updates; “run release” runs `do-release-upgrade`, which first checks for a new OS
+version and says so if there is none. These are different things: `apt update`
+does not check for a new OS version. The bot watches the background systemd unit
+and sends the exit code plus the log tail when it finishes — no `journalctl`
+needed. One action is one message: “queued” → “running” → report, no pile-up. To
+look manually: `sudo xui-menu apt-logs`.
 
 `/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
 are aligned in a monospace block, and time is labelled “server time”. Alerts carry
@@ -427,7 +453,7 @@ over the file.
 | `ACTION_COOLDOWN` | pause between identical actions, seconds |
 | `CONFIRM_TTL` | confirmation button lifetime, seconds |
 | `COMMAND_TIMEOUT` | allowlisted command timeout, seconds |
-| `COMMAND_ALLOWLIST` | diagnostic commands (must match `xui-ctl`) |
+| `COMMAND_ALLOWLIST` | safe diagnostic commands (aliases, see above) |
 | `STATE_PATH` | SQLite database |
 | `LOG_PATH` | log file |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |

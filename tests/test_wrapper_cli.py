@@ -285,3 +285,28 @@ def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
     log = run_log.read_text(encoding="utf-8")
     assert "start" in log.splitlines()
     assert "xui-monitor-apt-upgrade.service" in log
+
+
+def test_safe_command_aliases_are_mapped(tmp_path: Path) -> None:
+    """Псевдонимы вида os_logs запускают фиксированный безопасный argv."""
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    log = tmp_path / "argv"
+    (shim_dir / "journalctl").write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$@" > "{log}"\n', encoding="utf-8"
+    )
+    (shim_dir / "journalctl").chmod(0o755)
+
+    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}")
+    result = subprocess.run(
+        ["bash", str(WRAPPER), "run_command", "os_logs"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    args = log.read_text(encoding="utf-8").splitlines()
+    assert args == ["-p", "warning", "-n", "100", "--no-pager"]

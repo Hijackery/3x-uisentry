@@ -114,7 +114,7 @@ def test_overview_contains_all_blocks(settings: Settings) -> None:
         "Диск",
         "Сервисы",
         "Панель 3X-UI",
-        "Inbounds",
+        "Трафик",
     ):
         assert expected in text
     assert "потерян доступ" in text

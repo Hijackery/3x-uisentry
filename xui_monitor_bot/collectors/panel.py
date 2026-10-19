@@ -135,6 +135,9 @@ class PanelClient:
         Веб-интерфейс и API проверяются отдельно: панель может отвечать на
         ``/``, но не пускать бота в API (неверный токен или область действия).
         """
+        # Нельзя наследовать «авторизован» от прошлого опроса: иначе после
+        # успешного запроса сбой API выглядит как «токен принят».
+        self._authorized = None
         loop = asyncio.get_running_loop()
         started = loop.time()
 
@@ -179,17 +182,20 @@ class PanelClient:
                 status_code=response.status_code,
                 latency_ms=latency_ms,
                 error=f"API недоступен: {exc}",
-                api_authorized=self._authorized is True,
+                api_authorized=False,
             )
 
-        xray = status.get("xray") or {}
+        xray = status.get("xray")
+        if not isinstance(xray, dict):
+            xray = {}
+        version = xray.get("version") or status.get("xrayVersion", "")
         return PanelHealth(
             reachable=True,
             status_code=response.status_code,
             latency_ms=latency_ms,
             error=None,
             panel_version=str(status.get("panelVersion", "")),
-            xray_version=str(xray.get("version", "")),
+            xray_version=str(version),
             xray_state=str(xray.get("state", "")),
             api_authorized=self._authorized is True,
         )

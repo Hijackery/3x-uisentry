@@ -100,12 +100,26 @@ class ServiceCollector:
         self._prev_cpu.pop(unit, None)
 
     async def is_active(self, unit: str) -> bool:
-        result = await run_command(
-            ["systemctl", "is-active", "--quiet", unit],
-            timeout=10.0,
-            action="is-active",
-        )
-        return result.ok
+        # На OpenRC/SysV systemctl может отсутствовать: reboot-вотчер не должен
+        # падать с FileNotFoundError.
+        if shutil.which("systemctl"):
+            result = await run_command(
+                ["systemctl", "is-active", "--quiet", unit],
+                timeout=10.0,
+                action="is-active",
+            )
+            return result.ok
+        if shutil.which("rc-service"):
+            result = await run_command(
+                ["rc-service", unit, "status"], timeout=10.0, action="is-active"
+            )
+            return result.ok
+        if shutil.which("service"):
+            result = await run_command(
+                ["service", unit, "status"], timeout=10.0, action="is-active"
+            )
+            return result.ok
+        return False
 
     async def logs(self, unit: str, lines: int = 40) -> str:
         result = await run_command(

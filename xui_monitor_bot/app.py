@@ -108,6 +108,15 @@ ACTION_TITLES: dict[str, str] = {
 }
 
 
+#: Заголовок на время выполнения (в отличие от ACTION_TITLES — про результат).
+ACTION_RUNNING: dict[str, str] = {
+    ACTION_APT_UPDATE: "Обновление списка пакетов",
+    ACTION_UPGRADE: "Обновление системы",
+    ACTION_UPGRADE_PHASED: "Обновление (phased)",
+    ACTION_RELEASE_UPGRADE: "Релиз-обновление ОС",
+}
+
+
 CONFIRM_DESCRIPTIONS: dict[str, str] = {
     ACTION_RESTART_SERVICE: "Перезапустить сервис",
     ACTION_RESTART_XRAY: "Перезапустить xray через API панели",
@@ -520,6 +529,44 @@ class MonitorBot:
             markup=ui.confirm_menu(ACTION_COMMAND, pending.token),
         )
 
+    async def _edit_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        if not chat_id or not message_id:
+            return False
+        try:
+            await self.app.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+        except TelegramError as exc:
+            logger.debug("Не удалось обновить сообщение действия: %s", exc)
+            return False
+        self._last_screen[chat_id] = message_id
+        return True
+
+    async def _replace_or_notify(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        """Одно сообщение на действие: правим исходное, иначе шлём новое."""
+        if await self._edit_message(chat_id, message_id, text, markup=markup):
+            return True
+        return await self._notify(chat_id, text, markup=markup)
+
     async def _reply_screen(
         self,
         message: Message,
@@ -639,11 +686,19 @@ class MonitorBot:
             await self._edit(query, "⛔ Только для администраторов.")
             return
 
+        # «Обновить»/«В меню» трогают панель и systemctl: сначала проверяем
+        # паузу, и только потом показываем «Собираю данные…». Иначе при
+        # сработавшем throttle экран оставался без клавиатуры.
+        if data in {"home", "refresh"}:
+            wait = self._throttle("refresh", user_id, REFRESH_COOLDOWN)
+            if wait > 0:
+                await query.answer(f"⏳ Обновление через {wait:.0f} с")
+                return
+            await self._edit(query, "⏳ Собираю данные…")
+
         # Мгновенный отклик: сбор данных может занять секунды (медленная
         # панель), и без этой строки кажется, что бот завис.
         if data in {
-            "home",
-            "refresh",
             "server",
             "panel",
             "traffic",
@@ -682,14 +737,7 @@ class MonitorBot:
             )
             return
 
-        if data == "home" or data == "refresh":
-            # «Обновить» — единственный путь, который каждый раз дёргает панель
-            # и systemctl, поэтому держим паузу: спам кнопкой не должен
-            # превращаться в нагрузку на сервер.
-            wait = self._throttle("refresh", user_id, REFRESH_COOLDOWN)
-            if wait > 0:
-                await query.answer(f"⏳ Обновление через {wait:.0f} с")
-                return
+        if data in {"home", "refresh"}:
             self.invalidate()
             await self._edit(
                 query,
@@ -896,10 +944,14 @@ class MonitorBot:
                 await self._do_reboot(status, user_id)
                 return
             if action in QUEUED_ACTIONS or action == ACTION_DIST_UPGRADE:
-                self._schedule_long_action(action, chat_id, user_id)
+                self._schedule_long_action(
+                    action, chat_id, user_id, message_id=status.message_id
+                )
                 await _safe_edit(
                     status,
-                    "⏳ Запущено в фоне — отчёт придёт по завершении.",
+                    "⏳ Проверяю…"
+                    if action == ACTION_DIST_UPGRADE
+                    else "⏳ Ставлю задачу в очередь…",
                     markup=ui.result_menu(),
                 )
                 return
@@ -955,7 +1007,14 @@ class MonitorBot:
 
     # ------------------------------------------------------- долгие операции
 
-    def _schedule_long_action(self, action: str, chat_id: int, user_id: int) -> None:
+    def _schedule_long_action(
+        self,
+        action: str,
+        chat_id: int,
+        user_id: int,
+        *,
+        message_id: int = 0,
+    ) -> None:
         job_queue = self.app.job_queue
         if job_queue is None:  # pragma: no cover - JobQueue проверяется при сборке
             return
@@ -963,7 +1022,12 @@ class MonitorBot:
             self._job_long_action,
             timedelta(seconds=1),
             name=f"long-{action}",
-            data={"action": action, "chat_id": chat_id, "user_id": user_id},
+            data={
+                "action": action,
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "message_id": message_id,
+            },
         )
 
     async def _job_long_action(self, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -971,6 +1035,7 @@ class MonitorBot:
         action = str(data.get("action", ""))
         chat_id = int(data.get("chat_id", 0) or 0)
         user_id = int(data.get("user_id", 0) or 0)
+        message_id = int(data.get("message_id", 0) or 0)
 
         try:
             if action == ACTION_APT_UPDATE:
@@ -985,8 +1050,11 @@ class MonitorBot:
                 result = await self.actions.dist_upgrade()
         except Exception as exc:  # noqa: BLE001 — фон не должен молча «зависать»
             logger.error("Фоновая задача %s упала: %s", action, exc, exc_info=True)
-            await self._notify(
-                chat_id, f"❌ {ui.esc(str(exc) or exc.__class__.__name__)}"
+            await self._replace_or_notify(
+                chat_id,
+                message_id,
+                f"❌ {ui.esc(str(exc) or exc.__class__.__name__)}",
+                markup=ui.result_menu(),
             )
             await asyncio.to_thread(
                 self.storage.audit,
@@ -1002,14 +1070,26 @@ class MonitorBot:
         if action in QUEUED_ACTIONS and result.ok:
             kind = APT_KINDS[action]
             job_id = await asyncio.to_thread(
-                self.storage.add_pending_job, action, kind, chat_id, user_id
+                self.storage.add_pending_job,
+                action,
+                kind,
+                chat_id,
+                user_id,
+                message_id,
             )
             self._schedule_apt_watch(
-                job_id, action, chat_id, user_id, created_at=time.time()
-            )
-            await self._notify(
+                job_id,
+                action,
                 chat_id,
-                "⏳ <b>" + ui.esc(ACTION_TITLES.get(action, action)) + " запущено</b>\n"
+                user_id,
+                created_at=time.time(),
+                message_id=message_id,
+            )
+            title = ACTION_RUNNING.get(action, action)
+            await self._replace_or_notify(
+                chat_id,
+                message_id,
+                f"⏳ <b>{ui.esc(title)} запущено</b>\n"
                 "Задача выполняется в фоне. Пришлю отчёт сюда, когда закончится — "
                 "ничего вводить не нужно.",
                 markup=ui.result_menu(),
@@ -1051,6 +1131,7 @@ class MonitorBot:
         user_id: int,
         *,
         created_at: float,
+        message_id: int = 0,
         attempts: int = 0,
         errors: int = 0,
     ) -> None:
@@ -1067,6 +1148,7 @@ class MonitorBot:
                 "chat_id": chat_id,
                 "user_id": user_id,
                 "created_at": created_at,
+                "message_id": message_id,
                 "attempts": attempts,
                 "errors": errors,
             },
@@ -1085,6 +1167,7 @@ class MonitorBot:
                 int(row["chat_id"]),
                 int(row["user_id"]),
                 created_at=created_at,
+                message_id=int(row["message_id"] or 0),
             )
 
     async def _job_watch_apt(self, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1094,8 +1177,21 @@ class MonitorBot:
         chat_id = int(data.get("chat_id", 0) or 0)
         user_id = int(data.get("user_id", 0) or 0)
         created_at = float(data.get("created_at", time.time()))
+        message_id = int(data.get("message_id", 0) or 0)
         attempts = int(data.get("attempts", 0) or 0)
         errors = int(data.get("errors", 0) or 0)
+
+        def reschedule(*, attempts: int, errors: int) -> None:
+            self._schedule_apt_watch(
+                job_id,
+                action,
+                chat_id,
+                user_id,
+                created_at=created_at,
+                message_id=message_id,
+                attempts=attempts,
+                errors=errors,
+            )
 
         try:
             status = await self.actions.apt_status(action)
@@ -1107,24 +1203,17 @@ class MonitorBot:
                 errors < APT_WATCH_ERROR_LIMIT
                 and time.time() - created_at < APT_WATCH_MAX
             ):
-                self._schedule_apt_watch(
-                    job_id,
-                    action,
-                    chat_id,
-                    user_id,
-                    created_at=created_at,
-                    attempts=attempts,
-                    errors=errors,
-                )
+                reschedule(attempts=attempts, errors=errors)
             else:
                 await self._finish_apt_watch(
                     job_id,
                     action,
                     chat_id,
                     user_id,
+                    message_id,
                     ok=False,
                     text="⚠️ Не удалось получить отчёт об обновлении. "
-                    f"Проверьте: <code>sudo xui-menu apt-logs</code>\n"
+                    "Проверьте: <code>sudo xui-menu apt-logs</code>\n"
                     f"<pre>{ui.esc(str(exc))}</pre>",
                 )
             return
@@ -1137,20 +1226,13 @@ class MonitorBot:
                     action,
                     chat_id,
                     user_id,
+                    message_id,
                     ok=False,
                     text="⚠️ Обновление идёт слишком долго (больше 2 часов). "
                     "Проверьте: <code>sudo xui-menu apt-logs</code>",
                 )
             else:
-                self._schedule_apt_watch(
-                    job_id,
-                    action,
-                    chat_id,
-                    user_id,
-                    created_at=created_at,
-                    attempts=attempts + 1,
-                    errors=errors,
-                )
+                reschedule(attempts=attempts + 1, errors=errors)
             return
 
         # Юнит ещё не успел появиться (например, только что скомандовали start).
@@ -1159,15 +1241,7 @@ class MonitorBot:
             and fields.get("LOAD") == "not-found"
             and attempts < 3
         ):
-            self._schedule_apt_watch(
-                job_id,
-                action,
-                chat_id,
-                user_id,
-                created_at=created_at,
-                attempts=attempts + 1,
-                errors=errors,
-            )
+            reschedule(attempts=attempts + 1, errors=errors)
             return
 
         ok = fields.get("RESULT") == "success" and fields.get("EXIT") == "0"
@@ -1183,7 +1257,9 @@ class MonitorBot:
                 "\n\n🔁 <b>Требуется перезагрузка</b> для применения ядра/пакетов. "
                 "Кнопка «Перезагрузить» в разделе Обслуживание."
             )
-        await self._finish_apt_watch(job_id, action, chat_id, user_id, ok=ok, text=text)
+        await self._finish_apt_watch(
+            job_id, action, chat_id, user_id, message_id, ok=ok, text=text
+        )
 
     async def _finish_apt_watch(
         self,
@@ -1191,12 +1267,15 @@ class MonitorBot:
         action: str,
         chat_id: int,
         user_id: int,
+        message_id: int,
         *,
         ok: bool,
         text: str,
     ) -> None:
         await asyncio.to_thread(self.storage.remove_pending_job, job_id)
-        delivered = await self._notify(chat_id, text, markup=ui.result_menu())
+        delivered = await self._replace_or_notify(
+            chat_id, message_id, text, markup=ui.result_menu()
+        )
         await asyncio.to_thread(
             self.storage.audit,
             action,
@@ -1373,7 +1452,9 @@ class MonitorBot:
 
         findings = self.engine.evaluate(snapshot)
         try:
-            outbox = await asyncio.to_thread(self.engine.update, findings)
+            outbox = await asyncio.to_thread(
+                self.engine.update, findings, unavailable=snapshot.unavailable
+            )
         except sqlite3.Error as exc:
             logger.warning("Не удалось обновить состояние алертов: %s", exc)
             return
@@ -1609,33 +1690,74 @@ async def _send_with_retry(
     return None
 
 
+_TAG_RE = re.compile(r"<(/?)([A-Za-z][A-Za-z0-9]*)([^>]*?)(/?)>")
+
+
+def _open_tags(text: str) -> list[tuple[str, str]]:
+    """Стек открытых HTML-тегов: (имя, исходное открытие)."""
+    stack: list[tuple[str, str]] = []
+    for match in _TAG_RE.finditer(text):
+        closing, name, _attrs, self_closing = match.groups()
+        if closing:
+            for index in range(len(stack) - 1, -1, -1):
+                if stack[index][0] == name:
+                    del stack[index:]
+                    break
+        elif not self_closing:
+            stack.append((name, match.group(0)))
+    return stack
+
+
+def _balanced_prefix(text: str, limit: int) -> tuple[str, str]:
+    """Делит текст на (голова, хвост), не разрывая теги/сущности.
+
+    Голова закрывает открытые теги, хвост — заново их открывает, поэтому
+    каждый кусок остаётся валидным HTML для Telegram.
+    """
+    cut = min(limit, len(text))
+    for _ in range(64):
+        if cut <= 0:
+            break
+        head = text[:cut]
+        # Не режем внутри тега.
+        if head.rfind("<") > head.rfind(">"):
+            cut = head.rfind("<")
+            continue
+        # Не режем внутри сущности (&amp; и т.п.).
+        amp, semi = head.rfind("&"), head.rfind(";")
+        if amp > semi and " " not in head[amp:] and "<" not in head[amp:]:
+            cut = amp
+            continue
+        stack = _open_tags(head)
+        closing = "".join(f"</{name}>" for name, _ in reversed(stack))
+        if len(head) + len(closing) <= limit:
+            reopening = "".join(opening for _, opening in stack)
+            return head + closing, reopening + text[cut:]
+        cut -= len(head) + len(closing) - limit
+    cut = max(1, min(limit, len(text)))
+    return text[:cut], text[cut:]
+
+
 def _split(text: str, limit: int = 3500) -> list[str]:
-    """Режет длинный HTML на части, не разрывая теги.
+    """Режет длинный HTML на части, не разрывая теги и сущности.
 
     Прямое деление по символам рвёт разметку Telegram («can't parse entities»),
-    поэтому режем по переводам строк, а уже отдельную чрезмерно длинную строку —
-    вынужденно жёстко.
+    поэтому режем по переводам строк, а длинную строку — с закрытием и
+    повторным открытием тегов на границе.
     """
     if len(text) <= limit:
         return [text]
     chunks: list[str] = []
-    current = ""
-    for line in text.split("\n"):
-        while len(line) > limit:
-            if current:
-                chunks.append(current)
-                current = ""
-            chunks.append(line[:limit])
-            line = line[limit:]
-        if not current:
-            current = line
-        elif len(current) + len(line) + 1 <= limit:
-            current = f"{current}\n{line}"
-        else:
-            chunks.append(current)
-            current = line
-    if current:
-        chunks.append(current)
+    rest = text
+    while len(rest) > limit:
+        newline = rest.rfind("\n", 0, limit)
+        cut = newline + 1 if newline >= limit // 2 else limit
+        piece, rest = _balanced_prefix(rest, cut)
+        if not piece:
+            piece, rest = rest[:limit], rest[limit:]
+        chunks.append(piece)
+    if rest:
+        chunks.append(rest)
     return chunks
 
 

@@ -64,7 +64,7 @@ def test_expired_confirmation_is_rejected(
     actions = manager(make_settings, confirm_ttl=10)
     pending = actions.request(ACTION_REBOOT, "перезагрузка")
     actions._pending[pending.token] = dataclasses.replace(
-        pending, created_at=time.time() - 30
+        pending, created_at=time.monotonic() - 30
     )
 
     with pytest.raises(ActionError, match="Время подтверждения истекло"):
@@ -224,7 +224,7 @@ def test_cooldown_remaining_time_is_reported(
     make_settings: Callable[..., Settings],
 ) -> None:
     actions = manager(make_settings, action_cooldown=60)
-    actions._last_run[ACTION_REBOOT] = time.time() - 10
+    actions._last_run[ACTION_REBOOT] = time.monotonic() - 10
     with pytest.raises(ActionError, match="подождите"):
         actions._check_cooldown(ACTION_REBOOT)
 
@@ -285,3 +285,31 @@ async def test_apt_status_rejects_unknown_action(
     actions = manager(make_settings)
     with pytest.raises(ActionError):
         await actions.apt_status("restart_service")
+
+
+def test_summary_zero_does_not_return_everything() -> None:
+    result = ok_result()
+    result = dataclasses.replace(result, stdout="x" * 100)
+    assert result.summary(0) == "x" * 100  # limit 0 = без обрезки, не «весь хвост»
+    assert len(result.summary(3)) == 3
+
+
+def test_cooldown_is_per_service(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """Рестарт x-ui не должен блокировать рестарт fail2ban."""
+    actions = manager(make_settings, action_cooldown=60)
+    actions._mark_run("restart_service:x-ui")
+    actions._check_cooldown("restart_service:fail2ban")  # не бросает
+    with pytest.raises(ActionError, match="подождите"):
+        actions._check_cooldown("restart_service:x-ui")
+
+
+def test_mismatched_action_keeps_confirmation(
+    make_settings: Callable[..., Settings],
+) -> None:
+    actions = manager(make_settings)
+    pending = actions.request(ACTION_REBOOT, "перезагрузка")
+    with pytest.raises(ActionError, match="не совпадает"):
+        actions.consume(pending.token, expected=ACTION_RESTART_SERVICE)
+    assert actions.consume(pending.token, expected=ACTION_REBOOT) is not None

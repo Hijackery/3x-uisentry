@@ -39,12 +39,22 @@ class SystemCollector:
         cpu_percent = min(100.0, psutil.cpu_percent(interval=CPU_SAMPLE_SECONDS))
         virtual = psutil.virtual_memory()
         swap = psutil.swap_memory()
-        disk = psutil.disk_usage(self.disk_path)
-        net = psutil.net_io_counters()
+        try:
+            disk = psutil.disk_usage(self.disk_path)
+        except (OSError, psutil.Error):
+            # Несмонтированный DISK_PATH не должен обнулять CPU/RAM/сеть.
+            try:
+                disk = psutil.disk_usage("/")
+            except (OSError, psutil.Error):
+                disk = None
+        try:
+            net = psutil.net_io_counters()
+        except (OSError, psutil.Error):
+            net = None
         now = time.time()
 
         up_bps, down_bps = 0.0, 0.0
-        if self._prev_net is not None:
+        if self._prev_net is not None and net is not None:
             elapsed = now - self._prev_net_time
             if elapsed > 0:
                 up_bps = max(
@@ -60,7 +70,7 @@ class SystemCollector:
         connections = 0
         try:
             connections = len(psutil.net_connections(kind="tcp"))
-        except (psutil.AccessDenied, PermissionError, RuntimeError):
+        except (psutil.Error, OSError, PermissionError, RuntimeError):
             # net_connections требует CAP_NET_ADMIN; на VDS обычно доступно,
             # но в контейнерах может быть запрещено — это не повод ронять сбор.
             connections = -1
@@ -70,13 +80,13 @@ class SystemCollector:
             mem_percent=round(virtual.percent, 1),
             mem_total_bytes=virtual.total,
             swap_percent=round(swap.percent, 1),
-            disk_percent=round(disk.percent, 1),
-            disk_free_bytes=disk.free,
+            disk_percent=round(disk.percent, 1) if disk else 0.0,
+            disk_free_bytes=disk.free if disk else 0,
             load1=round(self.load1(), 2),
             uptime_seconds=time.time() - psutil.boot_time(),
             tcp_connections=connections,
-            net_sent_bytes=net.bytes_sent,
-            net_recv_bytes=net.bytes_recv,
+            net_sent_bytes=net.bytes_sent if net else 0,
+            net_recv_bytes=net.bytes_recv if net else 0,
             net_up_bps=round(up_bps, 1),
             net_down_bps=round(down_bps, 1),
             collected_at=now,

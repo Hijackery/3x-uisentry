@@ -248,14 +248,26 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
 
 
 def render_traffic(snapshot: MonitorSnapshot) -> str:
-    if not snapshot.inbounds:
-        return "\n📊 <b>Inbounds</b>\nнет данных (нужен токен со scope node-sync/admin)"
+    """Трафик: итоги по inbound'ам и топ клиентов (в отличие от «Подписок»)."""
+    if not snapshot.inbounds and not snapshot.subscriptions:
+        return (
+            "\n📊 <b>Трафик</b>\n"
+            "Панель не отдала inbound'ы и клиентов — показывать нечего.\n\n"
+            "<b>Что проверить</b>\n"
+            "• у API-токена панели scope <code>node-sync</code> или "
+            "<code>admin</code>;\n"
+            "• <code>PANEL_BASE_PATH</code> — это «URL панели» из настроек "
+            "(обычно пусто), а не путь <code>/panel</code>;\n"
+            "• раздел «🌐 Панель» — отвечает ли API и принят ли токен.\n\n"
+            "Токен: «Настройки панели → Учётная запись → API-токен»."
+        )
+
     lines = [
         "",
-        "📊 <b>Inbounds</b>",
+        "📊 <b>Трафик</b>",
         f"Включено {sum(1 for item in snapshot.inbounds if item.enabled)} из "
         f"{len(snapshot.inbounds)} · клиентов {snapshot.active_clients} · "
-        f"трафик {fmt_bytes(snapshot.total_used_bytes)}",
+        f"суммарно {fmt_bytes(snapshot.total_used_bytes)}",
     ]
     for inbound in snapshot.inbounds[:MAX_INLINE_ROWS]:
         icon = "🟢" if inbound.enabled else "⚪"
@@ -267,6 +279,27 @@ def render_traffic(snapshot: MonitorSnapshot) -> str:
         )
     if len(snapshot.inbounds) > MAX_INLINE_ROWS:
         lines.append(f"… ещё {len(snapshot.inbounds) - MAX_INLINE_ROWS}")
+
+    top = sorted(
+        (item for item in snapshot.subscriptions if item.used_bytes > 0),
+        key=lambda item: item.used_bytes,
+        reverse=True,
+    )[:8]
+    if top:
+        lines += ["", "👥 <b>Топ клиентов по трафику</b>"]
+        for item in top:
+            limit = (
+                f" из {fmt_bytes(item.total_bytes)} ({item.used_percent:.0f}%)"
+                if item.total_bytes
+                else ""
+            )
+            lines.append(
+                f"• <code>{esc(item.email or item.sub_id or '—')}</code> — "
+                f"{fmt_bytes(item.used_bytes)}{limit}"
+            )
+        if len(snapshot.subscriptions) > len(top):
+            lines.append(f"… ещё {len(snapshot.subscriptions) - len(top)} с трафиком")
+
     return "\n".join(lines)
 
 
@@ -544,11 +577,6 @@ def maintenance_menu() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    "🔎 Проверить релиз-обновление", callback_data="ask:dist_upgrade:"
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     "🚀 Запустить релиз-обновление ОС",
                     callback_data="ask:release_upgrade:",
                 )
@@ -671,6 +699,8 @@ def render_help(is_admin: bool) -> str:
         "• <code>/status</code> — сводка: вердикт, метрики, службы, панель.",
         "• <code>/help</code> — эта инструкция; кнопка «❓ Помощь» делает то же.",
         "• «🏠 В меню» есть на каждом экране — из любого места можно вернуться.",
+        "• Переходы заменяют прошлый экран, а обновления идут одним сообщением: "
+        "«в очереди» → «запущено» → отчёт.",
         "• Команды: <code>/status</code>, <code>/traffic</code>, <code>/subs</code>, "
         "<code>/history</code>, <code>/logs</code>, <code>/audit</code>, "
         "<code>/maint</code>, <code>/run</code>.",
@@ -679,7 +709,7 @@ def render_help(is_admin: bool) -> str:
         "🖥 <b>Сервер</b> — CPU, RAM, swap, диск, сеть, load average.",
         "⚙️ <b>Сервисы</b> — работает ли x-ui; рядом «Рестарт» и «Журнал».",
         "🌐 <b>Панель</b> — доступность панели и xray, версии и обновления.",
-        "📊 <b>Трафик</b> — inbound'ы, клиенты и израсходованный трафик.",
+        "📊 <b>Трафик</b> — итоги по inbound'ам и топ клиентов по расходу.",
         "🪪 <b>Подписки</b> — сроки, остаток трафика, истёкшие и исчерпанные.",
         "📈 <b>История</b> — средние CPU/RAM/диска за последние сутки.",
         "📜 <b>Журнал</b> — вывод службы, фильтр «только ошибки», ещё 200 строк.",
@@ -692,13 +722,14 @@ def render_help(is_admin: bool) -> str:
         "все обновления.",
         "• <b>Обновить с phased</b> — обычный <code>upgrade</code>, но с "
         "разрешёнными phased-обновлениями Ubuntu.",
-        "• <b>Проверить релиз-обновление</b> — есть ли новая версия ОС "
-        "(<code>do-release-upgrade --check</code>). Это не <code>apt update</code>.",
-        "• <b>Запустить релиз-обновление</b> — сам <code>do-release-upgrade</code>: "
-        "надолго, возможна перезагрузка.",
+        "• <b>Запустить релиз-обновление</b> — <code>do-release-upgrade</code>: "
+        "сначала проверит, есть ли новая версия ОС, и если нет — сообщит об этом. "
+        "Если есть — обновление надолго, возможна перезагрузка.",
         "• <b>Перезагрузить сервер</b> — с подтверждением.",
         "Всё выполняется в фоне, отчёт придёт в этот чат сам — вводить ничего не "
         "нужно. Если обновление ставит новое ядро, бот напомнит про перезагрузку.",
+        "Примеры диагностики: <code>/run os_logs</code>, "
+        "<code>/run failed_units</code>, <code>/run sockets</code>.",
         "",
         "💻 <b>Команда на сервер из любого раздела</b>",
         "Просто пришлите команду сообщением (или <code>/run df -h</code>) — бот "

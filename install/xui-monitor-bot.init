@@ -51,10 +51,10 @@ start() {
     # $$ в подоболочке = pid будущего процесса (exec заменяет shell, не форкаясь).
     if command -v setsid >/dev/null 2>&1; then
         setsid su -s /bin/sh "$SERVICE_USER" -c \
-            "umask 077; cd '$PREFIX' && set -a && . '$PREFIX/.env' && set +a && echo \$\$ > '$PID_FILE' && exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
+            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
     else
         su -s /bin/sh "$SERVICE_USER" -c \
-            "umask 077; cd '$PREFIX' && set -a && . '$PREFIX/.env' && set +a && echo \$\$ > '$PID_FILE' && exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
+            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
     fi
 
     sleep 2

@@ -519,3 +519,48 @@ def test_installer_auto_corrects_web_base_path(tmp_path: Path) -> None:
     assert "1:[]" in result.stdout
     assert "2:[secret]" in result.stdout
     assert "3:[]" in result.stdout
+
+
+def test_dangerous_prefix_is_rejected(tmp_path: Path) -> None:
+    """--prefix /etc не должен приводить к chmod -R и rm -rf системного каталога."""
+    for bad in ("/etc", "/", "/usr", "/var"):
+        result = subprocess.run(
+            ["bash", str(INSTALL_SH), "--prefix", bad, "--print-source"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode != 0, bad
+        assert "Небезопасный --prefix" in result.stderr, (bad, result.stderr)
+
+
+def test_dangerous_state_dir_is_rejected() -> None:
+    result = subprocess.run(
+        ["bash", str(INSTALL_SH), "--print-source"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env={**os.environ, "STATE_DIR": "/etc"},
+    )
+    assert result.returncode != 0
+    assert "Небезопасный STATE_DIR" in result.stderr
+
+
+def test_sha256_disables_unverified_git_fallback() -> None:
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "Git-fallback отключён" in text
+    assert '[ -z "$SOURCE_SHA256" ]' in text
+
+
+def test_init_does_not_source_env() -> None:
+    """Текст из .env не должен исполняться init-скриптом."""
+    text = (BASE_DIR / "install" / "xui-monitor-bot.init").read_text(encoding="utf-8")
+    assert ". '$PREFIX/.env'" not in text
+    assert "set -a" not in text
+
+
+def test_unit_state_dir_is_templated() -> None:
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "s#/var/lib/xui-monitor#${STATE_DIR}#g" in text

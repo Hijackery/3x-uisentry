@@ -180,12 +180,18 @@ collapse_slashes() {
 }
 
 detect_ips() {
+    local v4=""
     if command -v hostname >/dev/null 2>&1 && hostname -I >/dev/null 2>&1; then
-        hostname -I 2>/dev/null | tr -s ' \n' ' ' | sed 's/ *$//'
-    elif command -v ip >/dev/null 2>&1; then
-        ip -4 -o addr show scope global 2>/dev/null \
-            | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ' | sed 's/ *$//'
+        # Только IPv4: IPv6-литерал без скобок даёт невалидный URL.
+        v4="$(hostname -I 2>/dev/null | tr ' ' '\n' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tr '\n' ' ' \
+            | sed 's/ *$//')"
     fi
+    if [ -z "$v4" ] && command -v ip >/dev/null 2>&1; then
+        v4="$(ip -4 -o addr show scope global 2>/dev/null \
+            | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ' | sed 's/ *$//')"
+    fi
+    printf '%s' "$v4"
 }
 
 cleanup() {
@@ -277,6 +283,32 @@ while [ $# -gt 0 ]; do
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
 done
+
+# --- защита от опасного --prefix/STATE_DIR ---------------------------------
+# Без этого `--prefix /etc` приводил к chmod -R по системному каталогу, а
+# `--uninstall` — к rm -rf. Разрешаем только предсказуемые места установки.
+canon_path() { readlink -m "$1" 2>/dev/null || printf '%s' "$1"; }
+is_safe_prefix() {
+    case "$1" in
+        /opt/?*|/usr/local/?*|/srv/?*|/var/opt/?*|/home/?*/?*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+is_safe_state() {
+    case "$1" in
+        /var/lib/?*|/var/opt/?*|/opt/?*|/srv/?*|/home/?*/?*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+PREFIX="$(canon_path "$PREFIX")"
+STATE_DIR="$(canon_path "$STATE_DIR")"
+if [ "${ALLOW_UNSAFE_PREFIX:-0}" != "1" ]; then
+    is_safe_prefix "$PREFIX" || fail "Небезопасный --prefix: $PREFIX
+  Разрешено: /opt/..., /usr/local/..., /srv/..., /var/opt/..., /home/<user>/...
+  Осознанно разрешить: ALLOW_UNSAFE_PREFIX=1"
+    is_safe_state "$STATE_DIR" || fail "Небезопасный STATE_DIR: $STATE_DIR
+  Разрешено: /var/lib/..., /var/opt/..., /opt/..., /srv/..., /home/<user>/..."
+fi
 
 resolve_repo
 
@@ -577,8 +609,17 @@ $(source_candidates)
 EOF
     fi
 
-    # 2) git clone: запасной путь, когда тарбол недоступен.
-    if [ -z "$SOURCE_DIR" ] && command -v git >/dev/null 2>&1; then
+    # Если задана контрольная сумма, непроверенный git-клон недопустим:
+    # иначе --sha256 обходится одним недоступным архивом.
+    if [ -z "$SOURCE_DIR" ] && [ -n "$SOURCE_SHA256" ]; then
+        fail "Задан --sha256, но ни один архив не скачался или сумма не совпала.
+  Git-fallback отключён: непроверенный код ставить нельзя.
+  Проверьте доступ к архиву или снимите --sha256."
+    fi
+
+    # 2) git clone: запасной путь, когда тарбол недоступен и сумма не задана.
+    if [ -z "$SOURCE_DIR" ] && [ -z "$SOURCE_SHA256" ] \
+        && command -v git >/dev/null 2>&1; then
         GIT_URL="${GIT_URL:-$REPO_URL}"
         info "Тарбол не подошёл — пробую git clone $GIT_URL ($REPO_REF)"
         if git clone --depth 1 --branch "$REPO_REF" "$GIT_URL" "$TMP_DIR/repo" \
@@ -925,11 +966,12 @@ else
     # Сразу проверяем токен: без этого в .env попадал мусор (например, название
     # области доступа), и бот потом ругался «токен не принят».
     if [ -n "$PANEL_TOKEN" ] && [ -n "$PROBE_URL" ]; then
-        _token_http="$(curl -sS --max-time 5 -o /tmp/.xui-mon-bot-tok -w '%{http_code}' \
+        _tok_tmp="$(mktemp)"
+        _token_http="$(curl -sS --max-time 5 -o "$_tok_tmp" -w '%{http_code}' \
             -H "Authorization: Bearer $PANEL_TOKEN" \
             "${PROBE_URL}/panel/api/server/status" 2>/dev/null || echo 000)"
-        _token_reply="$(cat /tmp/.xui-mon-bot-tok 2>/dev/null || true)"
-        rm -f /tmp/.xui-mon-bot-tok
+        _token_reply="$(cat "$_tok_tmp" 2>/dev/null || true)"
+        rm -f "$_tok_tmp"
         if printf '%s' "$_token_reply" | grep -q '"success":true'; then
             ok "Токен панели принят"
         elif printf '%s' "$_token_reply" | grep -q '"success":false' || [ "$_token_http" = "401" ] || [ "$_token_http" = "403" ]; then
@@ -1098,6 +1140,14 @@ SUDOERS_FILE="$SUDOERS_PATH"
 # command arguments». Юниты берём из SERVICES, ключи команд — из
 # COMMAND_ALLOWLIST (пробел → «_»), поэтому файл остаётся строгим и коротким.
 SUDO_UNITS="$(env_get SERVICES | tr ',' ' ')"
+# Миграция старого короткого списка на расширенный безопасный набор.
+_OLD_ALLOW="journalctl --disk-usage,systemctl list-timers --all,free -h,df -h,uptime"
+_NEW_ALLOW="os_logs,os_errors,kernel_logs,xui_logs,dmesg,sockets,net_summary,addresses,routes,failed_units,xui_service,uname,top_cpu,log_size,inodes,upgradable,upgrade_sim,vmstat,time_status,logged_in,boot_time,cpu_info,block_devices,journalctl --disk-usage,systemctl list-timers --all,free -h,df -h,uptime,x-ui status"
+if [ "$(env_get COMMAND_ALLOWLIST)" = "$_OLD_ALLOW" ]; then
+    set_env COMMAND_ALLOWLIST "$_NEW_ALLOW"
+    info "Список безопасных команд расширен (старое значение заменено)."
+fi
+
 SUDO_KEYS="$(env_get COMMAND_ALLOWLIST | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
     | tr ' ' '_' | tr '\n' ' ')"
 [ -n "$SUDO_UNITS" ] || SUDO_UNITS="$SERVICE_NAME"
@@ -1169,22 +1219,30 @@ if [ "$INIT" = systemd ]; then
         -e "s#^Group=.*#Group=${SERVICE_USER}#" \
         -e "s#/opt/xui-monitor-bot#${PREFIX}#g" \
         -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
+        -e "s#/var/lib/xui-monitor#${STATE_DIR}#g" \
         "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
+    if [ "$STATE_DIR" != "/var/lib/xui-monitor" ]; then
+        # StateDirectory умеет создавать только /var/lib/<name>; для своего
+        # каталога его отключаем — каталог уже создан установщиком.
+        sed -i "s#^StateDirectory=.*#\# StateDirectory отключён: каталог создан установщиком#" "$UNIT_FILE"
+    fi
     chmod 644 "$UNIT_FILE"
     # Отдельные постоянные юниты для apt. systemd-run в daemon-контексте на
     # новых systemd (Ubuntu 26.04) уходит в polkit и отбивается «требуется
     # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
     # юнит с User=root запускается через systemctl и работает.
     for _pair in \
-        "xui-monitor-apt-update:_apt_update_worker" \
-        "xui-monitor-apt-upgrade:_apt_worker" \
-        "xui-monitor-apt-phased:_apt_worker_phased" \
-        "xui-monitor-release-upgrade:_release_upgrade_worker"; do
+        "xui-monitor-apt-update:_apt_update_worker:apt update" \
+        "xui-monitor-apt-upgrade:_apt_worker:apt full-upgrade" \
+        "xui-monitor-apt-phased:_apt_worker_phased:apt phased upgrade" \
+        "xui-monitor-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
         _apt_unit="${_pair%%:*}"
-        _apt_worker="${_pair#*:}"
+        _rest="${_pair#*:}"
+        _apt_worker="${_rest%%:*}"
+        _apt_title="${_rest#*:}"
         cat > "/etc/systemd/system/${_apt_unit}.service" <<EOF
 [Unit]
-Description=apt upgrade for ${SERVICE_NAME} (one-shot, requested by the bot)
+Description=${_apt_title} for ${SERVICE_NAME} (one-shot, requested by the bot)
 After=network-online.target
 
 [Service]

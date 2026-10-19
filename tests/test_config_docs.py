@@ -163,3 +163,22 @@ def test_wrapper_subcommands_match_sudoers() -> None:
     # юнитом systemd и через sudo достижимы быть не должны.
     leaked = sorted(internal & allowed)
     assert not leaked, f"внутренние подкоманды попали в sudoers: {leaked}"
+
+
+def test_every_safe_command_has_a_wrapper_mapping() -> None:
+    """Любая команда из COMMAND_ALLOWLIST должна быть явно разрешена обёрткой."""
+    text = ENV_EXAMPLE.read_text(encoding="utf-8")
+    line = next(
+        item for item in text.splitlines() if item.startswith("COMMAND_ALLOWLIST=")
+    )
+    commands = [
+        item.strip() for item in line.split("=", 1)[1].split(",") if item.strip()
+    ]
+    wrapper = XUI_CTL.read_text(encoding="utf-8")
+    missing = []
+    for command in commands:
+        key = command.replace(" ", "_")
+        if f'"{key}"' not in wrapper and f'"{command}"' not in wrapper:
+            missing.append(command)
+    assert not missing, f"нет ветки в xui-ctl run_command: {missing}"
+    assert len(commands) >= 20

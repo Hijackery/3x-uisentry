@@ -70,6 +70,26 @@ class AlertEngine:
         findings = list(self._metrics(snapshot.system))
         findings.extend(self._services(snapshot))
         findings.extend(self._panel(snapshot))
+        if "services" in snapshot.unavailable:
+            findings.append(
+                Finding(
+                    Rule.system,
+                    Severity.unknown,
+                    "Состояние служб недоступно",
+                    "systemctl не ответил; прошлые состояния не считаем снятыми",
+                    key="services:unavailable",
+                )
+            )
+        if "subs" in snapshot.unavailable:
+            findings.append(
+                Finding(
+                    Rule.panel,
+                    Severity.unknown,
+                    "Подписки не собраны",
+                    "панель вернула неожиданный ответ; прошлые состояния сохранены",
+                    key="subs:unavailable",
+                )
+            )
         return findings
 
     # -------------------------------------------------------------- правила
@@ -218,23 +238,6 @@ class AlertEngine:
                 )
             )
 
-        # Проблемы железа — отдельная находка: раньше они попадали в список
-        # «Подписки: нужна проверка» и выглядели как проблема панели.
-        system_warnings = [
-            item for item in snapshot.warnings if not _is_subscription_warning(item)
-        ]
-        if snapshot.system is None or system_warnings:
-            findings.append(
-                Finding(
-                    Rule.system,
-                    Severity.unknown,
-                    "Системные метрики недоступны",
-                    "\n".join(f"• {item}" for item in system_warnings)
-                    or "сбор psutil завершился ошибкой",
-                    key="system:metrics",
-                )
-            )
-
         sub_warnings = [
             item for item in snapshot.warnings if _is_subscription_warning(item)
         ]
@@ -252,7 +255,12 @@ class AlertEngine:
 
     # ------------------------------------------------------------ состояния
 
-    def update(self, findings: list[Finding]) -> list[Finding]:
+    def update(
+        self,
+        findings: list[Finding],
+        *,
+        unavailable: frozenset[str] = frozenset(),
+    ) -> list[Finding]:
         """Обновляет состояния правил и возвращает то, что нужно отправить.
 
         Отправка происходит при смене состояния (в том числе при восстановлении)
@@ -275,6 +283,9 @@ class AlertEngine:
             previous = self.storage.get_alert_state(key)
             old_state = Severity(previous["state"]) if previous else Severity.ok
             finding = active.get(key)
+            # Источник не опрошен — это не «восстановлено»: состояние держим.
+            if finding is None and _source_of(key) in unavailable:
+                continue
             new_state = finding.severity if finding else Severity.ok
 
             if new_state is old_state:
@@ -315,6 +326,17 @@ class AlertEngine:
 def _is_rule(key: str) -> bool:
     head = key.split(":")[0]
     return any(head == member.value for member in Rule)
+
+
+def _source_of(key: str) -> str:
+    """К какому сборщику относится ключ состояния."""
+    if key.startswith("service:"):
+        return "services"
+    if key.startswith("panel:"):
+        return "panel"
+    if key.startswith("subs") or key.startswith("subscription"):
+        return "subs"
+    return "metrics"
 
 
 def _as_float(value: object) -> float:

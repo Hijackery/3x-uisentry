@@ -247,7 +247,7 @@ def _service_problems(services: tuple[str, ...]) -> list[str]:
     """
     problems: list[str] = []
     for unit in services:
-        if not re.fullmatch(r"[A-Za-z0-9._@\-]+", unit):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@\-]*", unit):
             problems.append(f"SERVICES: недопустимое имя юнита {unit!r}")
         elif len(f"ask:restart_service:{unit}".encode()) > 64:
             problems.append(

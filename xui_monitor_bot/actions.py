@@ -88,7 +88,7 @@ class ActionManager:
             action=action,
             token=token,
             args=tuple(args),
-            created_at=time.time(),
+            created_at=time.monotonic(),
             description=description,
             owner_id=owner_id,
         )
@@ -96,7 +96,12 @@ class ActionManager:
         self._pending[token] = pending
         return pending
 
-    def consume(self, token: str, user_id: int | None = None) -> PendingAction | None:
+    def consume(
+        self,
+        token: str,
+        user_id: int | None = None,
+        expected: str | None = None,
+    ) -> PendingAction | None:
         """Отдаёт действие по токену и забывает его — но только после проверок.
 
         Раньше токен удалялся сразу: неудачная попытка (просроченная или чужая)
@@ -106,13 +111,17 @@ class ActionManager:
         pending = self._pending.get(token)
         if pending is None:
             return None
-        if time.time() - pending.created_at > self.settings.confirm_ttl:
+        if time.monotonic() - pending.created_at > self.settings.confirm_ttl:
             self._pending.pop(token, None)
             raise ActionError("Время подтверждения истекло, повторите команду")
         # Токен подтверждения подписан на администратора, который его запросил:
         # чужой (в т.ч. пересланный) токен подтвердить нельзя.
         if pending.owner_id and user_id is not None and pending.owner_id != user_id:
             raise ActionError("Подтверждение запросил другой администратор")
+        # Сверяем действие ДО удаления токена: иначе несовпадение уничтожало
+        # законное подтверждение администратора.
+        if expected is not None and pending.action != expected:
+            raise ActionError("Действие не совпадает с подтверждением")
         return self._pending.pop(token, None)
 
     def cancel(self, token: str) -> bool:
@@ -120,7 +129,7 @@ class ActionManager:
         return self._pending.pop(token, None) is not None
 
     def _prune(self) -> None:
-        deadline = time.time() - self.settings.confirm_ttl
+        deadline = time.monotonic() - self.settings.confirm_ttl
         for token in [t for t, p in self._pending.items() if p.created_at < deadline]:
             self._pending.pop(token, None)
 
@@ -128,14 +137,14 @@ class ActionManager:
         last = self._last_run.get(action)
         if last is None:
             return
-        remaining = self.settings.action_cooldown - (time.time() - last)
+        remaining = self.settings.action_cooldown - (time.monotonic() - last)
         if remaining > 0:
             raise ActionError(
                 f"Действие «{action}» выполнено недавно, подождите {remaining:.0f} с"
             )
 
     def _mark_run(self, action: str) -> None:
-        self._last_run[action] = time.time()
+        self._last_run[action] = time.monotonic()
 
     # ------------------------------------------------------------- действия
 
@@ -143,7 +152,9 @@ class ActionManager:
         if unit not in self.settings.services:
             raise ActionError(f"Сервис {unit} не входит в список наблюдаемых")
         return await self._privileged(
-            [ACTION_RESTART_SERVICE, unit], ACTION_RESTART_SERVICE
+            [ACTION_RESTART_SERVICE, unit],
+            ACTION_RESTART_SERVICE,
+            cooldown_key=f"{ACTION_RESTART_SERVICE}:{unit}",
         )
 
     async def restart_xray(self) -> CommandResult:
@@ -161,8 +172,10 @@ class ActionManager:
             except PanelError as exc:
                 raise ActionError(f"Панель отклонила рестарт xray: {exc}") from exc
             finally:
+                # Отмечаем и неудачную попытку: иначе панель можно заливать
+                # запросами без паузы.
+                self._mark_run(ACTION_RESTART_XRAY)
                 await panel.close()
-            self._mark_run(ACTION_RESTART_XRAY)
 
         return CommandResult(
             action=ACTION_RESTART_XRAY,
@@ -276,6 +289,7 @@ class ActionManager:
             [ACTION_COMMAND, command_key(command)],
             ACTION_COMMAND,
             timeout=float(self.settings.command_timeout),
+            cooldown_key=f"{ACTION_COMMAND}:{command}",
         )
 
     # -------------------------------------------------------------- запуск
@@ -286,6 +300,7 @@ class ActionManager:
         action: str,
         *,
         timeout: float = 60.0,
+        cooldown_key: str | None = None,
     ) -> CommandResult:
         # Бот работает под непривилегированным пользователем, поэтому обёртка
         # запускается через sudo -n (без пароля). Правило в sudoers разрешает
@@ -294,10 +309,11 @@ class ActionManager:
         argv = ["sudo", "-n", "--", self.settings.sudo_wrapper, *args]
         # Проверка и отметка внутри блокировки: иначе два одновременных нажатия
         # успевали пройти кулдаун и выполнялись оба.
+        key = cooldown_key or action
         async with self._lock:
-            self._check_cooldown(action)
+            self._check_cooldown(key)
             result = await run_command(argv, timeout=timeout, action=action)
-            self._mark_run(action)
+            self._mark_run(key)
         return result
 
     async def execute(self, pending: PendingAction) -> CommandResult:

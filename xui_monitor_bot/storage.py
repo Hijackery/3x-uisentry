@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS pending_jobs (
     kind TEXT NOT NULL,
     chat_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    message_id INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_created ON pending_jobs(created_at);
@@ -223,14 +224,20 @@ class Storage:
     # --------------------------------------------------------- pending jobs
 
     def add_pending_job(
-        self, action: str, kind: str, chat_id: int, user_id: int
+        self,
+        action: str,
+        kind: str,
+        chat_id: int,
+        user_id: int,
+        message_id: int = 0,
     ) -> int:
         """Запоминает фоновое обновление: после рестарта бот допишет отчёт."""
         with self._lock:
             cur = self.conn.execute(
-                "INSERT INTO pending_jobs (action, kind, chat_id, user_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (action, kind, chat_id, user_id, time.time()),
+                "INSERT INTO pending_jobs "
+                "(action, kind, chat_id, user_id, created_at, message_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (action, kind, chat_id, user_id, time.time(), message_id),
             )
             return int(cur.lastrowid or 0)
 

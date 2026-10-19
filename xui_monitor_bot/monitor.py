@@ -73,11 +73,12 @@ class Monitor:
 
     async def snapshot(self) -> MonitorSnapshot:
         warnings: list[str] = []
+        unavailable: set[str] = set()
 
-        metrics = await self._collect_metrics(warnings)
-        services = await self._collect_services(warnings)
-        health = await self._collect_panel_health(warnings)
-        inbounds, subs = await self._collect_subscriptions(warnings)
+        metrics = await self._collect_metrics(warnings, unavailable)
+        services = await self._collect_services(warnings, unavailable)
+        health = await self._collect_panel_health(warnings, unavailable)
+        inbounds, subs = await self._collect_subscriptions(warnings, unavailable)
 
         if subs or inbounds:
             warnings.extend(
@@ -95,9 +96,12 @@ class Monitor:
             inbounds=inbounds,
             subscriptions=subs,
             warnings=warnings,
+            unavailable=frozenset(unavailable),
         )
 
-    async def _collect_metrics(self, warnings: list[str]) -> SystemMetrics | None:
+    async def _collect_metrics(
+        self, warnings: list[str], unavailable: set[str]
+    ) -> SystemMetrics | None:
         try:
             result = await asyncio.to_thread(self.system.collect)
             _clear_collector_error("metrics")
@@ -105,9 +109,12 @@ class Monitor:
         except Exception as exc:  # сбор не должен ронять весь отчёт
             _log_collector_error("metrics", "Не удалось снять системные метрики", exc)
             warnings.append(f"метрики системы недоступны: {exc}{_proc_hint(exc)}")
+            unavailable.add("metrics")
             return None
 
-    async def _collect_services(self, warnings: list[str]) -> list[ServiceStatus]:
+    async def _collect_services(
+        self, warnings: list[str], unavailable: set[str]
+    ) -> list[ServiceStatus]:
         try:
             return await self.services.collect()
         except Exception as exc:
@@ -115,22 +122,32 @@ class Monitor:
                 "services", "Не удалось прочитать состояние сервисов", exc
             )
             warnings.append(f"состояние сервисов недоступно: {exc}")
+            unavailable.add("services")
             return []
 
-    async def _collect_panel_health(self, warnings: list[str]) -> PanelHealth:
+    async def _collect_panel_health(
+        self, warnings: list[str], unavailable: set[str]
+    ) -> PanelHealth:
         try:
             return await self.panel.health()
         except Exception as exc:
             _log_collector_error("panel", "Проверка панели упала", exc)
             warnings.append(f"проверка панели упала: {exc}")
+            unavailable.add("panel")
             return PanelHealth(
                 reachable=False, status_code=None, latency_ms=None, error=str(exc)
             )
 
     async def _collect_subscriptions(
-        self, warnings: list[str]
+        self, warnings: list[str], unavailable: set[str]
     ) -> tuple[list[InboundSummary], list[Subscription]]:
-        inbounds, subs = await self.subscriptions.collect()
+        try:
+            inbounds, subs = await self.subscriptions.collect()
+        except Exception as exc:  # сборщик не должен ронять весь срез
+            _log_collector_error("subs", "Не удалось собрать подписки", exc)
+            warnings.append(f"подписки не собраны: {exc}")
+            unavailable.add("subs")
+            return [], []
         if self.subscriptions.forbidden:
             warnings.append(
                 "список inbound'ов недоступен: у токена нет области node-sync/admin "

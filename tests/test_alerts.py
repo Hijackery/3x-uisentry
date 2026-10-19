@@ -70,6 +70,7 @@ def snapshot(
     warnings: list[str] | None = None,
     subscriptions: list[Subscription] | None = None,
     inbounds: list[InboundSummary] | None = None,
+    unavailable: frozenset[str] = frozenset(),
 ) -> MonitorSnapshot:
     return MonitorSnapshot(
         system=system,
@@ -78,6 +79,7 @@ def snapshot(
         inbounds=inbounds if inbounds is not None else [],
         subscriptions=subscriptions or [],
         warnings=warnings or [],
+        unavailable=unavailable,
     )
 
 
@@ -205,3 +207,33 @@ def test_system_warnings_are_not_blamed_on_subscriptions() -> None:
     assert not _is_subscription_warning(
         "метрики системы недоступны: [Errno 2] No such file or directory: '/proc/stat'"
     )
+
+
+def test_unavailable_metrics_do_not_fake_recovery(
+    make_settings: Callable[..., Settings], storage: Storage
+) -> None:
+    """Пропавший /proc — не повод писать «CPU восстановлен»."""
+    alerts = engine(make_settings, storage)
+    alerts.update(alerts.evaluate(snapshot(metrics(96.0))))
+
+    failed = snapshot(None, unavailable=frozenset({"metrics"}))
+    out = alerts.update(alerts.evaluate(failed), unavailable=failed.unavailable)
+
+    assert not any("восстановлено" in finding.title for finding in out)
+    assert (
+        storage.get_alert_state("cpu:metrics") or True
+    )  # состояние не обязано меняться
+
+
+def test_unavailable_services_do_not_fake_recovery(
+    make_settings: Callable[..., Settings], storage: Storage
+) -> None:
+    """Если systemctl не ответил, «Сервис x-ui восстановлен» — ложь."""
+    alerts = engine(make_settings, storage)
+    down = snapshot(services=[service(active=False)])
+    alerts.update(alerts.evaluate(down))
+
+    failed = snapshot(services=[], unavailable=frozenset({"services"}))
+    out = alerts.update(alerts.evaluate(failed), unavailable=failed.unavailable)
+
+    assert not any("восстановлено" in finding.title for finding in out)

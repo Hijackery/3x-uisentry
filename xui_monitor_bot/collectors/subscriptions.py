@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from ..models import InboundSummary, Subscription
@@ -33,7 +34,7 @@ class SubscriptionCollector:
             return [], []
 
         summaries: list[InboundSummary] = []
-        subscriptions: list[Subscription] = []
+        merged: dict[str, Subscription] = {}
 
         # Панель может вернуть что угодно: типы проверяем на месте, чтобы один
         # битый inbound не утащил за собой весь отчёт.
@@ -69,11 +70,16 @@ class SubscriptionCollector:
             )
             for client in clients:
                 email = str(client.get("email", ""))
-                subscriptions.append(
-                    _to_subscription(summary, client, stats_used.get(email))
-                )
+                sub = _to_subscription(summary, client, stats_used.get(email))
+                # Один клиент может быть привязан к нескольким inbound'ам:
+                # суммируем трафик и не показываем его дважды.
+                key = sub.sub_id or sub.email or f"{summary['remark']}:{len(merged)}"
+                if key in merged:
+                    merged[key] = _merge_subscriptions(merged[key], sub)
+                else:
+                    merged[key] = sub
 
-        return summaries, subscriptions
+        return summaries, list(merged.values())
 
     @staticmethod
     def problems(
@@ -110,6 +116,25 @@ class SubscriptionCollector:
         if not any(item.enabled for item in inbounds):
             issues.append("нет включённых inbound'ов")
         return issues
+
+
+def _merge_subscriptions(left: Subscription, right: Subscription) -> Subscription:
+    remarks = {
+        item.strip()
+        for item in (left.inbound_remark, right.inbound_remark)
+        if item.strip()
+    }
+    expiries = [
+        value for value in (left.expiry_time_ms, right.expiry_time_ms) if value > 0
+    ]
+    return replace(
+        left,
+        inbound_remark=", ".join(sorted(remarks)),
+        enabled=left.enabled or right.enabled,
+        expiry_time_ms=min(expiries) if expiries else 0,
+        total_bytes=max(left.total_bytes, right.total_bytes),
+        used_bytes=left.used_bytes + right.used_bytes,
+    )
 
 
 def _to_subscription(
