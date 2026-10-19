@@ -72,6 +72,8 @@ REBOOT_WATCH_ATTEMPTS = 20
 REBOOT_WATCH_STEP = 30
 #: Не чаще раза в 5 секунд на администратора: журнал читается через sudo.
 HEAVY_COOLDOWN = 5.0
+#: Пауза для «Обновить»: кнопка заставляет панель и systemctl работать.
+REFRESH_COOLDOWN = 2.0
 #: «Знаю, до утра»: глушим алерт на 8 часов.
 MUTE_HOURS = 8
 REBOOT_WATCH_GRACE = 1200
@@ -111,7 +113,8 @@ class MonitorBot:
         self._snapshot: MonitorSnapshot | None = None
         self._snapshot_at: float = 0.0
         #: Последнее обращение к «тяжёлым» командам (журнал через sudo).
-        self._heavy_seen: dict[int, float] = {}
+        #: Троттлинг по «ведрам»: {"journal": {user_id: время}, "refresh": {...}}
+        self._throttle_seen: dict[str, dict[int, float]] = {}
         self.app: BotApplication = self._build()
 
     # ------------------------------------------------------------ сборка
@@ -474,15 +477,19 @@ class MonitorBot:
             return 0.0
         return max(0.0, time.monotonic() - self._snapshot_at)
 
-    def _heavy_wait(self, user_id: int) -> float:
-        """Сколько секунд осталось до следующего тяжёлого запроса (0 — можно)."""
+    def _throttle(self, bucket: str, key: int, seconds: float) -> float:
+        """Пауза для (ведро, ключ): 0 — можно выполнять, иначе остаток."""
         now = time.monotonic()
-        last = self._heavy_seen.get(user_id, 0.0)
-        remaining = HEAVY_COOLDOWN - (now - last)
+        seen = self._throttle_seen.setdefault(bucket, {})
+        remaining = seconds - (now - seen.get(key, 0.0))
         if remaining > 0:
             return remaining
-        self._heavy_seen[user_id] = now
+        seen[key] = now
         return 0.0
+
+    def _heavy_wait(self, user_id: int) -> float:
+        """Сколько секунд осталось до следующего тяжёлого запроса (0 — можно)."""
+        return self._throttle("journal", user_id, HEAVY_COOLDOWN)
 
     # ---------------------------------------------------------- callbacks
 
@@ -555,6 +562,13 @@ class MonitorBot:
             return
 
         if data == "home" or data == "refresh":
+            # «Обновить» — единственный путь, который каждый раз дёргает панель
+            # и systemctl, поэтому держим паузу: спам кнопкой не должен
+            # превращаться в нагрузку на сервер.
+            wait = self._throttle("refresh", user_id, REFRESH_COOLDOWN)
+            if wait > 0:
+                await query.answer(f"⏳ Обновление через {wait:.0f} с")
+                return
             self.invalidate()
             await self._edit(
                 query,
@@ -625,6 +639,12 @@ class MonitorBot:
                     "Журнал действий", f"Журнал действий{title}"
                 ),
                 markup=ui.audit_menu(),
+            )
+        elif data == "help":
+            await self._edit(
+                query,
+                ui.render_help(self.is_admin(user_id)),
+                markup=ui.main_menu(self.is_admin(user_id)),
             )
         elif data == "maintenance":
             await self._edit(

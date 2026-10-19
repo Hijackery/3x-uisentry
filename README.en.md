@@ -174,7 +174,7 @@ sudo bash install.sh --menu
 | `/logs` | log of the selected service |
 | `/audit` | bot action log |
 | `/maint` | maintenance: apt (full and phased), release upgrade, arbitrary command, reboot |
-| `/help` | command list |
+| `/help` | manual: how to use the bot, what each metric means (“❓ Help” button) |
 
 The buttons under messages duplicate the commands: every screen has “🏠 В меню”
 (“Back to menu”), so you can never get stuck. Guests are not shown any buttons.
@@ -264,6 +264,23 @@ Process environment variables take precedence over the `.env` file.
   secrets.
 - For a self-signed panel certificate there is `PANEL_CA_BUNDLE`: instead of
   disabling TLS verification you can supply your own CA and keep pinning.
+
+### Spam and accidental-damage protection
+
+- Every server-changing action requires a button confirmation; the confirmation
+  token is single-use and bound to the administrator who requested it.
+- Cooldowns: `ACTION_COOLDOWN` (30 s by default) for actions, 5 s for reading the
+  log, 2 s for “Refresh” — the buttons cannot be used to load the panel.
+- `apt` runs as a separate transient unit, and a second run is impossible while
+  the first is going; the command itself is fixed.
+- The bot **cannot** run arbitrary commands (`run_command` is six literals from
+  the allowlist), delete files, edit system configs, or write to `/usr`, `/boot`,
+  `/etc`. Privileges are limited by a narrow sudoers rule for
+  `/usr/local/bin/xui-ctl`.
+- Service resources are capped (`MemoryMax=256M`, `TasksMax=64`), command output
+  is truncated (16 KB) and timed out, and the database is pruned on a schedule.
+- Telegram load is capped: on flood control at most 3 attempts and no longer than
+  30 s, long messages are split by lines.
 
 ## Troubleshooting
 

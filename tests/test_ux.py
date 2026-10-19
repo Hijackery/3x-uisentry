@@ -151,6 +151,7 @@ async def _press(
         "maintenance",
         "command_prompt",
         "details",
+        "help",
         "audit:denied",
         "audit:all",
         "mute:SAMPLE",
@@ -346,3 +347,17 @@ class _Context:
     def __init__(self) -> None:
         self.job_queue = None
         self.user_data: dict[str, object] | None = None
+
+
+def test_help_manual_explains_metrics() -> None:
+    """Инструкция внутри бота должна объяснять метрики, а не только команды."""
+    text = ui.render_help(True)
+
+    for marker in ("CPU", "RAM", "Диск", "Swap", "Load", "Inbound", "Подписки"):
+        assert marker in text, marker
+    assert "/status" in text and "xui-menu" in text
+
+
+def test_help_button_is_in_main_menu() -> None:
+    data = [b.callback_data for row in ui.main_menu(True).inline_keyboard for b in row]
+    assert "help" in data
