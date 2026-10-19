@@ -326,6 +326,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 The same checks (plus shellcheck and `visudo -cf`) run in GitHub Actions on every
 push — see `.github/workflows/ci.yml`.
 
+There are no tests on `main` — they live in the `tests-archive` branch.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

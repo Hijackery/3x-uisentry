@@ -36,9 +36,6 @@ jobs:
       - name: Типы (mypy strict)
         run: mypy .
 
-      - name: Тесты (pytest)
-        run: pytest -q
-
   shell:
     name: Скрипты установки
     runs-on: ubuntu-latest

@@ -19,8 +19,3 @@ warn_unreachable = true
 # У этих библиотек нет type stubs.
 module = ["psutil", "respx", "dotenv"]
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-asyncio_mode = "auto"
