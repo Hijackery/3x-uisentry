@@ -310,7 +310,8 @@ def test_installer_explains_where_to_get_panel_token() -> None:
     """Пользователь не должен гадать, где взять токен панели."""
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "Настройки → API Tokens" in text
-    assert "выпущу его сам через x-ui" in text
+    assert "x-ui setting -getApiToken" in text
+    assert "в v3 эта команда больше не создаёт токены" in text
     assert "node-sync" in text
 
 
@@ -447,7 +448,8 @@ def test_installer_mentions_v3_token_location() -> None:
     """В 3X-UI v3 токен лежит в «Учётной записи», а не в «API Tokens»."""
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "Учётная запись" in text
-    assert "скопируйте сразу" in text
+    assert "копируйте сразу" in text
+    assert "apiTokens/create" in text
     assert "node-sync" in text
 
 
