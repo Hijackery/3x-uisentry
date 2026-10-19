@@ -173,6 +173,7 @@ MENU_PATH="${MENU_PATH:-/usr/local/bin/xui-menu}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
+INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
 UNINSTALL=0
@@ -201,6 +202,7 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   --yes            без вопросов: берём значения из окружения или готового .env
   --force-config   перезаписать существующий .env значениями по умолчанию
   --no-start       установить, но не запускать сервис
+  --init TYPE      менеджер служб: systemd, openrc или sysv (по умолчанию — авто)
   --help           эта справка
 
 Переменные окружения (для --yes и unattended-установки):
@@ -225,6 +227,7 @@ while [ $# -gt 0 ]; do
         --yes|-y)       ASSUME_YES=1; shift ;;
         --force-config) KEEP_CONFIG=0; shift ;;
         --no-start)     START_SERVICE=0; shift ;;
+        --init)         INIT="${2:?--init требует systemd|openrc|sysv}"; shift 2 ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -267,6 +270,23 @@ uninstall() {
     fi
     rm -f "$UNIT_PATH" \
         "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
+
+    # Служба могла быть поставлена init-скриптом (OpenRC/SysV) — убираем и её.
+    INIT_SCRIPT="/etc/init.d/${SERVICE_NAME}"
+    if [ -f "$INIT_SCRIPT" ]; then
+        "$INIT_SCRIPT" stop >/dev/null 2>&1 || true
+        rm -f "$INIT_SCRIPT"
+        if command -v rc-update >/dev/null 2>&1; then
+            rc-update del "$SERVICE_NAME" default >/dev/null 2>&1 || true
+        fi
+        if command -v update-rc.d >/dev/null 2>&1; then
+            update-rc.d -f "$SERVICE_NAME" remove >/dev/null 2>&1 || true
+        fi
+        if command -v chkconfig >/dev/null 2>&1; then
+            chkconfig --del "$SERVICE_NAME" >/dev/null 2>&1 || true
+        fi
+        ok "Init-скрипт удалён"
+    fi
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
         systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
@@ -346,17 +366,41 @@ fi
 
 [ "$(id -u)" -eq 0 ] || fail "Запускать от root: sudo bash install.sh"
 
-# --- systemd: бот управляет сервисами через systemctl и стартует юнитом ---
-command -v systemctl >/dev/null 2>&1 \
-    || fail "Нужен systemd: systemctl не найден.
-  Бот управляет сервисами через systemd. На хостах с OpenRC/SysV/BSD-стилем
-  установка невозможна — используйте дистрибутив с systemd."
-SYSTEMD_ACTIVE=1
-if [ ! -d /run/systemd/system ]; then
-    SYSTEMD_ACTIVE=0
-    warn "Хост загружен не через systemd (нет /run/systemd/system)."
-    warn "Установка продолжится, но автозапуск и управление сервисами будут недоступны."
+# --- менеджер служб: systemd, OpenRC или SysV ---
+# Бот работает и там, где systemd нет: Alpine/Gentoo (OpenRC) и старые SysVinit.
+# Права и ограничения задаёт sudoers-обёртка, а не менеджер служб, поэтому
+# функциональность сохраняется; теряется только systemd-изоляция юнита.
+if [ -z "$INIT" ]; then
+    if [ -d /run/systemd/system ]; then
+        INIT=systemd
+    elif command -v rc-service >/dev/null 2>&1; then
+        INIT=openrc
+    elif command -v service >/dev/null 2>&1; then
+        INIT=sysv
+    else
+        fail "Не найден менеджер служб: ни systemd, ни OpenRC, ни SysVinit."
+    fi
 fi
+case "$INIT" in
+    systemd)
+        command -v systemctl >/dev/null 2>&1 || fail "INIT=systemd, но systemctl не найден"
+        ok "Менеджер служб: systemd"
+        ;;
+    openrc)
+        command -v rc-service >/dev/null 2>&1 || fail "INIT=openrc, но rc-service не найден"
+        ok "Менеджер служб: OpenRC (Alpine/Gentoo)"
+        ;;
+    sysv)
+        command -v service >/dev/null 2>&1 || fail "INIT=sysv, но service не найден"
+        ok "Менеджер служб: SysVinit"
+        ;;
+    *)
+        fail "INIT=$INIT не поддерживается (systemd, openrc, sysv)"
+        ;;
+esac
+SYSTEMD_ACTIVE=0
+[ "$INIT" = systemd ] && SYSTEMD_ACTIVE=1
+INIT_SCRIPT="/etc/init.d/${SERVICE_NAME}"
 
 command -v sudo >/dev/null 2>&1 \
     || fail "Нужен sudo: через него бот выполняет привилегированные операции."
@@ -876,56 +920,96 @@ ok "Обёртка $WRAPPER_PATH установлена"
 
 # --------------------------------------------------------------- сервис
 
-step "Готовим systemd-юнит"
+if [ "$INIT" = systemd ]; then
+    step "Готовим systemd-юнит"
 
-UNIT_FILE="$UNIT_PATH"
-sed -e "s#^User=.*#User=${SERVICE_USER}#" \
-    -e "s#^Group=.*#Group=${SERVICE_USER}#" \
-    -e "s#/opt/xui-monitor-bot#${PREFIX}#g" \
-    -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
-    "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
-chmod 644 "$UNIT_FILE"
-systemctl daemon-reload
-systemctl preset "$SERVICE_NAME" >/dev/null 2>&1 || true
-if systemctl enable "$SERVICE_NAME" >/dev/null 2>&1; then
-    ok "Автозапуск включён: бот поднимется сам после перезагрузки"
-elif [ "$SYSTEMD_ACTIVE" -eq 1 ]; then
-    fail "Не удалось включить автозапуск (systemctl enable $SERVICE_NAME)"
+    UNIT_FILE="$UNIT_PATH"
+    sed -e "s#^User=.*#User=${SERVICE_USER}#" \
+        -e "s#^Group=.*#Group=${SERVICE_USER}#" \
+        -e "s#/opt/xui-monitor-bot#${PREFIX}#g" \
+        -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
+        "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
+    chmod 644 "$UNIT_FILE"
+    systemctl daemon-reload
+    systemctl preset "$SERVICE_NAME" >/dev/null 2>&1 || true
+    if systemctl enable "$SERVICE_NAME" >/dev/null 2>&1; then
+        ok "Автозапуск включён: бот поднимется сам после перезагрузки"
+    elif [ "$SYSTEMD_ACTIVE" -eq 1 ]; then
+        fail "Не удалось включить автозапуск (systemctl enable $SERVICE_NAME)"
+    else
+        warn "Автозапуск не включён: хост загружен не через systemd"
+    fi
+
+    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+        ok "Автозапуск: enabled"
+    elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
+        warn "Автозапуск не проверить: хост загружен не через systemd"
+    else
+        warn "Автозапуск не подтверждён: systemctl is-enabled $SERVICE_NAME"
+    fi
+
+    if command -v systemd-analyze >/dev/null 2>&1; then
+        systemd-analyze verify "$UNIT_FILE" >/dev/null 2>&1 \
+            || warn "systemd-analyze нашёл замечания к юниту (посмотрите: systemd-analyze verify $UNIT_FILE)"
+    fi
 else
-    warn "Автозапуск не включён: хост загружен не через systemd"
-fi
+    step "Ставим init-скрипт ($INIT)"
 
-if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-    ok "Автозапуск: enabled"
-elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
-    check_note "Автозапуск не проверить: хост загружен не через systemd"
-else
-    warn "Автозапуск не подтверждён: systemctl is-enabled $SERVICE_NAME"
-fi
+    sed -e "s#@SERVICE_USER@#${SERVICE_USER}#g" \
+        -e "s#@STATE_DIR@#${STATE_DIR}#g" \
+        -e "s#^PREFIX=.*#PREFIX=${PREFIX}#" \
+        "$PREFIX/install/${SERVICE_NAME}.init" > "$INIT_SCRIPT" \
+        || fail "Не удалось записать $INIT_SCRIPT"
+    chmod 0755 "$INIT_SCRIPT"
 
-if command -v systemd-analyze >/dev/null 2>&1; then
-    systemd-analyze verify "$UNIT_FILE" >/dev/null 2>&1 \
-        || warn "systemd-analyze нашёл замечания к юниту (посмотрите: systemd-analyze verify $UNIT_FILE)"
+    case "$INIT" in
+        openrc)
+            rc-update add "$SERVICE_NAME" default >/dev/null 2>&1 \
+                || warn "rc-update не сработал — добавьте автозапуск вручную"
+            ;;
+        sysv)
+            if command -v update-rc.d >/dev/null 2>&1; then
+                update-rc.d "$SERVICE_NAME" defaults >/dev/null 2>&1 \
+                    || warn "update-rc.d не сработал — добавьте автозапуск вручную"
+            elif command -v chkconfig >/dev/null 2>&1; then
+                chkconfig --add "$SERVICE_NAME" >/dev/null 2>&1 \
+                    || warn "chkconfig не сработал — добавьте автозапуск вручную"
+            else
+                warn "нет update-rc.d/chkconfig — автозапуск настройте вручную"
+            fi
+            ;;
+    esac
+    ok "Служба зарегистрирована: $INIT_SCRIPT"
 fi
 
 if [ "$START_SERVICE" -eq 1 ]; then
     step "Запускаем бота"
 
-    if systemctl restart "$SERVICE_NAME"; then
-        sleep 4
-        systemctl is-active --quiet "$SERVICE_NAME" \
-            || {
-                warn "Сервис не активен, последние строки журнала:"
-                journalctl -u "$SERVICE_NAME" -n 15 --no-pager | sed 's/^/        /'
-                fail "Бот не стартовал. Подробности: journalctl -u $SERVICE_NAME -f"
-            }
-        ok "Сервис запущен"
+    if [ "$INIT" = systemd ]; then
+        if systemctl restart "$SERVICE_NAME"; then
+            sleep 4
+            systemctl is-active --quiet "$SERVICE_NAME" \
+                || {
+                    warn "Сервис не активен, последние строки журнала:"
+                    journalctl -u "$SERVICE_NAME" -n 15 --no-pager | sed 's/^/        /'
+                    fail "Бот не стартовал. Подробности: journalctl -u $SERVICE_NAME -f"
+                }
+            ok "Сервис запущен"
+        else
+            fail "systemctl restart не отработал: journalctl -u $SERVICE_NAME -n 30 --no-pager"
+        fi
+    elif "$INIT_SCRIPT" start; then
+        ok "Служба запущена"
     else
-        fail "systemctl restart не отработал: journalctl -u $SERVICE_NAME -n 30 --no-pager"
+        fail "Не удалось запустить: $INIT_SCRIPT start (лог: $STATE_DIR/bot.log)"
     fi
 else
     step "Запуск пропущен"
-    info "Запустить позже: systemctl enable --now $SERVICE_NAME"
+    if [ "$INIT" = systemd ]; then
+        info "Запустить позже: systemctl enable --now $SERVICE_NAME"
+    else
+        info "Запустить позже: $INIT_SCRIPT start"
+    fi
 fi
 
 # ------------------------------------------------------------ самопроверка
@@ -1016,23 +1100,38 @@ case "$SUDO_RESULT" in
     *)        check_fail "sudo-обёртка не отвечает: $SUDO_RESULT" ;;
 esac
 
-if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-    check_ok "Автозапуск: systemctl is-enabled $SERVICE_NAME = enabled"
-elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
-    check_note "Автозапуск не проверен: хост загружен не через systemd"
+if [ "$INIT" = systemd ]; then
+    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+        check_ok "Автозапуск: systemctl is-enabled $SERVICE_NAME = enabled"
+    elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
+        check_note "Автозапуск не проверен: хост загружен не через systemd"
+    else
+        check_fail "Автозапуск выключен: systemctl enable $SERVICE_NAME"
+    fi
+elif ls /etc/runlevels/*/"$SERVICE_NAME" /etc/rc*.d/*"$SERVICE_NAME" >/dev/null 2>&1; then
+    check_ok "Автозапуск: init-скрипт зарегистрирован ($INIT)"
 else
-    check_fail "Автозапуск выключен: systemctl enable $SERVICE_NAME"
+    check_note "Автозапуск не подтверждён: добавьте $SERVICE_NAME в ($INIT) вручную"
 fi
 
-if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+if [ "$INIT" = systemd ]; then
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        check_ok "Сервис активен"
+    elif [ "$START_SERVICE" -eq 0 ]; then
+        check_ok "Сервис не запущен — так и просили (--no-start), автозапуск включён"
+        info "Запустить вручную: systemctl start $SERVICE_NAME"
+    elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
+        check_note "Состояние сервиса не проверено: хост загружен не через systemd"
+    else
+        check_fail "Сервис не активен: systemctl status $SERVICE_NAME"
+    fi
+elif "$INIT_SCRIPT" status >/dev/null 2>&1; then
     check_ok "Сервис активен"
 elif [ "$START_SERVICE" -eq 0 ]; then
     check_ok "Сервис не запущен — так и просили (--no-start), автозапуск включён"
-    info "Запустить вручную: systemctl start $SERVICE_NAME"
-elif [ "$SYSTEMD_ACTIVE" -eq 0 ]; then
-    check_note "Состояние сервиса не проверено: хост загружен не через systemd"
+    info "Запустить вручную: $INIT_SCRIPT start"
 else
-    check_fail "Сервис не активен: systemctl status $SERVICE_NAME"
+    check_fail "Сервис не активен: $INIT_SCRIPT status"
 fi
 
 LOG_VIEW="journalctl -u ${SERVICE_NAME} -n 50"

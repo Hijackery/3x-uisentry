@@ -1,8 +1,14 @@
-"""Состояние systemd-юнитов через systemctl (только чтение)."""
+"""Состояние systemd-юнитов через systemctl (только чтение).
+
+На системах без systemd (OpenRC, SysVinit) метрик служб нет: бот продолжает
+работать и следить за железом, панелью и подписками, а состояние служб
+показывается как недоступное с понятной причиной.
+"""
 
 from __future__ import annotations
 
 import os
+import shutil
 import time
 
 from ..command import run_command
@@ -34,6 +40,11 @@ class ServiceCollector:
         self._prev_cpu: dict[str, tuple[float, int]] = {}
 
     async def collect(self) -> list[ServiceStatus]:
+        if shutil.which("systemctl") is None:
+            raise RuntimeError(
+                "нет systemd: состояние служб недоступно "
+                "(бот работает, управление службами — через init-скрипт)"
+            )
         return [await self.status(unit) for unit in self.units]
 
     async def status(self, unit: str) -> ServiceStatus:

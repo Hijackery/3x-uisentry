@@ -1,0 +1,106 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          xui-monitor-bot
+# Required-Start:    $network $remote_fs
+# Required-Stop:     $network $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Telegram-бот мониторинга 3X-UI
+# Description:       Следит за сервером и панелью 3X-UI, шлёт алерты в Telegram.
+### END INIT INFO
+#
+# Init-скрипт для систем без systemd (OpenRC/Alpine/Gentoo, SysVinit).
+# Ставится установщиком: /etc/init.d/xui-monitor-bot
+# Установщик подставляет PREFIX, пользователя и каталог состояния.
+#
+# Чего здесь нет по сравнению с systemd-юнитом: ProtectSystem/PrivateTmp и
+# прочей изоляции. Привилегированные операции всё так же ограничены sudoers и
+# обёрткой xui-ctl, а сервис работает непривилегированным пользователем.
+set -eu
+
+NAME=xui-monitor-bot
+PREFIX=/opt/xui-monitor-bot
+SERVICE_USER=@SERVICE_USER@
+STATE_DIR=@STATE_DIR@
+
+PID_FILE="$STATE_DIR/$NAME.pid"
+LOG_FILE="$STATE_DIR/bot.log"
+PYTHON="$PREFIX/.venv/bin/python"
+
+is_running() {
+    [ -f "$PID_FILE" ] || return 1
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    [ -n "$pid" ] || return 1
+    kill -0 "$pid" 2>/dev/null
+}
+
+start() {
+    if is_running; then
+        echo "$NAME уже запущен (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    [ -x "$PYTHON" ] || { echo "нет $PYTHON — бот установлен?" >&2; return 1; }
+    [ -f "$PREFIX/.env" ] || { echo "нет $PREFIX/.env" >&2; return 1; }
+
+    if command -v install >/dev/null 2>&1; then
+        install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR" \
+            2>/dev/null || true
+    fi
+
+    # Открываем лог от имени сервисного пользователя, чтобы он мог писать в него;
+    # $$ в подоболочке = pid будущего процесса (exec заменяет shell, не форкаясь).
+    if command -v setsid >/dev/null 2>&1; then
+        setsid su -s /bin/sh "$SERVICE_USER" -c \
+            "umask 077; cd '$PREFIX' && set -a && . '$PREFIX/.env' && set +a && echo \$\$ > '$PID_FILE' && exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
+    else
+        su -s /bin/sh "$SERVICE_USER" -c \
+            "umask 077; cd '$PREFIX' && set -a && . '$PREFIX/.env' && set +a && echo \$\$ > '$PID_FILE' && exec $PYTHON -m xui_monitor_bot >> '$LOG_FILE' 2>&1" &
+    fi
+
+    sleep 2
+    if is_running; then
+        echo "$NAME запущен (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    echo "$NAME не запустился, смотрите $LOG_FILE" >&2
+    return 1
+}
+
+stop() {
+    if ! is_running; then
+        echo "$NAME не запущен"
+        rm -f "$PID_FILE"
+        return 0
+    fi
+    pid="$(cat "$PID_FILE")"
+    kill "$pid" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 15 ] && kill -0 "$pid" 2>/dev/null; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "$NAME не остановился за 15 с, посылаю SIGKILL" >&2
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE"
+    echo "$NAME остановлен"
+}
+
+status() {
+    if is_running; then
+        echo "$NAME работает (pid $(cat "$PID_FILE"))"
+        return 0
+    fi
+    echo "$NAME не работает"
+    return 3
+}
+
+case "${1:-}" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; start ;;
+    status) status ;;
+    reload | force-reload) start ;;
+    *) echo "Использование: $0 {start|stop|restart|status}" >&2; exit 2 ;;
+esac

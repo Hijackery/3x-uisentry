@@ -41,6 +41,70 @@ safe_int() {
     printf '%s' "$value"
 }
 
+#: Менеджер служб выбирается по факту наличия: одна и та же обёртка работает в
+#: systemd-, OpenRC- (Alpine/Gentoo) и SysV-системах.
+#: Результат определённия менеджера служб (заполняет svc_backend).
+SVC_KIND=""
+
+svc_backend() {
+    # SVC_BACKEND позволяет зафиксировать менеджер служб вручную: нужен для
+    # тестов и для систем, где автодетект ошибается.
+    if [ -n "${SVC_BACKEND:-}" ]; then
+        case "$SVC_BACKEND" in
+            systemd | openrc | sysv) SVC_KIND="$SVC_BACKEND"; return 0 ;;
+            *) die "SVC_BACKEND=$SVC_BACKEND не поддерживается" ;;
+        esac
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        SVC_KIND=systemd
+    elif command -v rc-service >/dev/null 2>&1; then
+        SVC_KIND=openrc
+    elif command -v service >/dev/null 2>&1; then
+        SVC_KIND=sysv
+    else
+        die "не найден менеджер служб (systemctl, rc-service или service)"
+    fi
+}
+
+svc_restart() {
+    svc_backend
+    case "$SVC_KIND" in
+        systemd) systemctl restart "$1" ;;
+        openrc)  rc-service "$1" restart ;;
+        sysv)    service "$1" restart ;;
+    esac
+}
+
+svc_active() {
+    svc_backend
+    case "$SVC_KIND" in
+        systemd) systemctl is-active --quiet "$1" ;;
+        openrc)  rc-service "$1" status >/dev/null 2>&1 ;;
+        sysv)    service "$1" status >/dev/null 2>&1 ;;
+    esac
+}
+
+#: Логи: journalctl, если он есть, иначе — файл лога бота (его пишет сам бот).
+#: Нужно для систем без systemd, где журнала нет вовсе.
+svc_log() {
+    local unit="$1" lines="$2" errors="${3:-0}"
+    if command -v journalctl >/dev/null 2>&1; then
+        if [ "$errors" = "1" ]; then
+            journalctl -u "$unit" -n "$lines" --no-pager -o short-iso -p err
+        else
+            journalctl -u "$unit" -n "$lines" --no-pager -o short-iso
+        fi
+        return 0
+    fi
+    local file="${LOG_PATH:-/var/lib/xui-monitor/bot.log}"
+    [ -f "$file" ] || die "нет journalctl и файла лога $file"
+    if [ "$errors" = "1" ]; then
+        grep -iE "error|critical|failed|traceback" "$file" | tail -n "$lines" || true
+    else
+        tail -n "$lines" "$file"
+    fi
+}
+
 cmd="${1:-}"
 [ -n "$cmd" ] || die "не указана подкоманда"
 
@@ -49,13 +113,13 @@ case "$cmd" in
         require_no_extra_args 1 "$@"
         unit="$(safe_unit "$2")"
         log "restart $unit"
-        if ! systemctl restart "$unit"; then
+        if ! svc_restart "$unit"; then
             echo "Не удалось перезапустить $unit. Последние строки журнала:" >&2
-            journalctl -u "$unit" -n 10 --no-pager >&2 || true
+            svc_log "$unit" 10 >&2 || true
             exit 1
         fi
-        if ! systemctl is-active --quiet "$unit"; then
-            echo "Юнит $unit перезапущен, но не активен — проверьте: journalctl -u $unit" >&2
+        if ! svc_active "$unit"; then
+            echo "Служба $unit запущена, но не активна — проверьте: $0 journal $unit 20" >&2
             exit 1
         fi
         echo "Сервис $unit перезапущен"
@@ -65,7 +129,7 @@ case "$cmd" in
         # Безопасная проверка для самопроверки установки: ничего не меняет.
         require_no_extra_args 1 "$@"
         unit="$(safe_unit "$2")"
-        if systemctl is-active --quiet "$unit"; then
+        if svc_active "$unit"; then
             echo "active"
         else
             echo "inactive"
@@ -81,9 +145,7 @@ case "$cmd" in
         if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
             die "lines вне 1..500"
         fi
-        if ! journalctl -u "$unit" -n "$lines" --no-pager -o short-iso -p err; then
-            die "не удалось прочитать журнал $unit"
-        fi
+        svc_log "$unit" "$lines" 1 || die "не удалось прочитать журнал $unit"
         ;;
 
     journal)
@@ -93,9 +155,7 @@ case "$cmd" in
         if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
             die "lines вне 1..500"
         fi
-        if ! journalctl -u "$unit" -n "$lines" --no-pager -o short-iso; then
-            die "не удалось прочитать журнал $unit"
-        fi
+        svc_log "$unit" "$lines" 0 || die "не удалось прочитать журнал $unit"
         ;;
 
     apt_upgrade)
@@ -107,24 +167,32 @@ case "$cmd" in
         unit="xui-monitor-apt-upgrade"
         log "apt full-upgrade requested"
 
-        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "$unit" 2>/dev/null; then
             echo "Обновление уже выполняется, следите: journalctl -u $unit"
             exit 3
         fi
 
-        if ! command -v systemd-run >/dev/null 2>&1; then
-            die "systemd-run недоступен, обновление нельзя запустить безопасно"
+        if command -v systemd-run >/dev/null 2>&1; then
+            systemd-run --quiet --unit="$unit" --collect \
+                --description="apt full-upgrade по команде бота" \
+                --property=Type=exec \
+                --property=TimeoutStartSec=3600 \
+                "$0" _apt_worker ||
+                die "не удалось поставить обновление в очередь"
+            echo "Обновление поставлено в очередь systemd."
+            echo "Следить за ходом: journalctl -u $unit -f"
+        else
+            # Системы без systemd: запускаем отдельной сессией, чтобы apt не
+            # зависел от сервиса бота. SUDO_USER снимаем — воркер принимает
+            # только прямой root-вызов.
+            apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
+            apt_log="$apt_dir/apt-upgrade.log"
+            mkdir -p "$apt_dir" 2>/dev/null || true
+            env -u SUDO_USER setsid nohup "$0" _apt_worker >>"$apt_log" 2>&1 &
+            echo "Обновление запущено в фоне (без systemd)."
+            echo "Лог: $apt_log"
         fi
-
-        systemd-run --quiet --unit="$unit" --collect \
-            --description="apt full-upgrade по команде бота" \
-            --property=Type=exec \
-            --property=TimeoutStartSec=3600 \
-            "$0" _apt_worker ||
-            die "не удалось поставить обновление в очередь"
-
-        echo "Обновление поставлено в очередь systemd."
-        echo "Следить за ходом: journalctl -u $unit -f"
         ;;
 
     _apt_worker)
@@ -157,19 +225,23 @@ case "$cmd" in
             exit 3
         fi
 
-        if ! command -v systemd-run >/dev/null 2>&1; then
-            die "systemd-run недоступен, обновление нельзя запустить безопасно"
+        if command -v systemd-run >/dev/null 2>&1; then
+            systemd-run --quiet --unit="$unit" --collect \
+                --description="apt upgrade с phased-обновлениями по команде бота" \
+                --property=Type=exec \
+                --property=TimeoutStartSec=3600 \
+                "$0" _apt_worker_phased ||
+                die "не удалось поставить обновление в очередь"
+            echo "Обновление поставлено в очередь systemd."
+            echo "Следить за ходом: journalctl -u $unit -f"
+        else
+            apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
+            apt_log="$apt_dir/apt-phased.log"
+            mkdir -p "$apt_dir" 2>/dev/null || true
+            env -u SUDO_USER setsid nohup "$0" _apt_worker_phased >>"$apt_log" 2>&1 &
+            echo "Обновление (phased) запущено в фоне (без systemd)."
+            echo "Лог: $apt_log"
         fi
-
-        systemd-run --quiet --unit="$unit" --collect \
-            --description="apt upgrade с phased-обновлениями по команде бота" \
-            --property=Type=exec \
-            --property=TimeoutStartSec=3600 \
-            "$0" _apt_worker_phased ||
-            die "не удалось поставить обновление в очередь"
-
-        echo "Обновление поставлено в очередь systemd."
-        echo "Следить за ходом: journalctl -u $unit -f"
         ;;
 
     _apt_worker_phased)

@@ -9,7 +9,11 @@ Telegram-бот для сервера с панелью 3X-UI: следит за
 
 ## Что нужно
 
-- Linux с systemd (Debian/Ubuntu, RHEL/CentOS/Rocky/Alma, Fedora, openSUSE, Arch).
+- Linux; менеджер служб определяется автоматически: **systemd**
+  (Debian/Ubuntu, RHEL/CentOS/Rocky/Alma, Fedora, openSUSE, Arch/Manjaro) или
+  **без systemd** — OpenRC (Alpine, Gentoo) и SysVinit. Пакетный менеджер тоже
+  определяется сам (`apt`/`dnf`/`yum`/`zypper`/`pacman`). Выбрать вручную:
+  `--init systemd|openrc|sysv`.
 - Python 3.10+ — установщик подберёт подходящий интерпретатор сам.
 - Панель 3X-UI и её API-токен.
 - Бот в Telegram (токен от [@BotFather](https://t.me/BotFather)) и ваш numeric ID
@@ -115,6 +119,15 @@ sudo xui-menu logs 100
 - секреты никогда не печатаются целиком, и `.env` не нужно никому пересылать —
   в нём лежат оба токена;
 - пути можно переопределить: `sudo PREFIX=/opt/бот ENV_FILE=/opt/бот/.env xui-menu`.
+
+### Если в системе нет systemd
+
+Установщик поставит `/etc/init.d/xui-monitor-bot` (`start`/`stop`/`status`/
+`restart`) и зарегистрирует автозапуск через `rc-update` (OpenRC) либо
+`update-rc.d`/`chkconfig` (SysVinit). Управление, `.env`, sudoers-обёртка и
+`xui-menu` работают так же; журнал берётся из файла `bot.log`, если `journalctl`
+недоступен. Отличия: нет systemd-изоляции юнита, а `/services` показывает, что
+состояние служб недоступно (бот напишет об этом в «Требует внимания»).
 
 ## Обновление и удаление
 
