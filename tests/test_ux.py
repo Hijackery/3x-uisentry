@@ -482,3 +482,14 @@ async def test_previous_screen_is_deleted(bot_app: MonitorBot) -> None:
     # Каждый новый экран убирает предыдущий: 50 → 101, затем 101 → 102.
     assert [c.args for c in bot.delete_message.await_args_list] == [(7, 50), (7, 101)]
     assert bot_app._last_screen[7] == 102
+
+
+async def test_stale_callback_answer_does_not_crash(bot_app: MonitorBot) -> None:
+    """Telegram отвечает «query is too old» — это не должно ронять on_callback."""
+    from telegram.error import BadRequest
+
+    class StaleQuery:
+        async def answer(self, **_kwargs: object) -> None:
+            raise BadRequest("query is too old and response timeout expired")
+
+    await bot_app._answer(StaleQuery())  # type: ignore[arg-type]

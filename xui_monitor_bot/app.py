@@ -356,7 +356,10 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
-        await message.reply_chat_action(ChatAction.TYPING)
+        try:
+            await message.reply_chat_action(ChatAction.TYPING)
+        except TelegramError as exc:
+            logger.debug("Не удалось показать «печатает»: %s", exc)
         snapshot = await self.snapshot()
         await self._reply_screen(
             message,
@@ -661,28 +664,41 @@ class MonitorBot:
 
     # ---------------------------------------------------------- callbacks
 
+    async def _answer(
+        self,
+        query: CallbackQuery,
+        text: str | None = None,
+        *,
+        show_alert: bool = False,
+    ) -> None:
+        """Ответ на кнопку не должен ронять хендлер (кнопка могла устареть)."""
+        try:
+            await query.answer(text=text, show_alert=show_alert)
+        except TelegramError as exc:
+            logger.debug("Не удалось ответить на кнопку: %s", exc)
+
     async def on_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         query: CallbackQuery | None = update.callback_query
         if query is None or query.data is None:
             return
-        await query.answer()
+        await self._answer(query)
         data = query.data
         user_id = query.from_user.id
 
         # Команды и кнопки — только в личном чате (см. _chat_allowed).
         message = query.message
         if isinstance(message, Message) and not self._chat_allowed(message.chat):
-            await query.answer(
-                "⛔ Кнопки работают только в личном чате", show_alert=True
+            await self._answer(
+                query, "⛔ Кнопки работают только в личном чате", show_alert=True
             )
             return
 
         # Гейт стоит до разбора callback_data: иначе гость, угадав токен
         # подтверждения, мог отменить действие администратора.
         if not self.is_admin(user_id):
-            await query.answer("⛔ Только для администраторов", show_alert=False)
+            await self._answer(query, "⛔ Только для администраторов")
             await self._edit(query, "⛔ Только для администраторов.")
             return
 
@@ -692,7 +708,7 @@ class MonitorBot:
         if data in {"home", "refresh"}:
             wait = self._throttle("refresh", user_id, REFRESH_COOLDOWN)
             if wait > 0:
-                await query.answer(f"⏳ Обновление через {wait:.0f} с")
+                await self._answer(query, f"⏳ Обновление через {wait:.0f} с")
                 return
             await self._edit(query, "⏳ Собираю данные…")
 
