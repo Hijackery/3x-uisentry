@@ -126,7 +126,7 @@ What each item does:
 | 8 | edit any key from the allowlist by name (`xui-menu keys`) |
 | 9 | restart the bot and verify that the service is active |
 | 10 | bot log (50 lines) |
-| 11 | update: uses the local installer copy at `/opt/xui-monitor-bot/install.sh` (it refreshes itself on every run) or downloads it from GitHub, then runs with the same `PREFIX` |
+| 11 | update: downloads a fresh installer from the `main` branch and runs it with the same `PREFIX`; without network it falls back to the local copy at `/opt/xui-monitor-bot/install.sh` |
 | 12 | removal; the menu asks you to type `yes` |
 
 Worth knowing:
