@@ -48,7 +48,7 @@ from .actions import (
     ActionError,
     ActionManager,
 )
-from .alerts import AlertEngine, Finding
+from .alerts import AlertEngine, Finding, Rule
 from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
@@ -71,6 +71,8 @@ REBOOT_WATCH_ATTEMPTS = 20
 REBOOT_WATCH_STEP = 30
 #: Не чаще раза в 5 секунд на администратора: журнал читается через sudo.
 HEAVY_COOLDOWN = 5.0
+#: «Знаю, до утра»: глушим алерт на 8 часов.
+MUTE_HOURS = 8
 REBOOT_WATCH_GRACE = 1200
 
 #: Короткие заголовки для отчёта о выполненном действии (в чате, не в логе).
@@ -395,7 +397,11 @@ class MonitorBot:
         if message is None or not await self._guard(message, update.effective_user):
             return
         rows = await asyncio.to_thread(self.storage.recent_audit, 15)
-        await message.reply_text(ui.render_audit(rows), parse_mode=ParseMode.HTML)
+        await message.reply_text(
+            ui.render_audit(rows),
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.audit_menu(),
+        )
 
     async def cmd_logs(
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
@@ -463,12 +469,15 @@ class MonitorBot:
             return 0.0
         return max(0.0, time.monotonic() - self._snapshot_at)
 
-    def _heavy_allowed(self, user_id: int) -> bool:
-        """Мягкий лимит на команды, дергающие sudo/journalctl."""
+    def _heavy_wait(self, user_id: int) -> float:
+        """Сколько секунд осталось до следующего тяжёлого запроса (0 — можно)."""
         now = time.monotonic()
         last = self._heavy_seen.get(user_id, 0.0)
+        remaining = HEAVY_COOLDOWN - (now - last)
+        if remaining > 0:
+            return remaining
         self._heavy_seen[user_id] = now
-        return now - last >= HEAVY_COOLDOWN
+        return 0.0
 
     # ---------------------------------------------------------- callbacks
 
@@ -507,8 +516,21 @@ class MonitorBot:
             "traffic",
             "subs",
             "history",
+            "details",
         } or data.startswith("subs:"):
             await self._edit(query, "⏳ Собираю данные…")
+
+        if data.startswith("mute:"):
+            key = data[5:]
+            until = await asyncio.to_thread(self.storage.mute, key, MUTE_HOURS * 3600)
+            await self._edit(
+                query,
+                f"😴 Понял: <code>{ui.esc(key)}</code> молчит до "
+                f"{time.strftime('%H:%M', time.localtime(until))}. "
+                "Если проблема пройдёт сама — сообщу, когда срок выйдет.",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
+            return
 
         if data.startswith("ask:"):
             await self._ask_confirmation(query, data)
@@ -532,17 +554,20 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_overview(
-                    await self.snapshot(force=True), self.settings, age=0.0
+                    await self.snapshot(force=True),
+                    self.settings,
+                    age=0.0,
+                    compact=True,
                 ),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=ui.overview_menu(self.is_admin(user_id), compact=True),
             )
-        elif data == "server":
+        elif data in {"details", "server"}:
             await self._edit(
                 query,
                 ui.render_overview(
                     await self.snapshot(), self.settings, age=self._snapshot_age()
                 ),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=ui.overview_menu(self.is_admin(user_id), compact=False),
             )
         elif data == "services":
             await self._edit(
@@ -581,6 +606,21 @@ class MonitorBot:
             await self._edit(
                 query, "📜 Выберите сервис", markup=ui.logs_menu(self.settings.services)
             )
+        elif data.startswith("audit:"):
+            mode = data[6:]
+            rows = await asyncio.to_thread(
+                self.storage.recent_audit,
+                15,
+                only="" if mode == "all" else mode,
+            )
+            title = {"denied": " (отказы)", "actions": " (действия)"}.get(mode, "")
+            await self._edit(
+                query,
+                ui.render_audit(rows).replace(
+                    "Журнал действий", f"Журнал действий{title}"
+                ),
+                markup=ui.audit_menu(),
+            )
         elif data == "maintenance":
             await self._edit(
                 query,
@@ -590,6 +630,10 @@ class MonitorBot:
             )
         elif data.startswith("logs:"):
             await self._show_logs(query, data[5:])
+        elif data.startswith("logs200:"):
+            await self._show_logs(query, data[8:], lines=200)
+        elif data.startswith("logs_err:"):
+            await self._show_logs(query, data[9:], errors=True)
         elif data == "command_prompt":
             await self._prompt_command(query, context)
         else:
@@ -801,7 +845,7 @@ class MonitorBot:
                 "\n\n🔁 <b>Требуется перезагрузка</b> для применения ядра/пакетов. "
                 "Кнопка «Перезагрузить» в разделе Обслуживание."
             )
-        delivered = await self._notify(chat_id, text)
+        delivered = await self._notify(chat_id, text, markup=ui.result_menu())
         await asyncio.to_thread(
             self.storage.audit,
             action,
@@ -985,11 +1029,16 @@ class MonitorBot:
             return
 
         chunks = _split_alerts(outbox)
+        markup = ui.alert_menu(
+            _alert_actions(outbox, self.settings), mute_key=outbox[0].state_key
+        )
         delivered = True
         for chat_id in await self._alert_targets():
-            for chunk in chunks:
+            for index, chunk in enumerate(chunks):
                 delivered = (
-                    await self._notify(chat_id, chunk, markup=ui.alert_menu())
+                    await self._notify(
+                        chat_id, chunk, markup=markup if index == 0 else None
+                    )
                     and delivered
                 )
 
@@ -1007,31 +1056,40 @@ class MonitorBot:
 
     # ---------------------------------------------------------- рендеринг
 
-    async def _show_logs(self, callback: CallbackQuery, unit: str) -> None:
+    async def _show_logs(
+        self,
+        callback: CallbackQuery,
+        unit: str,
+        *,
+        lines: int = 40,
+        errors: bool = False,
+    ) -> None:
         if not self.is_admin(callback.from_user.id):
             await self._edit(callback, "⛔ Только для администраторов.")
             return
-        if not self._heavy_allowed(callback.from_user.id):
-            await callback.answer("⏳ Слишком часто, подождите пару секунд")
+        wait = self._heavy_wait(callback.from_user.id)
+        if wait > 0:
+            await callback.answer(f"Журнал: следующий запрос через {wait:.0f} с")
             return
         await self._edit(
             callback,
             f"📜 Журнал <code>{ui.esc(unit)}</code>…",
-            markup=ui.logs_menu(self.settings.services),
+            markup=ui.log_view_menu(unit),
         )
         try:
-            output = await self.actions.journal(unit, 40)
+            output = await self.actions.journal(unit, lines, errors=errors)
         except ActionError as exc:
             await self._edit(
                 callback,
                 f"❌ {ui.esc(str(exc))}",
-                markup=ui.logs_menu(self.settings.services),
+                markup=ui.log_view_menu(unit),
             )
             return
+        where = "только ошибки" if errors else "последние строки"
         await self._edit(
             callback,
-            f"📜 <b>{ui.esc(unit)}</b>\n<pre>{ui.esc(output[-2500:])}</pre>",
-            markup=ui.logs_menu(self.settings.services),
+            f"📜 <b>{ui.esc(unit)}</b> · {where}\n<pre>{ui.esc(output[-2500:])}</pre>",
+            markup=ui.log_view_menu(unit),
         )
 
     async def _edit(
@@ -1110,6 +1168,33 @@ async def _safe_edit(
         logger.warning("Не удалось обновить статус: %s", exc)
 
 
+def _alert_actions(
+    findings: list[Finding], settings: Settings
+) -> list[InlineKeyboardButton]:
+    """Кнопки под алертом: починить сервис, о котором идёт речь.
+
+    Сигнал без действия заставляет ночью искать раздел руками, поэтому для
+    находки о сервисе сразу даём рестарт и журнал.
+    """
+    buttons: list[InlineKeyboardButton] = []
+    for finding in findings:
+        if finding.rule is not Rule.service or ":" not in finding.state_key:
+            continue
+        unit = finding.state_key.split(":", 1)[1]
+        if unit not in settings.services:
+            continue
+        buttons.append(
+            InlineKeyboardButton(
+                f"♻️ Рестарт {unit}", callback_data=f"ask:restart_service:{unit}"
+            )
+        )
+        buttons.append(
+            InlineKeyboardButton(f"📜 Журнал {unit}", callback_data=f"logs:{unit}")
+        )
+        break
+    return buttons
+
+
 def _needs_reboot() -> bool:
     return os.path.exists("/var/run/reboot-required")
 
@@ -1186,7 +1271,9 @@ def _split_alerts(findings: list[Finding]) -> list[str]:
         Severity.ok: 3,
     }
     ordered = sorted(findings, key=lambda item: order[item.severity])
-    header = f"🔔 <b>Требует внимания</b> · {time.strftime('%H:%M:%S')}"
+    header = (
+        f"🔔 <b>Требует внимания: {len(findings)}</b> · {time.strftime('%H:%M:%S')}"
+    )
     body = "\n\n".join(ui.render_finding(finding) for finding in ordered)
     return _split(header + "\n\n" + body)
 

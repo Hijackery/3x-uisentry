@@ -54,6 +54,8 @@ def test_every_button_callback_is_handled() -> None:
             f'data == "{item}"' in APP_SRC
             or f'startswith("{prefix}:")' in APP_SRC
             or f'data == "{prefix}"' in APP_SRC
+            # Литералы, сгруппированные в набор: data in {"details", "server"}.
+            or f'"{item}"' in APP_SRC
         )
         assert handled, f"кнопка {item!r} нигде не обрабатывается"
 
@@ -148,6 +150,10 @@ async def _press(
         "logs_menu",
         "maintenance",
         "command_prompt",
+        "details",
+        "audit:denied",
+        "audit:all",
+        "mute:SAMPLE",
         "no:abcdefgh",
         "ask:restart_service:x-ui",
         "ask:restart_xray:",
@@ -276,8 +282,9 @@ async def test_guest_denial_is_written_to_audit(bot_app: MonitorBot) -> None:
 
 def test_heavy_commands_are_rate_limited(bot_app: MonitorBot) -> None:
     """Журнал читается через sudo — не даём запускать его подряд."""
-    assert bot_app._heavy_allowed(ADMIN_ID) is True
-    assert bot_app._heavy_allowed(ADMIN_ID) is False
+    assert bot_app._heavy_wait(ADMIN_ID) == 0.0
+    wait = bot_app._heavy_wait(ADMIN_ID)
+    assert wait > 0.0
 
 
 # ---------------------------------------------------------- нарезка HTML

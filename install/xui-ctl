@@ -73,6 +73,19 @@ case "$cmd" in
         fi
         ;;
 
+    journal_errors)
+        # Только ошибки: разбирать инцидент ночью удобнее по -p err.
+        require_no_extra_args 2 "$@"
+        unit="$(safe_unit "$2")"
+        lines="$(safe_int "$3")"
+        if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
+            die "lines вне 1..500"
+        fi
+        if ! journalctl -u "$unit" -n "$lines" --no-pager -o short-iso -p err; then
+            die "не удалось прочитать журнал $unit"
+        fi
+        ;;
+
     journal)
         require_no_extra_args 2 "$@"
         unit="$(safe_unit "$2")"

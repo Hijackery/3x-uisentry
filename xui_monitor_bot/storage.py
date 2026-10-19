@@ -32,6 +32,11 @@ CREATE TABLE IF NOT EXISTS alert_state (
     notified_at REAL
 );
 
+CREATE TABLE IF NOT EXISTS alert_mutes (
+    key TEXT PRIMARY KEY,
+    until REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
@@ -229,10 +234,46 @@ class Storage:
                 ),
             )
 
-    def recent_audit(self, limit: int = 15) -> list[sqlite3.Row]:
+    def recent_audit(self, limit: int = 15, *, only: str = "") -> list[sqlite3.Row]:
+        """Последние записи журнала.
+
+        ``only``: пусто — все, ``denied`` — только отказы, ``actions`` — только
+        действия. Разбор инцидента ночью начинается с фильтра, а не с чтения
+        всего подряд.
+        """
+        query = "SELECT * FROM audit_log"
+        if only == "denied":
+            query += " WHERE action = 'denied'"
+        elif only == "actions":
+            query += " WHERE action != 'denied'"
+        query += " ORDER BY ts DESC LIMIT ?"
         with self._lock:
-            return list(
-                self.conn.execute(
-                    "SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,)
-                ).fetchall()
+            return list(self.conn.execute(query, (limit,)).fetchall())
+
+    def mute(self, key: str, seconds: float) -> float:
+        """«Знаю, до утра»: заглушить алерт по ключу, вернуть время окончания."""
+        until = time.time() + seconds
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO alert_mutes (key, until) VALUES (?, ?)",
+                (key, until),
+            )
+        return until
+
+    def is_muted(self, key: str) -> bool:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT until FROM alert_mutes WHERE key = ?", (key,)
+            ).fetchone()
+            if row is None:
+                return False
+            if float(row["until"]) <= time.time():
+                self.conn.execute("DELETE FROM alert_mutes WHERE key = ?", (key,))
+                return False
+            return True
+
+    def prune_mutes(self) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM alert_mutes WHERE until <= ?", (time.time(),)
             )

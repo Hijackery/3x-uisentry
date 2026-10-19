@@ -223,8 +223,14 @@ class AlertEngine:
         алерт, если отправка в Telegram не удалась.
         """
         now = time.time()
-        active = {finding.state_key: finding for finding in findings}
-        rules = set(active) | set(self.storage.all_alert_keys())
+        self.storage.prune_mutes()
+        every = {finding.state_key: finding for finding in findings}
+        known = every.keys() | set(self.storage.all_alert_keys())
+        # Заглушенные («знаю, до утра») не участвуют вообще: иначе снятый мьют
+        # прилетел бы как «восстановлено», хотя проблема не уходила.
+        muted = {key for key in known if self.storage.is_muted(key)}
+        active = {k: v for k, v in every.items() if k not in muted}
+        rules = set(known) - muted
 
         outbox: list[Finding] = []
         for key in sorted(rules):

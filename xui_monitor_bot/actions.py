@@ -22,6 +22,7 @@ from .settings import Settings
 ACTION_RESTART_SERVICE = "restart_service"
 ACTION_RESTART_XRAY = "restart_xray"
 ACTION_JOURNAL = "journal"
+ACTION_JOURNAL_ERRORS = "journal_errors"
 ACTION_UPGRADE = "apt_upgrade"
 ACTION_UPGRADE_PHASED = "apt_upgrade_phased"
 ACTION_DIST_UPGRADE = "dist_upgrade"
@@ -151,7 +152,7 @@ class ActionManager:
             duration=0.0,
         )
 
-    async def journal(self, unit: str, lines: int = 40) -> str:
+    async def journal(self, unit: str, lines: int = 40, *, errors: bool = False) -> str:
         """Журнал сервиса через sudo-обёртку.
 
         Напрямую ``journalctl`` сервисному пользователю обычно недоступен: он не
@@ -160,15 +161,18 @@ class ActionManager:
         """
         if unit not in self.settings.services:
             raise ActionError(f"Сервис {unit} не входит в список наблюдаемых")
+        # Отдельная подкоманда для «только ошибки»: бот не собирает
+        # произвольные аргументы journalctl.
+        subcommand = ACTION_JOURNAL_ERRORS if errors else ACTION_JOURNAL
         result = await run_command(
             [
                 self.settings.sudo_wrapper,
-                ACTION_JOURNAL,
+                subcommand,
                 unit,
                 str(max(1, min(lines, 500))),
             ],
             timeout=20.0,
-            action=ACTION_JOURNAL,
+            action=subcommand,
         )
         return result.summary()
 

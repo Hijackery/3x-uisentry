@@ -19,10 +19,11 @@ from telegram.error import RetryAfter
 
 from xui_monitor_bot import ui
 from xui_monitor_bot.actions import ActionError, ActionManager
+from xui_monitor_bot.alerts import Finding, Rule
 from xui_monitor_bot.app import _send_with_retry
 from xui_monitor_bot.collectors.panel import PanelClient
 from xui_monitor_bot.command import run_command
-from xui_monitor_bot.models import CommandResult, SystemMetrics
+from xui_monitor_bot.models import CommandResult, Severity, SystemMetrics
 from xui_monitor_bot.settings import ConfigError, Settings, load_settings
 from xui_monitor_bot.storage import Storage, StorageError
 
@@ -432,3 +433,95 @@ def test_system_block_is_monospaced(
 
     assert text.startswith("<code>") and text.endswith("</code>")
     assert "Диск" in text
+
+
+# ------------------------------------------- действия и мьюты в алертах
+
+
+def test_mute_suppresses_and_expires(tmp_path: Path) -> None:
+    storage = Storage(tmp_path / "state.db")
+    try:
+        storage.mute("service:x-ui", 3600)
+        assert storage.is_muted("service:x-ui") is True
+        storage.mute("service:x-ui", -1)  # уже истёк
+        assert storage.is_muted("service:x-ui") is False
+    finally:
+        storage.close()
+
+
+def test_alert_actions_offer_restart_for_service_finding(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """Сигнал без действия заставляет ночью искать раздел руками."""
+    from xui_monitor_bot.app import _alert_actions
+
+    finding = Finding(
+        rule=Rule.service,
+        severity=Severity.critical,
+        title="Сервис x-ui не работает",
+        detail="ActiveState=failed",
+        key="service:x-ui",
+    )
+    buttons = _alert_actions([finding], make_settings(services=("x-ui",)))
+    data = [button.callback_data for button in buttons]
+
+    assert "ask:restart_service:x-ui" in data
+    assert "logs:x-ui" in data
+
+
+def test_alert_menu_has_mute_and_actions() -> None:
+    from telegram import InlineKeyboardButton
+
+    markup = ui.alert_menu(
+        [
+            InlineKeyboardButton(
+                "♻️ Рестарт x-ui", callback_data="ask:restart_service:x-ui"
+            )
+        ],
+        mute_key="service:x-ui",
+    )
+    data = [b.callback_data for row in markup.inline_keyboard for b in row]
+
+    assert "ask:restart_service:x-ui" in data
+    assert "mute:service:x-ui" in data
+    assert "refresh" in data
+
+
+def test_audit_can_be_filtered(tmp_path: Path) -> None:
+    """Разбор инцидента начинается с фильтра, а не с чтения всего подряд."""
+    storage = Storage(tmp_path / "state.db")
+    try:
+        storage.audit("denied", telegram_id=999, ok=False, result="гость")
+        storage.audit("reboot", telegram_id=42, ok=True, result="ok")
+
+        denied = storage.recent_audit(10, only="denied")
+        actions = storage.recent_audit(10, only="actions")
+
+        assert [row["action"] for row in denied] == ["denied"]
+        assert [row["action"] for row in actions] == ["reboot"]
+    finally:
+        storage.close()
+
+
+def test_overview_menu_toggles_details() -> None:
+    compact = [
+        b.callback_data
+        for row in ui.overview_menu(True, compact=True).inline_keyboard
+        for b in row
+    ]
+    full = [
+        b.callback_data
+        for row in ui.overview_menu(True, compact=False).inline_keyboard
+        for b in row
+    ]
+
+    assert "details" in compact
+    assert "refresh" in full
+
+
+def test_log_view_menu_offers_filters() -> None:
+    data = [
+        b.callback_data for row in ui.log_view_menu("x-ui").inline_keyboard for b in row
+    ]
+    assert "logs_err:x-ui" in data
+    assert "logs200:x-ui" in data

@@ -89,7 +89,11 @@ def level(percent: float, warn: float, crit: float) -> Severity:
 
 
 def render_overview(
-    snapshot: MonitorSnapshot, settings: Settings, *, age: float | None = None
+    snapshot: MonitorSnapshot,
+    settings: Settings,
+    *,
+    age: float | None = None,
+    compact: bool = False,
 ) -> str:
     """Главный отчёт: вердикт в первой строке, дальше детали.
 
@@ -140,6 +144,12 @@ def render_overview(
         lines.extend(("", "━━━ <b>Требует внимания</b>"))
         lines.extend(f"• {esc(item)}" for item in problems)
 
+    if compact:
+        # Ночью нужен один экран: вердикт и проблемы. Детали — по кнопке.
+        lines.append("")
+        lines.append(_stamp_line(age))
+        return "\n".join(lines)
+
     lines.append("")
     lines.append(
         render_system(metrics, settings)
@@ -150,11 +160,14 @@ def render_overview(
     lines.append(render_panel(snapshot))
     lines.append(render_traffic(snapshot))
 
-    suffix = ""
-    if age is not None and age >= 1:
-        suffix = f" ({age:.0f} с назад)"
-    lines.append(f"\n<i>данные на {time.strftime('%H:%M:%S')}{suffix}</i>")
+    lines.append(_stamp_line(age))
     return "\n".join(lines)
+
+
+def _stamp_line(age: float | None) -> str:
+    """«данные на 03:12 (12 с назад) · время сервера» — без догадок о поясе."""
+    suffix = f" ({age:.0f} с назад)" if age is not None and age >= 1 else ""
+    return f"\n<i>данные на {time.strftime('%H:%M:%S')}{suffix} · время сервера</i>"
 
 
 def render_system(metrics: SystemMetrics, settings: Settings) -> str:
@@ -340,7 +353,8 @@ def subscriptions_menu(
 def _render_subscription(item: Subscription) -> str:
     flags = []
     if item.is_expired:
-        flags.append("❌ истекла")
+        days = abs(int(item.expires_in_days)) if item.expires_in_days else None
+        flags.append(f"❌ просрочена {days} дн. назад" if days else "❌ просрочена")
     if item.is_depleted:
         flags.append("🈳 трафик исчерпан")
     if not item.enabled:
@@ -353,9 +367,10 @@ def _render_subscription(item: Subscription) -> str:
         traffic += f" из {item.total_gb} ГБ ({item.used_percent:.0f}%)"
 
     suffix = f" · {' · '.join(flags)}" if flags else ""
-    email = esc(item.email)
-    remark = esc(item.inbound_remark)
-    return f"• <code>{email}</code> [{remark}] — {traffic}{suffix}"
+    return (
+        f"• <code>{esc(item.email)}</code> [{esc(item.inbound_remark)}]\n"
+        f"   <code>{traffic}</code>{suffix}"
+    )
 
 
 def render_inbound_detail(inbound: InboundSummary) -> str:
@@ -540,14 +555,69 @@ def result_menu(
     return InlineKeyboardMarkup(rows)
 
 
-def alert_menu() -> InlineKeyboardMarkup:
-    """Кнопка под алертом: одна, но полезная — показать текущее состояние."""
+def alert_menu(
+    actions: list[InlineKeyboardButton] | None = None,
+    *,
+    mute_key: str = "",
+) -> InlineKeyboardMarkup:
+    """Кнопки под алертом: починить, посмотреть, «знаю, до утра»."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if actions:
+        rows.append(actions)
+    rows.append(
+        [
+            InlineKeyboardButton("📊 Текущее состояние", callback_data="refresh"),
+            InlineKeyboardButton("🏠 В меню", callback_data="home"),
+        ]
+    )
+    if mute_key:
+        rows.append(
+            [InlineKeyboardButton("😴 Знаю, до утра", callback_data=f"mute:{mute_key}")]
+        )
+    return InlineKeyboardMarkup(rows)
+
+
+def overview_menu(is_admin: bool, *, compact: bool) -> InlineKeyboardMarkup:
+    """Главное меню плюс переключатель «подробнее/свернуть»."""
+    toggle = InlineKeyboardButton(
+        "📋 Подробнее" if compact else "🔼 Свернуть",
+        callback_data="details" if compact else "refresh",
+    )
+    return InlineKeyboardMarkup([[toggle], *main_menu(is_admin).inline_keyboard])
+
+
+def log_view_menu(unit: str) -> InlineKeyboardMarkup:
+    """Журнал: фильтр ошибок и добор строк, а не простыня текста."""
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📊 Текущее состояние", callback_data="refresh"),
-                InlineKeyboardButton("🏠 В меню", callback_data="home"),
-            ]
+                InlineKeyboardButton(
+                    "🔎 Только ошибки", callback_data=f"logs_err:{unit}"
+                ),
+                InlineKeyboardButton(
+                    "📜 Ещё 200 строк", callback_data=f"logs200:{unit}"
+                ),
+            ],
+            [
+                InlineKeyboardButton("🔙 Сервисы", callback_data="services"),
+                home_button(),
+            ],
+        ]
+    )
+
+
+def audit_menu() -> InlineKeyboardMarkup:
+    """Разбор инцидента: отказы отдельно от действий."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🔎 Отказы", callback_data="audit:denied"),
+                InlineKeyboardButton("🛠 Действия", callback_data="audit:actions"),
+            ],
+            [
+                InlineKeyboardButton("📜 Всё подряд", callback_data="audit:all"),
+                home_button(),
+            ],
         ]
     )
 

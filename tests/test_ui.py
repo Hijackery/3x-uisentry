@@ -182,7 +182,7 @@ def test_subscriptions_highlight_problems() -> None:
     text = ui.render_subscriptions(subs, soon_days=3)
     assert "истёкших 1" in text
     assert "трафик исчерпан 1" in text
-    assert "❌ истекла" in text
+    assert "просрочена" in text
     assert "ok@example.com" not in text.split("истекают")[0] or True
 
 
