@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sqlite3
 from collections.abc import Callable
 from datetime import timedelta
@@ -639,3 +640,23 @@ def test_token_hint_matches_panel_version(version: str, expected: str) -> None:
         assert "API Tokens" in hint
     else:
         assert expected in hint, hint
+
+
+async def test_timeout_kills_grandchildren_holding_pipes(tmp_path: Path) -> None:
+    """Внук (например do-release-upgrade → apt) не переживает таймаут.
+
+    Раньше kill бил только прямой sudo: внук держал пайпы открытыми, дочитать
+    вывод не удавалось, и фоновая задача падала с UnboundLocalError — в чате это
+    выглядело как «зависло». Теперь гасится вся группа процессов, а stdout/stderr
+    заведены заранее, поэтому результат возвращается даже при нечитаемом выводе.
+    """
+    pidfile = tmp_path / "child.pid"
+    result = await run_command(
+        ["bash", "-c", f"sleep 30 & echo $! > {pidfile}; wait"], timeout=0.5
+    )
+
+    assert result.returncode == 124
+    await asyncio.sleep(0.3)
+    child = int(pidfile.read_text(encoding="utf-8").strip())
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)

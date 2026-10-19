@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 import time
 from contextlib import suppress
 
@@ -31,13 +33,21 @@ async def run_command(
     """
     command = " ".join(argv)
     started = time.monotonic()
+    # Свой сеанс (process group): при таймауте сможем погасить и потомков
+    # (do-release-upgrade → apt), иначе внук держит пайпы открытыми.
     process = await asyncio.create_subprocess_exec(
         *argv,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
+        start_new_session=True,
     )
 
+    # Заводим заранее: если остаток вывода дочитать не удастся (внук держит
+    # пайпы), переменные уже определены — иначе был UnboundLocalError, из-за
+    # которого фоновая задача падала без отчёта («зависло»).
+    stdout: bytes = b""
+    stderr: bytes = b""
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except ASYNC_TIMEOUTS:
@@ -77,7 +87,11 @@ async def run_command(
 
 
 def _terminate(process: asyncio.subprocess.Process) -> None:
-    """Убивает процесс, если он ещё жив (kill уже мёртвого — не ошибка)."""
+    """Гасит процесс и его группу (kill уже мёртвого — не ошибка)."""
+    pid = getattr(process, "pid", None)
+    if pid:
+        with suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
     with suppress(ProcessLookupError):
         process.kill()
 

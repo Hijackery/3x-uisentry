@@ -41,6 +41,52 @@ safe_int() {
     printf '%s' "$value"
 }
 
+apt_enqueue() {
+    # $1 — имя transient-юнита, $2 — внутренняя подкоманда воркера,
+    # $3 — описание для systemd, $4 — имя лог-файла для фонового режима.
+    # Сначала пробуем transient-юнит (чисто, systemd ведёт журнал). Если
+    # systemd-run недоступен — например, sudo-rs/polkit требует интерактивную
+    # аутентификацию — падаем в фоновый запуск отдельной сессией. Иначе кнопка
+    # «Обновить систему» молча не работала.
+    local unit="$1" worker="$2" description="$3" log_name="$4"
+    # 1) Постоянный юнит (ставится установщиком). Это надёжнее transient-юнита:
+    #    systemd-run в daemon-контексте проходит polkit и без терминала падает.
+    local service="${unit}.service"
+    local unit_dir="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+    if command -v systemctl >/dev/null 2>&1 \
+        && [ -f "${unit_dir}/${service}" ]; then
+        if systemctl start --no-block "$service" 2>/dev/null; then
+            echo "Обновление поставлено в очередь systemd."
+            echo "Следить за ходом: journalctl -u $unit -f"
+            return 0
+        fi
+        log "systemctl start $service не сработал — пробую systemd-run"
+    fi
+    # 2) Transient-юнит.
+    if command -v systemd-run >/dev/null 2>&1; then
+        local srun_err="/tmp/xui-ctl-systemd-run.$$"
+        if systemd-run --quiet --unit="$unit" --collect \
+            --description="$description" \
+            --property=Type=exec \
+            --property=TimeoutStartSec=3600 \
+            "$0" "$worker" 2>"$srun_err"; then
+            rm -f "$srun_err"
+            echo "Обновление поставлено в очередь systemd."
+            echo "Следить за ходом: journalctl -u $unit -f"
+            return 0
+        fi
+        log "systemd-run не сработал ($(tr -d '\n' <"$srun_err" 2>/dev/null)) — фон"
+        rm -f "$srun_err"
+    fi
+    local apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
+    local apt_log="$apt_dir/$log_name"
+    mkdir -p "$apt_dir" 2>/dev/null || true
+    env -u SUDO_USER setsid nohup "$0" "$worker" >>"$apt_log" 2>&1 &
+    echo "Обновление запущено в фоне."
+    echo "Лог: $apt_log"
+    return 0
+}
+
 #: Менеджер служб выбирается по факту наличия: одна и та же обёртка работает в
 #: systemd-, OpenRC- (Alpine/Gentoo) и SysV-системах.
 #: Результат определённия менеджера служб (заполняет svc_backend).
@@ -182,26 +228,8 @@ case "$cmd" in
             exit 3
         fi
 
-        if command -v systemd-run >/dev/null 2>&1; then
-            systemd-run --quiet --unit="$unit" --collect \
-                --description="apt full-upgrade по команде бота" \
-                --property=Type=exec \
-                --property=TimeoutStartSec=3600 \
-                "$0" _apt_worker ||
-                die "не удалось поставить обновление в очередь"
-            echo "Обновление поставлено в очередь systemd."
-            echo "Следить за ходом: journalctl -u $unit -f"
-        else
-            # Системы без systemd: запускаем отдельной сессией, чтобы apt не
-            # зависел от сервиса бота. SUDO_USER снимаем — воркер принимает
-            # только прямой root-вызов.
-            apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
-            apt_log="$apt_dir/apt-upgrade.log"
-            mkdir -p "$apt_dir" 2>/dev/null || true
-            env -u SUDO_USER setsid nohup "$0" _apt_worker >>"$apt_log" 2>&1 &
-            echo "Обновление запущено в фоне (без systemd)."
-            echo "Лог: $apt_log"
-        fi
+        apt_enqueue "$unit" _apt_worker \
+            "apt full-upgrade по команде бота" "apt-upgrade.log"
         ;;
 
     _apt_worker)
@@ -229,28 +257,14 @@ case "$cmd" in
         unit="xui-monitor-apt-phased"
         log "apt upgrade (phased) requested"
 
-        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "$unit" 2>/dev/null; then
             echo "Обновление уже выполняется, следите: journalctl -u $unit"
             exit 3
         fi
 
-        if command -v systemd-run >/dev/null 2>&1; then
-            systemd-run --quiet --unit="$unit" --collect \
-                --description="apt upgrade с phased-обновлениями по команде бота" \
-                --property=Type=exec \
-                --property=TimeoutStartSec=3600 \
-                "$0" _apt_worker_phased ||
-                die "не удалось поставить обновление в очередь"
-            echo "Обновление поставлено в очередь systemd."
-            echo "Следить за ходом: journalctl -u $unit -f"
-        else
-            apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
-            apt_log="$apt_dir/apt-phased.log"
-            mkdir -p "$apt_dir" 2>/dev/null || true
-            env -u SUDO_USER setsid nohup "$0" _apt_worker_phased >>"$apt_log" 2>&1 &
-            echo "Обновление (phased) запущено в фоне (без systemd)."
-            echo "Лог: $apt_log"
-        fi
+        apt_enqueue "$unit" _apt_worker_phased \
+            "apt upgrade с phased-обновлениями по команде бота" "apt-phased.log"
         ;;
 
     _apt_worker_phased)
@@ -273,6 +287,13 @@ case "$cmd" in
             echo "do-release-upgrade не установлен (это не Ubuntu либо пакет update-manager отсутствует)"
             exit 0
         fi
+        # У сервиса HOME=PREFIX, а он read-only (ProtectSystem=strict): python
+        # внутри do-release-upgrade падал на mkdir() .cache. Даём записываемый
+        # HOME/XDG_CACHE_HOME в каталоге состояния.
+        _dr_home="${STATE_DIR:-/var/lib/xui-monitor}/release-upgrade"
+        mkdir -p "$_dr_home/cache" 2>/dev/null || true
+        export HOME="$_dr_home"
+        export XDG_CACHE_HOME="$_dr_home/cache"
         # Шаг «Start upgrade» спрашивает подтверждение и правит конфиги в
         # интерактивном режиме. У бота нет терминала, поэтому мы только
         # проверяем доступность обновления и объясняем, что делать дальше.

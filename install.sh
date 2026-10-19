@@ -314,7 +314,12 @@ uninstall() {
         systemctl disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
     fi
     rm -f "$UNIT_PATH" \
-        "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
+        "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service" \
+        "/etc/systemd/system/xui-monitor-apt-upgrade.service" \
+        "/etc/systemd/system/xui-monitor-apt-phased.service"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
 
     # Служба могла быть поставлена init-скриптом (OpenRC/SysV) — убираем и её.
     INIT_SCRIPT="/etc/init.d/${SERVICE_NAME}"
@@ -1171,6 +1176,24 @@ if [ "$INIT" = systemd ]; then
         -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
         "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
     chmod 644 "$UNIT_FILE"
+    # Отдельные постоянные юниты для apt. systemd-run в daemon-контексте на
+    # новых systemd (Ubuntu 26.04) уходит в polkit и отбивается «требуется
+    # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
+    # юнит с User=root запускается через systemctl и работает.
+    for _pair in "xui-monitor-apt-upgrade:_apt_worker" "xui-monitor-apt-phased:_apt_worker_phased"; do
+        _apt_unit="${_pair%%:*}"
+        _apt_worker="${_pair#*:}"
+        cat > "/etc/systemd/system/${_apt_unit}.service" <<EOF
+[Unit]
+Description=apt upgrade for ${SERVICE_NAME} (one-shot, requested by the bot)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${WRAPPER_PATH} ${_apt_worker}
+EOF
+        chmod 644 "/etc/systemd/system/${_apt_unit}.service"
+    done
     systemctl daemon-reload
     systemctl preset "$SERVICE_NAME" >/dev/null 2>&1 || true
     if systemctl enable "$SERVICE_NAME" >/dev/null 2>&1; then

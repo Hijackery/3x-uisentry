@@ -784,16 +784,20 @@ class MonitorBot:
                 self.monitor.services.forget(args[0])
             else:
                 result = await self.actions.restart_xray()
-        except (ActionError, TelegramError) as exc:
-            logger.error("Действие %s не удалось: %s", action, exc)
+        except Exception as exc:  # noqa: BLE001 — сбой возвращаем в чат, не «зависаем»
+            logger.error("Действие %s не удалось: %s", action, exc, exc_info=True)
             await asyncio.to_thread(
                 self.storage.audit,
                 action,
                 telegram_id=user_id,
                 ok=False,
-                result=str(exc),
+                result=str(exc) or exc.__class__.__name__,
             )
-            await _safe_edit(status, f"❌ {ui.esc(str(exc))}", markup=ui.result_menu())
+            await _safe_edit(
+                status,
+                f"❌ {ui.esc(str(exc) or exc.__class__.__name__)}",
+                markup=ui.result_menu(),
+            )
             return
 
         icon = "✅" if result.ok else "⚠️"
@@ -847,14 +851,17 @@ class MonitorBot:
                 result = await self.actions.apt_upgrade_phased()
             else:
                 result = await self.actions.dist_upgrade()
-        except ActionError as exc:
-            await self._notify(chat_id, f"❌ {ui.esc(str(exc))}")
+        except Exception as exc:  # noqa: BLE001 — фон не должен молча «зависать»
+            logger.error("Фоновая задача %s упала: %s", action, exc, exc_info=True)
+            await self._notify(
+                chat_id, f"❌ {ui.esc(str(exc) or exc.__class__.__name__)}"
+            )
             await asyncio.to_thread(
                 self.storage.audit,
                 action,
                 telegram_id=user_id,
                 ok=False,
-                result=str(exc),
+                result=str(exc) or exc.__class__.__name__,
             )
             return
 

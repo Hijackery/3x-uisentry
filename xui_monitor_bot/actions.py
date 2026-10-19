@@ -213,11 +213,16 @@ class ActionManager:
         )
 
     async def dist_upgrade(self) -> CommandResult:
-        """Проверка и запуск do-release-upgrade на Ubuntu."""
+        """Проверка и запуск do-release-upgrade на Ubuntu.
+
+        Это лишь проверка доступности релиза, поэтому таймаут короткий: если
+        сеть/зеркало не отвечает, нечего ждать COMMAND_TIMEOUT (900 с) —
+        раньше это выглядело как «зависло».
+        """
         return await self._privileged(
             [ACTION_DIST_UPGRADE],
             ACTION_DIST_UPGRADE,
-            timeout=self.settings.command_timeout,
+            timeout=min(float(self.settings.command_timeout), 120.0),
         )
 
     async def reboot(self) -> CommandResult:

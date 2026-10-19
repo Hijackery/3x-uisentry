@@ -169,3 +169,119 @@ def test_apt_upgrade_refuses_to_queue_twice(tmp_path: Path) -> None:
     )
     assert result.returncode == 3, result.stdout + result.stderr
     assert "Обновление уже выполняется" in result.stdout + result.stderr
+
+
+def test_apt_upgrade_falls_back_when_systemd_run_denied(tmp_path: Path) -> None:
+    """sudo-rs/polkit может запретить transient-юнит — обёртка уходит в фон.
+
+    На живой Ubuntu 26.04 systemd-run ответил «Access denied … interactive
+    authentication», и кнопка «Обновить систему» молча не работала. Теперь есть
+    фолбэк: воркер запускается отдельной сессией (setsid), а из вывода понятно,
+    что обновление поставлено.
+    """
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    _systemctl_shim(shim_dir, active=False)
+    (shim_dir / "systemd-run").write_text(
+        "#!/bin/sh\necho 'Access denied: interactive authentication required' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    (shim_dir / "systemd-run").chmod(0o755)
+    # setsid-заглушка: реальный apt в тесте не запускаем.
+    (shim_dir / "setsid").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (shim_dir / "setsid").chmod(0o755)
+
+    state = tmp_path / "state"
+    env = dict(
+        os.environ,
+        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STATE_DIR=str(state),
+    )
+    result = subprocess.run(
+        ["bash", str(WRAPPER), "apt_upgrade"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "в фоне" in result.stdout
+    assert (state / "apt-upgrade.log").exists()
+
+
+def test_dist_upgrade_uses_writable_home(tmp_path: Path) -> None:
+    """do-release-upgrade писал в read-only PREFIX/.cache — даём свой HOME."""
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    (shim_dir / "do-release-upgrade").write_text(
+        '#!/bin/sh\necho "HOME=$HOME"\nexit 0\n', encoding="utf-8"
+    )
+    (shim_dir / "do-release-upgrade").chmod(0o755)
+
+    state = tmp_path / "state"
+    env = dict(
+        os.environ,
+        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STATE_DIR=str(state),
+    )
+    result = subprocess.run(
+        ["bash", str(WRAPPER), "dist_upgrade"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"HOME={state}/release-upgrade" in result.stdout
+    assert "Доступно релиз-обновление" in result.stdout
+
+
+def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
+    """Если установлен постоянный apt-юнит — запускаем его через systemctl.
+
+    Transient-юнит (systemd-run) на новых systemd в daemon-контексте отбивается
+    polkit, поэтому основной путь — заранее установленный юнит с User=root.
+    """
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    run_log = tmp_path / "systemctl.args"
+    (shim_dir / "systemctl").write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{run_log}"\n'
+        'case "$1" in is-active) exit 1 ;; esac\nexit 0\n',
+        encoding="utf-8",
+    )
+    (shim_dir / "systemctl").chmod(0o755)
+    # systemd-run намеренно «сломан»: правильный путь не должен до него дойти.
+    (shim_dir / "systemd-run").write_text("#!/bin/sh\nexit 42\n", encoding="utf-8")
+    (shim_dir / "systemd-run").chmod(0o755)
+
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    (unit_dir / "xui-monitor-apt-upgrade.service").write_text(
+        "[Service]\nType=oneshot\n", encoding="utf-8"
+    )
+
+    env = dict(
+        os.environ,
+        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        SYSTEMD_UNIT_DIR=str(unit_dir),
+    )
+    result = subprocess.run(
+        ["bash", str(WRAPPER), "apt_upgrade"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "в очередь systemd" in result.stdout
+    log = run_log.read_text(encoding="utf-8")
+    assert "start" in log.splitlines()
+    assert "xui-monitor-apt-upgrade.service" in log

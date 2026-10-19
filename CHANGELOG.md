@@ -33,6 +33,23 @@
 
 ### Исправлено
 
+- Раздел «Обслуживание» больше не «зависает»: при таймауте команды в
+  `run_command` переменные вывода не были инициализированы и задача падала с
+  `UnboundLocalError` без отчёта. Теперь вывод заводится заранее, а при
+  таймауте гасится вся группа процессов — внук (`do-release-upgrade` → `apt`)
+  не держит пайпы и не переживает прерывание.
+- Любая ошибка действия (не только `ActionError`) теперь возвращается в чат и
+  пишется в аудит, а не оставляет сообщение «Выполняю…» навсегда.
+- Проверка релиз-обновления: `do-release-upgrade` писал в read-only
+  `PREFIX/.cache` (ProtectSystem=strict) и падал с `mkdir() failed`. Ему выдают
+  записываемый `HOME`/`XDG_CACHE_HOME` в каталоге состояния, а таймаут проверки
+  ограничен 120 с вместо `COMMAND_TIMEOUT`.
+- Обновление системы: `systemd-run` в daemon-контексте новых systemd
+  (Ubuntu 26.04) отбивается polkit («требуется интерактивная аутентификация»),
+  и кнопка молча не работала. Установщик ставит постоянные юниты
+  `xui-monitor-apt-upgrade.service` и `xui-monitor-apt-phased.service`
+  (`User=root`), обёртка запускает их через `systemctl`; при их отсутствии —
+  transient-юнит, затем фоновый запуск.
 - `webBasePath`: путь `/panel` из адресной строки — не webBasePath (в 3X-UI
   интерфейс всегда на `.../panel`, а «URL панели» задаётся отдельно, обычно `/`).
   Установщик теперь проверяет путь до запроса токена (правильный отвечает 401,
@@ -122,6 +139,22 @@ tags are published — the current version is always the `main` branch; update v
 - `asyncio.TimeoutError` on Python 3.10 (command timeouts did not fire); orphan
   processes on cancellation; `RetryAfter` no longer drops messages; cooldown
   checked under lock; confirmation tokens not consumed by a foreign tap.
+- The Maintenance section no longer “hangs”: on a command timeout `run_command`
+  left its output variables unset and the job died with `UnboundLocalError` and
+  no report. Output is now pre-initialised, and on timeout the whole process
+  group is killed — a grandchild (`do-release-upgrade` → `apt`) can no longer
+  hold the pipes or survive. Any action error (not just `ActionError`) is now
+  reported in the chat and audited.
+- Release-upgrade check: `do-release-upgrade` wrote to the read-only
+  `PREFIX/.cache` (ProtectSystem=strict) and failed with `mkdir() failed`; it now
+  gets a writable `HOME`/`XDG_CACHE_HOME` under the state dir, and the check is
+  capped at 120 s instead of `COMMAND_TIMEOUT`.
+- System upgrade: `systemd-run` goes through polkit in a daemon context on new
+  systemd (Ubuntu 26.04) and is denied (“interactive authentication required”),
+  so the button silently did nothing. The installer now adds persistent
+  `xui-monitor-apt-upgrade.service` / `xui-monitor-apt-phased.service`
+  (`User=root`) units started via `systemctl`, with transient and detached
+  fallbacks.
 
 ### Security
 
