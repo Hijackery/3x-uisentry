@@ -1,0 +1,19 @@
+name: Идея / Feature request
+description: Предложение по функциям, UX или поддерживаемым системам
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какая задача не решается
+      description: Опишите ситуацию, а не готовое решение — так проще подобрать вариант.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Предлагаемое решение
+  - type: input
+    id: distro
+    attributes:
+      label: Дистрибутив/окружение (если важно)

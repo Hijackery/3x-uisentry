@@ -1,11 +1,69 @@
 # xui-monitor-bot
 
+[![CI](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 [Русский](README.md) · **English**
 
 A Telegram bot for a server with a 3X-UI panel: it watches hardware, systemd
 services and the panel, sends alerts, shows subscriptions and traffic. Dangerous
 actions (restart a service, restart xray, upgrade the system, reboot) run only
 after a button confirmation and only for the administrator.
+
+## Features
+
+- **Monitoring** — system, systemd services, 3X-UI panel, xray, inbounds,
+  subscriptions and traffic, plus hourly averages for the last day.
+- **Alerts** — hysteresis (no flapping), cooldown and an “I know, until morning”
+  mute; every alert carries “Restart” and “Log” buttons.
+- **Safe actions** — service/xray restart, `apt` (full and phased), release-upgrade
+  check, reboot: confirmation required, everything audited.
+- **One-command install** — the wizard asks for tokens immediately, verifies the
+  @BotFather token and panel reachability, and finishes with an 8-point self-test.
+- **Any popular Linux** — systemd, OpenRC (Alpine, Gentoo), SysVinit;
+  `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+.
+- **`xui-menu` terminal panel** — edit settings, restart, read the log and update,
+  with secrets always masked.
+
+## What it looks like
+
+```text
+🟢 Server state: all good · CPU 12% · RAM 41% · Disk 63% · x-ui 🟢 · panel 🟢
+
+CPU  ▓▓░░░░░░░░  12.0% 🟢
+RAM  ▓▓▓▓░░░░░░  41.0% 🟢
+Disk ▓▓▓▓▓▓░░░░  63.0% 🟢
+```
+
+```text
+🔴 CRITICAL · Service x-ui is not running · 03:12
+State failed, SubState failed
+
+[♻️ Restart x-ui] [📜 Log x-ui]
+[📊 Current state] [🏠 Back to menu]
+[😴 I know, until morning]
+```
+
+```text
+✅ x-ui restarted in 1.2 s
+Service x-ui restarted
+[📜 Log x-ui] [🏠 Back to menu]
+```
+
+## How it works
+
+```text
+Telegram  ⇄  bot (unprivileged user xui-monitor)
+                 ├─ psutil / systemctl / journalctl    — metrics and services
+                 ├─ panel API (Bearer, scope node-sync) — inbounds, subscriptions, xray restart
+                 └─ sudo xui-ctl (narrow sudoers)       — restart, apt, reboot, log
+```
+
+Secrets live in `.env` (`640 root:xui-monitor`), state in SQLite
+(`/var/lib/xui-monitor`), the code is owned by `root`. See
+[Security](#security) and [SECURITY.md](SECURITY.md).
 
 ## Requirements
 
@@ -321,6 +379,14 @@ ruff format --check .
 ruff check .
 mypy .
 ```
+
+## Project
+
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is already
+  protected.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
+- [CHANGELOG.md](CHANGELOG.md) — what the project already does.
+- [`.env.example`](.env.example) — every setting with comments.
 
 ## License
 

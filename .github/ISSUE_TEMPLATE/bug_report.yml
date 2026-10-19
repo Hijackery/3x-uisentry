@@ -1,0 +1,64 @@
+name: Баг-репорт / Bug report
+description: Что-то не работает: установка, бот, уведомления
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Не прикладывайте токены и `.env`.** Токены и Telegram ID заменяйте на `***`.
+        Уязвимости не сюда — см. [SECURITY.md](../security/policy).
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло
+      description: Что ожидали и что получили. При сбое установки — последние 20 строк вывода.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести
+      placeholder: |
+        1. sudo bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Дистрибутив и Python
+      placeholder: "Ubuntu 24.04, Python 3.12; systemd"
+    validations:
+      required: true
+  - type: dropdown
+    id: init
+    attributes:
+      label: Менеджер служб
+      options:
+        - systemd
+        - OpenRC (Alpine/Gentoo)
+        - SysVinit
+        - не знаю
+    validations:
+      required: true
+  - type: input
+    id: panel
+    attributes:
+      label: Версия панели 3X-UI и Xray
+      placeholder: "3X-UI 2.x, Xray 25.x (видно в панели или /panel)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи (токены замаскированы)
+      description: |
+        `journalctl -u xui-monitor-bot -n 50 --no-pager` или,
+        для систем без systemd, последние строки `/var/lib/xui-monitor/bot.log`.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Проверено
+      options:
+        - label: Самопроверка установщика показала «Все N проверок пройдены»
+        - label: Токены и идентификаторы в тексте замаскированы
+          required: true

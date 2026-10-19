@@ -1,11 +1,69 @@
 # xui-monitor-bot
 
+[![CI](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 **Русский** · [English](README.en.md)
 
 Telegram-бот для сервера с панелью 3X-UI: следит за железом, systemd-сервисами
 и панелью, присылает алерты, показывает подписки и трафик. Опасные действия
 (рестарт сервиса, xray, обновление системы, перезагрузка) выполняются только
 с подтверждением кнопкой и только администратором.
+
+## Возможности
+
+- **Мониторинг** — система, systemd-службы, панель 3X-UI, xray, inbound'ы,
+  подписки и трафик; почасовые средние за сутки.
+- **Алерты** — гистерезис (без «дребезга»), кулдаун и мьют «знаю, до утра»;
+  под алертом сразу кнопки «Рестарт» и «Журнал».
+- **Безопасные действия** — рестарт сервиса и xray, `apt` (full и phased),
+  проверка релиза, перезагрузка: только с подтверждением, с журналом действий.
+- **Установка одной командой** — мастер спрашивает токены сразу, проверяет
+  токен `@BotFather` и доступность панели, в конце — самопроверка из 8 пунктов.
+- **Любой популярный Linux** — systemd, OpenRC (Alpine, Gentoo), SysVinit;
+  пакетные менеджеры `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+.
+- **Панель `xui-menu`** — правки настроек, рестарт, журнал и обновление из
+  терминала, секреты всегда маскируются.
+
+## Как это выглядит
+
+```text
+🟢 Состояние сервера: всё в норме · CPU 12% · RAM 41% · Диск 63% · x-ui 🟢 · панель 🟢
+
+CPU  ▓▓░░░░░░░░  12.0% 🟢
+RAM  ▓▓▓▓░░░░░░  41.0% 🟢
+Диск ▓▓▓▓▓▓░░░░  63.0% 🟢
+```
+
+```text
+🔴 КРИТИЧНО · Сервис x-ui не работает · 03:12
+Статус failed, SubState failed
+
+[♻️ Рестарт x-ui] [📜 Журнал x-ui]
+[📊 Текущее состояние] [🏠 В меню]
+[😴 Знаю, до утра]
+```
+
+```text
+✅ x-ui перезапущен за 1.2 с
+Сервис x-ui перезапущен
+[📜 Журнал x-ui] [🏠 В меню]
+```
+
+## Как устроено
+
+```text
+Telegram  ⇄  бот (непривилегированный пользователь xui-monitor)
+                 ├─ psutil / systemctl / journalctl   — метрики и службы
+                 ├─ API панели (Bearer, scope node-sync) — inbound'ы, подписки, рестарт xray
+                 └─ sudo xui-ctl (узкий sudoers)      — рестарт, apt, reboot, журнал
+```
+
+Секреты лежат в `.env` (`640 root:xui-monitor`), состояние — в SQLite
+(`/var/lib/xui-monitor`), код принадлежит `root`. Подробности — в разделе
+[Безопасность](#безопасность) и [SECURITY.md](SECURITY.md).
 
 ## Что нужно
 
@@ -304,6 +362,13 @@ ruff format --check .
 ruff check .
 mypy .
 ```
+
+## Проект
+
+- [SECURITY.md](SECURITY.md) — как сообщить об уязвимости и что уже защищено.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, обязательные проверки, стиль.
+- [CHANGELOG.md](CHANGELOG.md) — что уже сделано в проекте.
+- [`.env.example`](.env.example) — все настройки с комментариями.
 
 ## Лицензия
 

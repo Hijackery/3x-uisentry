@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Уязвимость / Security issue
+    url: https://github.com/Hijackery/xui-monitor-bot/security/advisories/new
+    about: Сообщайте об уязвимостях приватно, не через публичный issue
+  - name: Документация
+    url: https://github.com/Hijackery/xui-monitor-bot#readme
+    about: Установка, настройки, xui-menu, решение типовых проблем
+  - name: Как помочь проекту
+    url: https://github.com/Hijackery/xui-monitor-bot/blob/main/CONTRIBUTING.md
+    about: Окружение, обязательные проверки, стиль кода и PR
