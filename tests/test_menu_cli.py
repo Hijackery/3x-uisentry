@@ -160,3 +160,31 @@ def test_check_masks_secret_values() -> None:
     assert result.returncode == 0, result.stderr
     assert "AASECRET" not in result.stdout
     assert "скрыто" in result.stdout
+
+
+def test_interactive_menu_is_framed_and_rejects_bad_choice() -> None:
+    """Меню рисуется в рамке, группирует пункты и ругается на неверный номер."""
+    env = dict(os.environ, NO_COLOR="1")
+    result = subprocess.run(
+        ["bash", str(MENU)],
+        input="99\n0\n",
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "╔" in result.stdout and "╚" in result.stdout
+    assert "Показать настройки" in result.stdout
+    assert "Перезапустить xray в панели" in result.stdout
+    assert "Нет такого пункта: 99" in result.stdout
+
+
+def test_menu_lists_every_item_number() -> None:
+    """Номера пунктов идут подряд 0..N без пропусков и повторов."""
+    text = MENU.read_text(encoding="utf-8")
+    rows = re.findall(r'^\s*"(\d+)\|', text, flags=re.MULTILINE)
+    numbers = sorted(int(n) for n in rows)
+    assert numbers == list(range(len(numbers)))

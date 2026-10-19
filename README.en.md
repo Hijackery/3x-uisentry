@@ -191,20 +191,31 @@ sudo xui-menu show     # current settings (secrets are masked)
 sudo xui-menu keys     # which keys may be changed
 xui-menu check PANEL_TIMEOUT 20   # validate a value without changes (no root)
 sudo xui-menu set PANEL_TIMEOUT 20
-sudo xui-menu restart  # apply
+sudo xui-menu restart       # apply
+sudo xui-menu restart-xray  # restart xray in the panel (via API)
 sudo xui-menu logs 100
 ```
 
-Structure of the interactive menu:
+The interactive menu is drawn in a frame and grouped into sections; the service
+state is shown at the top:
 
 ```text
-1) Service state and errors         7) Alert thresholds (CPU)
-2) Show settings                    8) Change any key by name
-3) Change bot token                 9) Restart the bot
-4) Change admin IDs                10) Bot log (50 lines)
-5) Panel: address                  11) Update the bot
-6) Panel: API token                12) Remove the bot (asks for yes)
-0) Exit
+╔════════════════════════════════════════════════════════╗
+│         3X-UI monitor bot — control panel              │
+│  Service xui-monitor-bot: ● running                    │
+│   Diagnostics                                          │
+│    1. Service state and recent errors                  │
+│    2. Show settings (secrets masked)                   │
+│    3. Bot log (last 50 lines)                          │
+│────────────────────────────────────────────────────────│
+│   Telegram                                             │
+│    4. Bot token (@BotFather)                           │
+│    5. Admin IDs                                        │
+│    6. Alert chat                                       │
+│   …                                                    │
+│   22. Remove the bot                                   │
+│    0. Exit                                             │
+╚════════════════════════════════════════════════════════╝
 ```
 
 What each item does:
@@ -213,16 +224,24 @@ What each item does:
 |---|---|
 | 1 | `systemctl status` plus the latest warnings from the bot log |
 | 2 | show settings; tokens are masked (`123456 ···a1b2`, short ones — `*** (N chars)`) |
-| 3–6 | guided change of the bot token, admin IDs, panel address, panel API token |
-| 7 | the `CPU_WARN` threshold (other thresholds via item 8) |
-| 8 | edit any key from the allowlist by name (`xui-menu keys`) |
-| 9 | restart the bot and verify that the service is active |
-| 10 | bot log (50 lines) |
-| 11 | update: downloads a fresh installer from the `main` branch and runs it with the same `PREFIX`; without network it falls back to the local copy at `/opt/xui-monitor-bot/install.sh` |
-| 12 | removal; the menu asks you to type `yes` |
+| 3 | bot log (50 lines) |
+| 4–6 | guided change of the bot token, admin IDs, alert chat |
+| 7–9 | panel address, `webBasePath`, panel API token |
+| 10 | TLS verification (`PANEL_VERIFY_TLS`) and the CA bundle (`PANEL_CA_BUNDLE`) |
+| 11–13 | CPU / memory / disk thresholds (submenu: warning and critical) |
+| 14 | alert hysteresis and cooldown |
+| 15 | how many days before a subscription expiry to warn |
+| 16–17 | monitored services, log level |
+| 18 | edit any key from the allowlist by name (`xui-menu keys`) |
+| 19 | restart the bot and verify that the service is active |
+| 20 | restart xray in the panel via the API (with confirmation) |
+| 21 | update: downloads a fresh installer from the `main` branch and runs it with the same `PREFIX`; without network it falls back to the local copy at `/opt/xui-monitor-bot/install.sh` |
+| 22 | removal; the menu asks you to type `yes` |
 
 Worth knowing:
 
+- input is validated: a wrong number prints the range (`0–22`), while `q` or an
+  empty line just redraws the menu; the frame auto-sizes to the longest line;
 - only keys from the allowlist can be changed (`xui-menu keys`); values are
   validated before writing (`check`) — for example `LOG_LEVEL` accepts only
   `DEBUG/INFO/WARNING/ERROR`, and `PANEL_URL` must start with `http`;
@@ -230,7 +249,8 @@ Worth knowing:
   during installation; changes are applied after a restart (the menu offers it);
 - secrets are never printed in full, and `.env` should never be shared with
   anyone — it holds both tokens;
-- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env xui-menu`.
+- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env xui-menu`;
+- screen clearing can be disabled: `XUI_MENU_NO_CLEAR=1 sudo xui-menu`.
 
 ## Update and removal
 

@@ -2,7 +2,7 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 Релизы и теги проект не публикует: актуальная версия всегда в ветке `main`,
-обновление — `sudo xui-menu` (пункт 11) или повторный запуск установщика.
+обновление — `sudo xui-menu` (пункт 21) или повторный запуск установщика.
 
 ## [Unreleased]
 
@@ -17,6 +17,11 @@
 - Инструкция внутри бота: `/help` и кнопка «❓ Помощь» с расшифровкой метрик.
 - Консольная панель `xui-menu`: состояние, показ и правка настроек (безопасный
   белый список ключей), рестарт, журнал, обновление, удаление.
+- Меню `xui-menu` оформлено рамкой (как в панели 3X-UI): пункты сгруппированы по
+  разделам, сверху видно состояние службы, ширина рамки подстраивается под текст,
+  неверный номер даёт подсказку с диапазоном. Добавлены подменю порогов, правка
+  служб и уровня логирования и перезапуск xray в панели через API
+  (`xui-menu restart-xray`).
 - Установка одной командой с GitHub: мастер спрашивает токены четвёртым шагом
   (до установки зависимостей), проверяет токен бота и доступность панели,
   умеет выпустить токен панели автоматически; самопроверка из 8 проверок.
@@ -80,7 +85,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No releases or
 tags are published — the current version is always the `main` branch; update via
-`sudo xui-menu` (item 11) or by re-running the installer.
+`sudo xui-menu` (item 21) or by re-running the installer.
 
 ### Added
 
@@ -92,6 +97,10 @@ tags are published — the current version is always the `main` branch; update v
 - In-bot manual (`/help` and the “❓ Help” button) explaining every metric.
 - `xui-menu` terminal panel: status, masked settings view, allow-listed editing,
   restart, log, update, removal.
+- `xui-menu` menu redrawn in a frame (like the 3X-UI panel): items grouped into
+  sections, live service state on top, frame width follows the longest line, a
+  wrong number prints the valid range. Added threshold submenus, services/log-level
+  editing and an xray restart via the panel API (`xui-menu restart-xray`).
 - One-command GitHub install: the wizard asks for tokens as step 4 (before
   installing dependencies), verifies the bot token and panel reachability, can
   issue the panel token itself; an 8-check self-test at the end.

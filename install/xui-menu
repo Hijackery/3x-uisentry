@@ -33,6 +33,125 @@ if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then
     BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; RESET=""
 fi
 
+# --- оформление меню ------------------------------------------------------
+# Рамка рисуется по самой длинной строке, чтобы ничего не разъезжалось. Ширину
+# считаем по видимому тексту (ANSI-последовательности выкидываем).
+strip_ansi() { printf '%s' "$1" | sed -E $'s/\x1b\\[[0-9;]*m//g'; }
+vis_len() { local t; t="$(strip_ansi "$1")"; printf '%s' "${#t}"; }
+repeat_char() {
+    local out=""
+    printf -v out '%*s' "$1" ''
+    printf '%s' "${out// /$2}"
+}
+
+# Пункты меню: g|заголовок группы, s|разделитель, ЧИСЛО|подпись.
+MENU_ROWS=(
+    "g|Диагностика"
+    "1|Состояние службы и последние ошибки"
+    "2|Показать настройки (секреты замаскированы)"
+    "3|Журнал бота (последние 50 строк)"
+    "s|"
+    "g|Telegram"
+    "4|Токен бота (@BotFather)"
+    "5|ID администраторов"
+    "6|Чат для алертов"
+    "s|"
+    "g|Панель 3X-UI"
+    "7|Адрес панели (PANEL_URL)"
+    "8|webBasePath (PANEL_BASE_PATH)"
+    "9|API-токен панели"
+    "10|Проверка TLS и CA-сертификат"
+    "s|"
+    "g|Пороги и алерты"
+    "11|Загрузка CPU (предупреждение/критично)"
+    "12|Память (предупреждение/критично)"
+    "13|Диск (предупреждение/критично)"
+    "14|Гистерезис и кулдаун"
+    "15|За сколько дней предупреждать о подписке"
+    "s|"
+    "g|Обслуживание"
+    "16|Службы под наблюдением"
+    "17|Уровень логирования"
+    "18|Изменить любой ключ по имени"
+    "19|Перезапустить бота"
+    "20|Перезапустить xray в панели"
+    "21|Обновить бота с GitHub"
+    "s|"
+    "22|Удалить бота"
+    "0|Выход"
+)
+
+menu_max() {
+    local spec n max=0
+    for spec in "${MENU_ROWS[@]}"; do
+        case "$spec" in
+            g\|*|s\|*) continue ;;
+        esac
+        n="${spec%%|*}"
+        (( n > max )) && max=$n
+    done
+    printf '%s' "$max"
+}
+
+draw_menu() {
+    local status="$1" title="Бот мониторинга 3X-UI — панель управления"
+    local -a rows=("$title" "$status") kinds=("title" "status")
+    local spec kind payload
+    for spec in "${MENU_ROWS[@]}"; do
+        kind="${spec%%|*}"; payload="${spec#*|}"
+        case "$kind" in
+            g) rows+=("  $payload"); kinds+=("group") ;;
+            s) rows+=(""); kinds+=("sep") ;;
+            *) rows+=("$(printf '  %2s. %s' "$kind" "$payload")"); kinds+=("item") ;;
+        esac
+    done
+
+    local w=0 r lw
+    for r in "${rows[@]}"; do lw="$(vis_len "$r")"; (( lw > w )) && w=$lw; done
+    (( w < 54 )) && w=54
+    local inner=$(( w + 2 ))
+
+    printf '\n%s%s%s\n' "$BLUE" "╔$(repeat_char "$inner" '═')╗" "$RESET"
+    local i row text pad
+    for i in "${!rows[@]}"; do
+        row="${rows[$i]}"; kind="${kinds[$i]}"
+        if [ "$kind" = "sep" ]; then
+            printf '%s%s%s\n' "$BLUE" "│$(repeat_char "$inner" '─')│" "$RESET"
+            continue
+        fi
+        case "$kind" in
+            title)
+                text="$BOLD$row$RESET"
+                pad=$(( (w - $(vis_len "$row")) / 2 ))
+                ;;
+            group) text="$BOLD$row$RESET"; pad=0 ;;
+            status) text=" $row"; pad=0 ;;
+            *) text="$row"; pad=0 ;;
+        esac
+        local fill=$(( w - pad - $(vis_len "$row") ))
+        (( fill < 0 )) && fill=0
+        printf '%s│%s %s%s%s %s│%s\n' \
+            "$BLUE" "$RESET" "$(repeat_char "$pad" ' ')" "$text" \
+            "$(repeat_char "$fill" ' ')" "$BLUE" "$RESET"
+    done
+    printf '%s%s%s\n' "$BLUE" "╚$(repeat_char "$inner" '═')╝" "$RESET"
+}
+
+menu_status_line() {
+    local st="неизвестно" color="$DIM"
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            st="работает"; color="$GREEN"
+        else
+            st="остановлена"; color="$RED"
+        fi
+    elif command -v rc-service >/dev/null 2>&1; then
+        st="OpenRC"; color="$DIM"
+    fi
+    printf 'Служба %s: %s●%s %s' "$SERVICE_NAME" "$color" "$RESET" "$st"
+}
+
+
 ok()   { printf '      %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 info() { printf '      %s\n' "$1"; }
 warn() { printf '      %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
@@ -313,51 +432,118 @@ menu_edit_key() {
     esac
 }
 
+menu_pick() {
+    # menu_pick "заголовок" KEY1 KEY2 … — подменю выбора ключа.
+    local title="$1" ; shift
+    local -a keys=("$@")
+    head1 "$title"
+    local i=1 k
+    for k in "${keys[@]}"; do
+        printf '  %d) %s\n' "$i" "$k"
+        i=$(( i + 1 ))
+    done
+    ask "Номер (Enter — назад): "
+    local pick=""
+    read -r pick <&$READ_FD || pick=""
+    case "$pick" in
+        ""|0) return 0 ;;
+        *[!0-9]*) warn "нужно число"; return 0 ;;
+    esac
+    if (( pick < 1 || pick > ${#keys[@]} )); then
+        warn "нет такого пункта"
+        return 0
+    fi
+    menu_edit_key "${keys[$(( pick - 1 ))]}"
+}
+
+cmd_restart_xray() {
+    need_root "restart-xray"
+    need_env
+    local url base token api code
+    url="$(sed -n 's/^PANEL_URL=//p' "$ENV_FILE" | head -1)"
+    base="$(sed -n 's/^PANEL_BASE_PATH=//p' "$ENV_FILE" | head -1)"
+    token="$(sed -n 's/^PANEL_API_TOKEN=//p' "$ENV_FILE" | head -1)"
+    if [ -z "$url" ] || [ -z "$token" ]; then
+        die "в .env нет PANEL_URL или PANEL_API_TOKEN"
+    fi
+    api="$url"
+    [ -n "$base" ] && api="$url/${base#/}"
+    api="${api%/}/panel/api"
+    info "Запрос к панели: POST $api/server/restartXrayService"
+    code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
+        -H "Authorization: Bearer $token" \
+        "$api/server/restartXrayService" 2>/dev/null || echo 000)"
+    case "$code" in
+        200) ok "xray перезапущен" ;;
+        401|403) die "панель отклонила токен (HTTP $code) — нужен scope node-sync или admin" ;;
+        404) die "панель ответила 404 — проверьте PANEL_URL и PANEL_BASE_PATH" ;;
+        000) die "панель недоступна — проверьте PANEL_URL и что она запущена" ;;
+        *) warn "панель ответила HTTP $code" ;;
+    esac
+}
+
 menu() {
+    local max
+    max="$(menu_max)"
     while true; do
-        head1 "Бот мониторинга 3X-UI — панель управления"
-        printf '  1) Состояние службы и ошибки\n'
-        printf '  2) Показать настройки\n'
-        printf '  3) Сменить токен бота\n'
-        printf '  4) Сменить ID администраторов\n'
-        printf '  5) Панель: адрес\n'
-        printf '  6) Панель: API-токен\n'
-        printf '  7) Пороги алертов (CPU)\n'
-        printf '  8) Изменить любой ключ по имени\n'
-        printf '  9) Перезапустить бота\n'
-        printf ' 10) Журнал бота (50 строк)\n'
-        printf ' 11) Обновить бота\n'
-        printf ' 12) Удалить бота\n'
-        printf '  0) Выход\n'
-        ask "Выберите пункт: "
+        if [ -t 1 ] && [ -z "${XUI_MENU_NO_CLEAR:-}" ] && command -v clear >/dev/null 2>&1; then
+            clear
+        fi
+        draw_menu "$(menu_status_line)"
+        ask "Выберите пункт [0-$max]: "
+        local choice=""
         read -r choice <&$READ_FD || choice=""
+        case "$choice" in
+            q|Q|"") continue ;;
+        esac
         case "$choice" in
             1) cmd_status ;;
             2) cmd_show ;;
-            3) menu_edit_key TELEGRAM_BOT_TOKEN ;;
-            4) menu_edit_key TELEGRAM_ADMIN_IDS ;;
-            5) menu_edit_key PANEL_URL ;;
-            6) menu_edit_key PANEL_API_TOKEN ;;
-            7) menu_edit_key CPU_WARN ;;
-            8)
+            3) cmd_logs 50 ;;
+            4) menu_edit_key TELEGRAM_BOT_TOKEN ;;
+            5) menu_edit_key TELEGRAM_ADMIN_IDS ;;
+            6) menu_edit_key ALERT_CHAT_ID ;;
+            7) menu_edit_key PANEL_URL ;;
+            8) menu_edit_key PANEL_BASE_PATH ;;
+            9) menu_edit_key PANEL_API_TOKEN ;;
+            10) menu_pick "Сертификат панели" PANEL_VERIFY_TLS PANEL_CA_BUNDLE ;;
+            11) menu_pick "Порог CPU" CPU_WARN CPU_CRIT ;;
+            12) menu_pick "Порог памяти" MEM_WARN MEM_CRIT ;;
+            13) menu_pick "Порог диска" DISK_WARN DISK_CRIT ;;
+            14) menu_pick "Гистерезис и кулдаун" ALERT_HYSTERESIS ALERT_COOLDOWN ;;
+            15) menu_edit_key EXPIRING_SOON_DAYS ;;
+            16) menu_edit_key SERVICES ;;
+            17) menu_edit_key LOG_LEVEL ;;
+            18)
                 ask "Имя ключа (xui-menu keys — список): "
+                local key=""
                 read -r key <&$READ_FD || key=""
                 [ -n "$key" ] && menu_edit_key "$key"
                 ;;
-            9) cmd_restart ;;
-            10) cmd_logs 50 ;;
-            11) cmd_update ;;
-            12)
+            19) cmd_restart ;;
+            20)
+                ask "Перезапустить xray в панели? [y/N] "
+                local yes=""
+                read -r yes <&$READ_FD || yes=""
+                case "$yes" in (y|Y|yes|да) cmd_restart_xray ;; (*) info "Отменено" ;; esac
+                ;;
+            21) cmd_update ;;
+            22)
                 ask "Удалить бота? Это необратимо, введите yes: "
+                local confirm=""
                 read -r confirm <&$READ_FD || confirm=""
                 case "$confirm" in
                     yes|YES|да) cmd_uninstall ;;
                     *) info "Отменено" ;;
                 esac
                 ;;
-            0|q|Q) exit 0 ;;
-            *) warn "Нет такого пункта: $choice" ;;
+            0) exit 0 ;;
+            *) warn "Нет такого пункта: $choice (0-$max)" ;;
         esac
+        if [ -t 0 ] || [ "$READ_FD" = "3" ]; then
+            ask "Enter — вернуться в меню…"
+            read -r _ <&$READ_FD || true
+        fi
     done
 }
 
@@ -372,6 +558,7 @@ ${BOLD}xui-menu${RESET} — панель управления ботом мон�
   xui-menu check KEY VALUE          проверить значение (без изменений)
   sudo xui-menu set KEY VALUE       изменить настройку и подсказать рестарт
   sudo xui-menu restart             перезапустить бота
+  sudo xui-menu restart-xray        перезапустить xray в панели (через API)
   sudo xui-menu logs [N]            журнал бота (по умолчанию 50 строк)
   sudo xui-menu update              обновить бота с GitHub
   sudo xui-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
@@ -386,6 +573,7 @@ ${BOLD}English${RESET}
   xui-menu check KEY VALUE          validate a value (no changes)
   sudo xui-menu set KEY VALUE       change a setting, then restart
   sudo xui-menu restart | logs [N]  restart the bot / show the log
+  sudo xui-menu restart-xray        restart xray via the panel API
   sudo xui-menu update              update the bot from GitHub
   sudo xui-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
@@ -400,6 +588,7 @@ case "${1:-}" in
     check) cmd_check "${2:-}" "${3:-}" ;;
     set) cmd_set "${2:-}" "${3:-}" ;;
     restart) cmd_restart ;;
+    restart-xray) cmd_restart_xray ;;
     logs) cmd_logs "${2:-50}" ;;
     update) cmd_update ;;
     uninstall|remove) cmd_uninstall "${2:-}" ;;
