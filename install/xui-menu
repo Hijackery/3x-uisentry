@@ -1,0 +1,363 @@
+#!/usr/bin/env bash
+#
+# xui-menu — консольная панель бота мониторинга 3X-UI.
+#
+# Запуск:  sudo xui-menu            # интерактивное меню
+#          sudo xui-menu status     # состояние службы
+#          sudo xui-menu show       # настройки (секреты замаскированы)
+#          sudo xui-menu keys       # какие ключи можно менять
+#          sudo xui-menu set PANEL_TIMEOUT 20
+#          xui-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
+#          sudo xui-menu restart | logs [N] | update | uninstall [--purge]
+#
+# Меню меняет только ключи из белого списка, пишет .env атомарно с правами
+# 640 root:<сервисный пользователь> и перезапускает службу по подтверждению.
+set -euo pipefail
+
+PREFIX="${PREFIX:-/opt/xui-monitor-bot}"
+ENV_FILE="${ENV_FILE:-$PREFIX/.env}"
+SERVICE_NAME="${SERVICE_NAME:-xui-monitor-bot}"
+SERVICE_USER="${SERVICE_USER:-xui-monitor}"
+REPO_URL="${REPO_URL:-https://github.com/Hijackery/xui-monitor-bot}"
+REPO_REF="${REPO_REF:-main}"
+
+# Ответы читаем с терминала: меню может быть запущено и через пайп.
+READ_FD=0
+if [ ! -t 0 ] && { exec 3</dev/tty; } 2>/dev/null; then
+    READ_FD=3
+fi
+
+BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'
+YELLOW=$'\033[33m'; BLUE=$'\033[34m'; RESET=$'\033[0m'
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then
+    BOLD=""; DIM=""; RED=""; GREEN=""; YELLOW=""; BLUE=""; RESET=""
+fi
+
+ok()   { printf '      %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
+info() { printf '      %s\n' "$1"; }
+warn() { printf '      %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
+die()  { printf '%s✗ %s%s\n' "$RED" "$1" "$RESET" >&2; exit 1; }
+head1(){ printf '\n%s%s%s\n' "$BOLD$BLUE" "$1" "$RESET"; }
+
+need_root() {
+    [ "$(id -u)" -eq 0 ] || die "Нужен root: sudo xui-menu $*"
+}
+
+need_env() {
+    [ -f "$ENV_FILE" ] || die "Не найден $ENV_FILE — бот установлен?"
+}
+
+#: Ключи, которые безопасно менять из меню (значения проверяются ниже).
+EDITABLE_KEYS=(
+    TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS ALERT_CHAT_ID TELEGRAM_API_URL
+    PANEL_URL PANEL_BASE_PATH PANEL_API_TOKEN PANEL_VERIFY_TLS PANEL_CA_BUNDLE
+    SERVICES DISK_PATH PANEL_TIMEOUT
+    CPU_WARN CPU_CRIT MEM_WARN MEM_CRIT DISK_WARN DISK_CRIT
+    ALERT_HYSTERESIS ALERT_COOLDOWN EXPIRING_SOON_DAYS
+    CHECK_INTERVAL ACTION_COOLDOWN CONFIRM_TTL COMMAND_TIMEOUT
+    COMMAND_ALLOWLIST LOG_LEVEL
+)
+
+#: Разумные подсказки для пошагового изменения.
+declare -A KEY_HINT=(
+    [TELEGRAM_BOT_TOKEN]="токен от @BotFather (вид 123456:AA...)"
+    [TELEGRAM_ADMIN_IDS]="ID администраторов через запятую"
+    [ALERT_CHAT_ID]="чат для алертов (пусто — админам в личку)"
+    [PANEL_URL]="адрес панели, например https://panel.example.com:2053"
+    [PANEL_BASE_PATH]="webBasePath панели (пусто, если не задан)"
+    [PANEL_API_TOKEN]="токен панели со scope node-sync"
+    [SERVICES]="юниты под наблюдением, через запятую"
+    [LOG_LEVEL]="DEBUG, INFO, WARNING или ERROR"
+)
+
+is_editable() {
+    local key="$1" known
+    for known in "${EDITABLE_KEYS[@]}"; do
+        [ "$known" = "$key" ] && return 0
+    done
+    return 1
+}
+
+# check_value KEY VALUE — проверяет значение и печатает причину отказа.
+check_value() {
+    local key="$1" value="$2"
+    case "$key" in
+        TELEGRAM_BOT_TOKEN)
+            case "$value" in
+                *:*) ;;
+                *) die "токен @BotFather выглядит как 123456:AA... — проверьте вставку" ;;
+            esac
+            ;;
+        TELEGRAM_ADMIN_IDS)
+            printf '%s' "$value" | grep -qE '^[0-9]+(,[0-9]+)*$' \
+                || die "ID должны быть числами через запятую"
+            ;;
+        TELEGRAM_API_URL|PANEL_URL)
+            case "$value" in
+                http://*|https://*) ;;
+                *) die "$key должен начинаться с http:// или https://" ;;
+            esac
+            ;;
+        CPU_WARN|CPU_CRIT|MEM_WARN|MEM_CRIT|DISK_WARN|DISK_CRIT|ALERT_HYSTERESIS|PANEL_TIMEOUT)
+            printf '%s' "$value" | grep -qE '^[0-9]+([.][0-9]+)?$' \
+                || die "$key — это процент, например 85"
+            ;;
+        ALERT_COOLDOWN|EXPIRING_SOON_DAYS|CHECK_INTERVAL|ACTION_COOLDOWN|CONFIRM_TTL|COMMAND_TIMEOUT|ALERT_CHAT_ID)
+            printf '%s' "$value" | grep -qE '^[0-9]+$' || die "$key — целое число"
+            ;;
+        PANEL_VERIFY_TLS)
+            case "$value" in
+                true|false) ;;
+                *) die "PANEL_VERIFY_TLS: true или false" ;;
+            esac
+            ;;
+        LOG_LEVEL)
+            case "$value" in
+                DEBUG|INFO|WARNING|ERROR) ;;
+                *) die "LOG_LEVEL: DEBUG, INFO, WARNING или ERROR" ;;
+            esac
+            ;;
+    esac
+    return 0
+}
+
+show_setting() {
+    local key="$1" value
+    value="$(sed -n "s/^${key}=//p" "$ENV_FILE" 2>/dev/null | head -1)"
+    case "$key" in
+        TELEGRAM_BOT_TOKEN|PANEL_API_TOKEN)
+            if [ -n "$value" ]; then
+                printf '  %-22s %s ···%s\n' "$key" "${value:0:6}" "${value: -4}"
+            else
+                printf '  %-22s %s\n' "$key" "(пусто)"
+            fi
+            ;;
+        *)
+            printf '  %-22s %s\n' "$key" "${value:-—}"
+            ;;
+    esac
+}
+
+cmd_show() {
+    need_env
+    head1 "Настройки бота ($ENV_FILE)"
+    local key
+    for key in "${EDITABLE_KEYS[@]}"; do
+        show_setting "$key"
+    done
+    info "Секреты показаны замаскированными. Изменить: sudo xui-menu set KEY VALUE"
+}
+
+cmd_keys() {
+    printf '%s\n' "${EDITABLE_KEYS[@]}"
+}
+
+cmd_check() {
+    local key="${1:-}" value="${2:-}"
+    [ -n "$key" ] || die "check: укажите ключ и значение"
+    is_editable "$key" || die "ключ $key менять нельзя (см. xui-menu keys)"
+    check_value "$key" "$value"
+    ok "$key=$value — значение корректно"
+}
+
+cmd_set() {
+    local key="${1:-}" value="${2:-}"
+    need_root "set"
+    need_env
+    [ -n "$key" ] || die "set: укажите ключ и значение"
+    is_editable "$key" || die "ключ $key менять нельзя (см. xui-menu keys)"
+    check_value "$key" "$value"
+    case "$value" in
+        *$'\n'*) die "значение не должно содержать перевод строки" ;;
+    esac
+
+    local tmp="$ENV_FILE.tmp.$$"
+    grep -vE "^${key}=" "$ENV_FILE" >"$tmp" 2>/dev/null || true
+    printf '%s=%s\n' "$key" "$value" >>"$tmp"
+    install -o root -g "$SERVICE_USER" -m 0640 "$tmp" "$ENV_FILE"
+    rm -f "$tmp"
+    ok "$key обновлён"
+    info "Применится после перезапуска: sudo xui-menu restart"
+}
+
+cmd_status() {
+    head1 "Служба $SERVICE_NAME"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl status "$SERVICE_NAME" --no-pager 2>&1 | head -12 | sed 's/^/  /'
+    else
+        warn "systemctl не найден"
+    fi
+    if [ -f "$ENV_FILE" ]; then
+        head1 "Последние ошибки в журнале"
+        journalctl -u "$SERVICE_NAME" -p warning -n 10 --no-pager 2>&1 | sed 's/^/  /' \
+            || true
+    fi
+}
+
+cmd_logs() {
+    local lines="${1:-50}"
+    case "$lines" in (*[!0-9]*) die "logs: число строк" ;; esac
+    journalctl -u "$SERVICE_NAME" -n "$lines" --no-pager
+}
+
+cmd_restart() {
+    need_root "restart"
+    command -v systemctl >/dev/null 2>&1 || die "systemctl не найден"
+    systemctl restart "$SERVICE_NAME"
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        ok "$SERVICE_NAME перезапущен и работает"
+    else
+        warn "служба не активна, смотрите: journalctl -u $SERVICE_NAME -n 30"
+        exit 1
+    fi
+}
+
+cmd_update() {
+    need_root "update"
+    local installer=""
+    for candidate in "$PREFIX/install.sh" "$PWD/install.sh"; do
+        [ -f "$candidate" ] && installer="$candidate" && break
+    done
+    if [ -z "$installer" ]; then
+        command -v curl >/dev/null 2>&1 || die "нужен curl"
+        local slug
+        slug="$(printf '%s' "$REPO_URL" | sed -E 's#.*github\.com/##; s#\.git$##')"
+        info "Скачиваю установщик: $slug@$REPO_REF"
+        installer="$(mktemp)"
+        curl -fsSL --max-time 60 \
+            "https://raw.githubusercontent.com/${slug}/${REPO_REF}/install.sh" \
+            -o "$installer" || die "не удалось скачать install.sh"
+        trap 'rm -f "$installer"' EXIT
+    fi
+    info "Запускаю установщик (он же выполняет обновление)"
+    local prefix="$PREFIX"
+    PREFIX="$prefix" bash "$installer" --prefix "$prefix"
+}
+
+cmd_uninstall() {
+    need_root "uninstall"
+    local purge="${1:-}"
+    local installer="$PREFIX/install.sh"
+    [ -f "$installer" ] || installer="$PWD/install.sh"
+    [ -f "$installer" ] || die "не найден install.sh"
+    if [ "$purge" = "--purge" ]; then
+        bash "$installer" --purge --yes
+    else
+        bash "$installer" --uninstall --yes
+    fi
+}
+
+ask() { printf '      %s' "$1"; }
+
+ask_value() {
+    # ask_value ПЕРЕМЕННАЯ "подсказка" "текущее"
+    local var="$1" prompt="$2" current="$3" answer=""
+    ask "$prompt"
+    [ -n "$current" ] && printf ' %s[%s]%s' "$DIM" "$current" "$RESET"
+    printf ' '
+    read -r answer <&$READ_FD || answer=""
+    printf -v "$var" '%s' "${answer:-$current}"
+}
+
+menu_edit_key() {
+    local key="$1"
+    need_root "set"
+    need_env
+    local current hint
+    current="$(sed -n "s/^${key}=//p" "$ENV_FILE" | head -1)"
+    hint="${KEY_HINT[$key]:-новое значение}"
+    info "$key — $hint"
+    local value=""
+    ask_value value "Значение:" "$current"
+    cmd_set "$key" "$value"
+    local answer=""
+    ask "Перезапустить бота сейчас? [Y/n] "
+    read -r answer <&$READ_FD || answer=""
+    case "$answer" in
+        n|N|no|нет) info "Перезапуск отложен" ;;
+        *) cmd_restart ;;
+    esac
+}
+
+menu() {
+    while true; do
+        head1 "Бот мониторинга 3X-UI — панель управления"
+        printf '  1) Состояние службы и ошибки\n'
+        printf '  2) Показать настройки\n'
+        printf '  3) Сменить токен бота\n'
+        printf '  4) Сменить ID администраторов\n'
+        printf '  5) Панель: адрес\n'
+        printf '  6) Панель: API-токен\n'
+        printf '  7) Пороги алертов (CPU)\n'
+        printf '  8) Изменить любой ключ по имени\n'
+        printf '  9) Перезапустить бота\n'
+        printf ' 10) Журнал бота (50 строк)\n'
+        printf ' 11) Обновить бота\n'
+        printf ' 12) Удалить бота\n'
+        printf '  0) Выход\n'
+        ask "Выберите пункт: "
+        read -r choice <&$READ_FD || choice=""
+        case "$choice" in
+            1) cmd_status ;;
+            2) cmd_show ;;
+            3) menu_edit_key TELEGRAM_BOT_TOKEN ;;
+            4) menu_edit_key TELEGRAM_ADMIN_IDS ;;
+            5) menu_edit_key PANEL_URL ;;
+            6) menu_edit_key PANEL_API_TOKEN ;;
+            7) menu_edit_key CPU_WARN ;;
+            8)
+                ask "Имя ключа (xui-menu keys — список): "
+                read -r key <&$READ_FD || key=""
+                [ -n "$key" ] && menu_edit_key "$key"
+                ;;
+            9) cmd_restart ;;
+            10) cmd_logs 50 ;;
+            11) cmd_update ;;
+            12)
+                ask "Удалить бота? Это необратимо, введите yes: "
+                read -r confirm <&$READ_FD || confirm=""
+                case "$confirm" in
+                    yes|YES|да) cmd_uninstall ;;
+                    *) info "Отменено" ;;
+                esac
+                ;;
+            0|q|Q) exit 0 ;;
+            *) warn "Нет такого пункта: $choice" ;;
+        esac
+    done
+}
+
+usage() {
+    cat <<EOF
+${BOLD}xui-menu${RESET} — панель управления ботом мониторинга 3X-UI
+
+  sudo xui-menu                     интерактивное меню
+  sudo xui-menu status              состояние службы и последние ошибки
+  sudo xui-menu show                текущие настройки (секреты замаскированы)
+  xui-menu keys                     какие ключи разрешено менять
+  xui-menu check KEY VALUE          проверить значение (без изменений)
+  sudo xui-menu set KEY VALUE       изменить настройку и подсказать рестарт
+  sudo xui-menu restart             перезапустить бота
+  sudo xui-menu logs [N]            журнал бота (по умолчанию 50 строк)
+  sudo xui-menu update              обновить бота с GitHub
+  sudo xui-menu uninstall [--purge] удалить бота
+
+Пути: PREFIX=$PREFIX, .env=$ENV_FILE
+EOF
+}
+
+case "${1:-}" in
+    ""|menu) menu ;;
+    status) cmd_status ;;
+    show|settings) cmd_show ;;
+    keys) cmd_keys ;;
+    check) cmd_check "${2:-}" "${3:-}" ;;
+    set) cmd_set "${2:-}" "${3:-}" ;;
+    restart) cmd_restart ;;
+    logs) cmd_logs "${2:-50}" ;;
+    update) cmd_update ;;
+    uninstall|remove) cmd_uninstall "${2:-}" ;;
+    help|--help|-h) usage ;;
+    *) die "неизвестная команда: $1 (см. xui-menu --help)" ;;
+esac

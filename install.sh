@@ -169,6 +169,7 @@ SERVICE_USER="${SERVICE_USER:-xui-monitor}"
 STATE_DIR="${STATE_DIR:-/var/lib/xui-monitor}"
 SERVICE_NAME="xui-monitor-bot"
 WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/xui-ctl}"
+MENU_PATH="${MENU_PATH:-/usr/local/bin/xui-menu}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
@@ -194,6 +195,7 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   --print-source   показать, откуда будут взяты исходники, и выйти
   --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
   --menu           меню: установить/обновить, удалить, справка
+                   (после установки для правок настроек: sudo xui-menu)
   --uninstall      удалить бота: служба, sudoers, обёртка, код
   --purge          вместе с --uninstall удалить состояние и пользователя
   --yes            без вопросов: берём значения из окружения или готового .env
@@ -271,7 +273,7 @@ uninstall() {
     fi
     ok "Служба и автозапуск удалены"
 
-    rm -f "$SUDOERS_PATH" "$WRAPPER_PATH"
+    rm -f "$SUDOERS_PATH" "$WRAPPER_PATH" "$MENU_PATH"
     ok "sudo-правила и обёртка удалены (привилегии отозваны)"
 
     rm -rf "$PREFIX"
@@ -837,6 +839,9 @@ step "Настраиваем привилегированные операции
 
 install -o root -g root -m 0755 "$PREFIX/install/xui-ctl" "$WRAPPER_PATH" \
     || fail "Не удалось поставить $WRAPPER_PATH"
+# Консольная панель для быстрых правок настроек (sudo xui-menu).
+install -o root -g root -m 0755 "$PREFIX/install/xui-menu" "$MENU_PATH" \
+    || fail "Не удалось поставить $MENU_PATH"
 
 # visudo лежит в sbin и не всегда в PATH у не-login root-сессии.
 VISUDO="$(command -v visudo 2>/dev/null || true)"
@@ -1059,6 +1064,9 @@ cat <<EOF
 
   Обновление бота:
     sudo bash install.sh --prefix ${PREFIX}
+  Меню настроек:
+    sudo xui-menu            # правки настроек, рестарт, журнал, обновление
+
   Удаление бота:
     sudo bash install.sh --uninstall
 
