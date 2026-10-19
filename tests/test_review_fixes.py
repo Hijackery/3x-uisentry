@@ -614,3 +614,28 @@ def test_proc_stat_error_gets_a_hint() -> None:
     )
     assert "ProcSubset" in hint
     assert _proc_hint(ValueError("другая ошибка")) == ""
+
+
+# ------------------------------------------ подсказки по версии панели
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("3.10.2", "Учётная запись"),
+        ("v3.0.0", "Учётная запись"),
+        ("2.8.5", "API Tokens"),
+        ("", "API Tokens"),
+        ("неизвестно", "API Tokens"),
+    ],
+)
+def test_token_hint_matches_panel_version(version: str, expected: str) -> None:
+    """Интерфейс v3 и 2.x отличается: подсказка должна соответствовать версии."""
+    from xui_monitor_bot.hints import UNKNOWN_PANEL_HINT, panel_token_hint
+
+    hint = panel_token_hint(version)
+    if version in ("", "неизвестно"):
+        assert hint == UNKNOWN_PANEL_HINT
+        assert "API Tokens" in hint
+    else:
+        assert expected in hint, hint

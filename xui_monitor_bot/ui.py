@@ -11,6 +11,7 @@ from typing import Final
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .alerts import Finding
+from .hints import panel_token_hint
 from .models import (
     InboundSummary,
     MonitorSnapshot,
@@ -231,9 +232,10 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
     api = "токен принят" if panel.api_authorized else "⚠️ токен не принят"
     hint = ""
     if not panel.api_authorized:
+        version = panel.panel_version or ""
         hint = (
-            "\n→ проверьте PANEL_API_TOKEN (scope node-sync) и PANEL_BASE_PATH: "
-            "webBasePath панели, иначе API отвечает 404"
+            f"\n→ токен панели не принят. Где взять: {panel_token_hint(version)}"
+            "\n→ и проверьте PANEL_BASE_PATH (webBasePath панели): иначе API отвечает 404"
         )
     return (
         "\n🌐 <b>Панель 3X-UI</b>\n"

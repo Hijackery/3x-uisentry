@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
+from .hints import panel_token_hint
 from .models import MonitorSnapshot, Severity, SystemMetrics
 from .settings import Settings
 from .storage import Storage
@@ -198,7 +199,10 @@ class AlertEngine:
                 )
             )
         if not panel.api_authorized:
-            detail = "проверьте PANEL_API_TOKEN и его область (нужен scope node-sync)"
+            detail = (
+                "панель отвечает, но токен не принят. Где взять: "
+                + panel_token_hint(panel.panel_version or "")
+            )
             if any("404" in item for item in snapshot.warnings):
                 detail += (
                     "\n→ 404 на inbounds/list обычно значит неверный PANEL_BASE_PATH "
