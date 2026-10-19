@@ -562,3 +562,22 @@ def test_extra_slashes_do_not_build_double_slash_urls(tmp_path: Path) -> None:
 
     assert settings.api_base == "https://panel.example.com:2053/panel/panel/api"
     assert "//" not in settings.api_base.split("://", 1)[1]
+
+
+def test_dirty_panel_values_are_normalized_on_read(tmp_path: Path) -> None:
+    """Даже вручную вписанные слеши не должны давать «//» в адресе API."""
+    path = tmp_path / ".env"
+    path.write_text(
+        "TELEGRAM_BOT_TOKEN=123456789:AArealish\n"
+        "TELEGRAM_ADMIN_IDS=42\n"
+        "PANEL_URL=https://panel.example.com:5580///\n"
+        "PANEL_BASE_PATH=/panel/\n"
+        "PANEL_API_TOKEN=token\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(path)
+
+    assert settings.panel_url == "https://panel.example.com:5580"
+    assert settings.panel_base_path == "panel"
+    assert settings.api_base == "https://panel.example.com:5580/panel/panel/api"

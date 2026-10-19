@@ -205,12 +205,14 @@ def _build_settings() -> Settings:
         state_path=Path(env_str("STATE_PATH", str(BASE_DIR / "state.db"))),
         log_path=Path(env_str("LOG_PATH", str(BASE_DIR / "logs" / "bot.log"))),
         log_level=env_str("LOG_LEVEL", "INFO").upper(),
-        panel_url=env_str("PANEL_URL", "https://127.0.0.1:2053"),
+        # Нормализуем сразу при чтении: даже если в .env вручную вписали
+        # «https://host:5580/» или «/panel/», адрес API склеится без «//».
+        panel_url=env_str("PANEL_URL", "https://127.0.0.1:2053").rstrip("/"),
         panel_api_token=env_str("PANEL_API_TOKEN"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
         panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),
-        panel_base_path=env_str("PANEL_BASE_PATH", ""),
+        panel_base_path=env_str("PANEL_BASE_PATH", "").strip("/"),
         services=tuple(env_str_list("SERVICES", ["x-ui"])),
         sudo_wrapper=env_str("SUDO_WRAPPER", "/usr/local/bin/xui-ctl"),
         command_allowlist=tuple(env_str_list("COMMAND_ALLOWLIST")),

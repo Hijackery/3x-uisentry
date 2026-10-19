@@ -177,6 +177,16 @@ cmd_set() {
     need_env
     [ -n "$key" ] || die "set: укажите ключ и значение"
     is_editable "$key" || die "ключ $key менять нельзя (см. xui-menu keys)"
+    # Приводим адрес и путь к каноническому виду: без пробелов и лишних слешей,
+    # иначе бот получит «https://host:5580//» и панель ответит 404.
+    case "$key" in
+        PANEL_URL | TELEGRAM_API_URL)
+            value="$(printf '%s' "$value" | tr -d '[:space:]' | sed -E 's#/*$##')"
+            ;;
+        PANEL_BASE_PATH)
+            value="$(printf '%s' "$value" | tr -d '[:space:]' | sed -E 's#^/*##; s#/*$##')"
+            ;;
+    esac
     check_value "$key" "$value"
     case "$value" in
         *$'\n'*) die "значение не должно содержать перевод строки" ;;
