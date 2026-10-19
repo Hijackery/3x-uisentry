@@ -161,7 +161,14 @@ cmd_check() {
     [ -n "$key" ] || die "check: укажите ключ и значение"
     is_editable "$key" || die "ключ $key менять нельзя (см. xui-menu keys)"
     check_value "$key" "$value"
-    ok "$key=$value — значение корректно"
+    case "$key" in
+        TELEGRAM_BOT_TOKEN | PANEL_API_TOKEN)
+            ok "$key: значение корректно (скрыто, ${#value} символов)"
+            ;;
+        *)
+            ok "$key=$value — значение корректно"
+            ;;
+    esac
 }
 
 cmd_set() {

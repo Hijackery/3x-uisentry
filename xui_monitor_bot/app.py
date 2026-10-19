@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -243,7 +244,11 @@ class MonitorBot:
                     reply_markup=markup,
                 )
             except TelegramError as exc:
-                logger.error("Не удалось отправить сообщение в %s: %s", chat_id, exc)
+                logger.error(
+                    "Не удалось отправить сообщение в чат %s: %s",
+                    _mask_id(chat_id),
+                    exc,
+                )
                 delivered = False
         return delivered
 
@@ -1319,6 +1324,39 @@ def _warn_on_unusual_api(settings: Settings) -> None:
         )
 
 
+#: Шаблон токена бота внутри URL: api.telegram.org/bot123456:AA.../getMe
+_BOT_TOKEN_IN_URL = re.compile(r"bot\d{6,}:[A-Za-z0-9_-]{20,}")
+
+
+class _ScrubbingFormatter(logging.Formatter):
+    """Форматирует запись и вырезает секреты — в том числе из трейсбеков.
+
+    Фильтры на уровне логгера не спасают от чужих библиотек и от текста
+    исключений, поэтому чистим уже готовую строку: и токен бота в URL, и точные
+    значения секретов из конфигурации.
+    """
+
+    def __init__(self, fmt: str, secrets: tuple[str, ...]) -> None:
+        super().__init__(fmt)
+        #: Короткие значения не вырезаем, чтобы не портить обычный текст.
+        self._secrets = tuple(secret for secret in secrets if len(secret) >= 8)
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        text = _BOT_TOKEN_IN_URL.sub("bot<redacted>", text)
+        for secret in self._secrets:
+            text = text.replace(secret, "***")
+        return text
+
+
+def _mask_id(value: int | None) -> str:
+    """Telegram ID в логах — персональные данные: оставляем хвост для сверки."""
+    if value is None:
+        return "—"
+    text = str(value)
+    return f"…{text[-3:]}" if len(text) > 3 else "…"
+
+
 def _setup_logging(settings: Settings) -> None:
     settings.log_path.parent.mkdir(parents=True, exist_ok=True)
     handlers: list[logging.Handler] = [logging.StreamHandler()]
@@ -1329,6 +1367,14 @@ def _setup_logging(settings: Settings) -> None:
         handlers=handlers,
         force=True,
     )
+    # Поверх всех обработчиков — вырезаем секреты из готовых строк (включая
+    # трейсбеки): токен бота из URL и точные значения токенов из конфигурации.
+    formatter = _ScrubbingFormatter(
+        "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        (settings.telegram_token, settings.panel_api_token),
+    )
+    for handler in handlers:
+        handler.setFormatter(formatter)
     # Сторонние библиотеки на DEBUG печатают то, что обязано остаться в тайне:
     # telegram логирует «Set Bot API URL: https://api.telegram.org/bot<TOKEN>»,
     # httpx — полные URL запросов. Приглушаем их независимо от LOG_LEVEL,

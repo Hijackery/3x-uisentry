@@ -253,6 +253,11 @@ Process environment variables take precedence over the `.env` file.
   logged (`denied`), and reading the service log is rate-limited.
 - A non-standard `TELEGRAM_API_URL` is reported in the log, and the installer can
   verify the archive checksum (`--sha256`).
+- Secrets never reach the logs: third-party loggers (`telegram`, `httpx`) are
+  throttled, and a formatter on top strips the bot token from URLs and the exact
+  token values from the configuration — including exception tracebacks. Telegram
+  IDs in messages are masked (`…789`), and `xui-menu show/check` never print
+  secrets.
 - For a self-signed panel certificate there is `PANEL_CA_BUNDLE`: instead of
   disabling TLS verification you can supply your own CA and keep pinning.
 

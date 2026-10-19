@@ -151,3 +151,12 @@ def test_show_masks_short_secret_entirely(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "shortsec" not in result.stdout
     assert "***" in result.stdout
+
+
+def test_check_masks_secret_values() -> None:
+    """`xui-menu check TELEGRAM_BOT_TOKEN <токен>` не должен печатать токен."""
+    result = _run("check", "TELEGRAM_BOT_TOKEN", "123456789:AASECRETvalue1234567890")
+
+    assert result.returncode == 0, result.stderr
+    assert "AASECRET" not in result.stdout
+    assert "скрыто" in result.stdout
