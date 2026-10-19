@@ -381,6 +381,8 @@ systemctl status xui-monitor-bot
 journalctl -u xui-monitor-bot -n 50 --no-pager
 ```
 
+- «Синтаксис sudoers невалиден» — установщик печатает строку от `visudo`; пришлите
+  её в issue: правила генерируются, и это наша ошибка, а не ваша.
 - «Токен отклонён» — проверьте `TELEGRAM_BOT_TOKEN` и `PANEL_API_TOKEN`
   (удобнее через `sudo xui-menu` → «Показать настройки» / «Сменить токен бота»).
 - `inbounds/list недоступен` — у токена панели нет scope `node-sync`.

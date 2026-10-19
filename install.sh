@@ -1013,13 +1013,25 @@ sed -e "s/^User_Alias XUI_MONITOR_USERS = .*/User_Alias XUI_MONITOR_USERS = ${SE
 chown root:root "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 
-if [ -n "$VISUDO" ] && "$VISUDO" -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
-    ok "Правила sudo валидны (проверено visudo)"
-elif [ -z "$VISUDO" ]; then
+if [ -z "$VISUDO" ]; then
     warn "visudo не найден — синтаксис sudoers не проверен (файл собран из шаблона)"
+elif _visudo_out="$("$VISUDO" -cf "$SUDOERS_FILE" 2>&1)"; then
+    ok "Правила sudo валидны (проверено visudo)"
 else
-    rm -f "$SUDOERS_FILE"
-    fail "Синтаксис sudoers невалиден — файл удалён, sudo не тронут"
+    # Не гасим причину: иначе непонятно, что именно не понравилось.
+    warn "visudo: ${_visudo_out##*: }"
+    info "Пробую упрощённые правила — без строки Defaults (совместимость со сборками sudo)."
+    grep -vE '^(Defaults|# Defaults$)' "$SUDOERS_FILE" > "$SUDOERS_FILE.tmp" 2>/dev/null || true
+    install -o root -g root -m 0440 "$SUDOERS_FILE.tmp" "$SUDOERS_FILE"
+    rm -f "$SUDOERS_FILE.tmp"
+    if _visudo_out2="$("$VISUDO" -cf "$SUDOERS_FILE" 2>&1)"; then
+        ok "Правила sudo валидны (упрощённый вариант, без Defaults)"
+    else
+        rm -f "$SUDOERS_FILE"
+        fail "Синтаксис sudoers невалиден — файл удалён, sudo не тронут.
+  visudo сообщил: ${_visudo_out2##*: }
+  Это наша недоработка: пришлите эту строку в issue проекта."
+    fi
 fi
 ok "Обёртка $WRAPPER_PATH установлена"
 

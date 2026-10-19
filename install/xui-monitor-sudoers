@@ -23,4 +23,7 @@ Cmnd_Alias XUI_MONITOR_CMNDS = \
 XUI_MONITOR_USERS ALL=(root) NOPASSWD: XUI_MONITOR_CMNDS
 
 # Defaults
-Defaults:XUI_MONITOR_USERS !requiretty, log_output, log_input
+# Только переносимые настройки: !requiretty на Linux не нужен (requiretty и
+# так выключен), log_input для бота без терминала бессмыслен, а на новых
+# сборках sudo лишние флаги ломают разбор — правила важнее.
+Defaults:XUI_MONITOR_USERS log_output

@@ -344,3 +344,22 @@ def test_installer_explains_optional_alert_chat() -> None:
     assert "Enter — админам в личку" in text
     assert "у групп оно отрицательное" in text
     assert "systemd-юниты через запятую" in text
+
+
+def test_installer_shows_visudo_reason_and_falls_back() -> None:
+    """Раньше причина отказа sudoers скрывалась, а установка обрывалась.
+
+    Теперь установщик печатает строку от visudo и пробует упрощённые правила
+    без Defaults — это совместимо с любыми сборками sudo.
+    """
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "visudo сообщил" in text
+    assert "Пробую упрощённые правила" in text
+    assert "упрощённый вариант" in text
+
+
+def test_sudoers_template_has_only_portable_defaults() -> None:
+    """!requiretty и log_input не нужны и ломают разбор в части сборок sudo."""
+    text = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
+    defaults = [line for line in text.splitlines() if line.startswith("Defaults")]
+    assert defaults == ["Defaults:XUI_MONITOR_USERS log_output"], defaults

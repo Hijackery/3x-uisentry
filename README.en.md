@@ -398,6 +398,8 @@ systemctl status xui-monitor-bot
 journalctl -u xui-monitor-bot -n 50 --no-pager
 ```
 
+- “Sudoers syntax is invalid” — the installer prints the `visudo` message; please
+  report it: the rules are generated, so this is our bug, not yours.
 - “Token rejected” — check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN`
   (easier through `sudo xui-menu` → “Show settings” / “Change bot token”).
 - `inbounds/list unavailable` — the panel token lacks the `node-sync` scope.
