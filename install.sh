@@ -628,59 +628,6 @@ else
     ok "Создан системный пользователь $SERVICE_USER"
 fi
 
-# ------------------------------------------------------------- файлы бота
-
-step "Копируем бота в $PREFIX"
-
-mkdir -p "$PREFIX"
-if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
-    info "Исходники уже в $PREFIX — копирую поверх"
-    cp -a "$SOURCE_DIR/xui_monitor_bot/." "$PREFIX/xui_monitor_bot/"
-    cp -a "$SOURCE_DIR/install/." "$PREFIX/install/"
-else
-    cp -a "$SOURCE_DIR/xui_monitor_bot" "$SOURCE_DIR/install" "$PREFIX/"
-fi
-# Копия установщика лежит рядом с ботом: `xui-menu update` берёт её локально
-# и обновляет сама себя при каждом запуске.
-cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
-cp -a "$SOURCE_DIR/requirements.txt" "$SOURCE_DIR/requirements-dev.txt" \
-    "$SOURCE_DIR/pyproject.toml" "$SOURCE_DIR/README.md" "$SOURCE_DIR/.env.example" \
-    "$PREFIX/" 2>/dev/null || true
-# Код и venv — только root: иначе скомпрометированный бот перепишет сам себя
-# и переживёт рестарт. Сервисному пользователю принадлежит лишь изменяемое
-# состояние: база и логи (это ровно то, что разрешает юнит).
-chown -R root:root "$PREFIX"
-chmod -R go-w "$PREFIX"
-chmod 755 "$PREFIX"
-
-# Каталог состояния создаёт и пересоздаёт systemd (StateDirectory=), но на
-# этапе установки он нужен уже сейчас — самопроверка пишет в базу.
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR"
-ok "Файлы на месте (код — root, состояние — $SERVICE_USER в $STATE_DIR)"
-
-step "Создаём venv и ставим Python-зависимости"
-
-if [ ! -x "$PREFIX/.venv/bin/python" ]; then
-    "$PYTHON_BIN" -m venv "$PREFIX/.venv" || fail "Не удалось создать venv"
-    ok "Окружение создано"
-else
-    info "Окружение уже есть, обновляем пакеты"
-fi
-"$PREFIX/.venv/bin/pip" install -q --upgrade pip >/dev/null 2>&1 \
-    || warn "Не удалось обновить pip, продолжаем"
-info "python-telegram-bot, httpx, psutil…"
-"$PREFIX/.venv/bin/pip" install -q -r "$PREFIX/requirements.txt" >/dev/null 2>&1 \
-    || fail "Не удалось поставить зависимости из requirements.txt"
-"$PREFIX/.venv/bin/python" -c 'import telegram, httpx, psutil, dotenv' \
-    || fail "Зависимости установились, но не импортируются — проверьте venv"
-# umask 077 нужен для секретов, но venv создаётся уже после него и получил бы
-# права 700 (только root). Сервисный пользователь обязан уметь запускать
-# интерпретатор, поэтому возвращаем чтение и исполнение для всех.
-chmod -R a+rX "$PREFIX/.venv"
-ok "Зависимости установлены"
-
-# ---------------------------------------------------------------- конфиг
-
 step "Настраиваем бота (.env)"
 
 ENV_FILE="$PREFIX/.env"
@@ -879,6 +826,66 @@ case "$(env_get TELEGRAM_BOT_TOKEN)" in
     *) fail "TELEGRAM_BOT_TOKEN должен содержать «<bot_id>:<секрет>» — так выдаёт @BotFather" ;;
 esac
 
+
+# ------------------------------------------------------------- файлы бота
+
+step "Копируем бота в $PREFIX"
+
+mkdir -p "$PREFIX"
+if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
+    info "Исходники уже в $PREFIX — копирую поверх"
+    cp -a "$SOURCE_DIR/xui_monitor_bot/." "$PREFIX/xui_monitor_bot/"
+    cp -a "$SOURCE_DIR/install/." "$PREFIX/install/"
+else
+    cp -a "$SOURCE_DIR/xui_monitor_bot" "$SOURCE_DIR/install" "$PREFIX/"
+fi
+# Копия установщика лежит рядом с ботом: `xui-menu update` берёт её локально
+# и обновляет сама себя при каждом запуске.
+cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
+cp -a "$SOURCE_DIR/requirements.txt" "$SOURCE_DIR/requirements-dev.txt" \
+    "$SOURCE_DIR/pyproject.toml" "$SOURCE_DIR/README.md" "$SOURCE_DIR/.env.example" \
+    "$PREFIX/" 2>/dev/null || true
+# Код и venv — только root: иначе скомпрометированный бот перепишет сам себя
+# и переживёт рестарт. Сервисному пользователю принадлежит лишь изменяемое
+# состояние: база и логи (это ровно то, что разрешает юнит).
+chown -R root:root "$PREFIX"
+chmod -R go-w "$PREFIX"
+chmod 755 "$PREFIX"
+
+# .env мастер пишет ещё до копирования — возвращаем ему владельца и права,
+# которые сбросил chown -R выше (сервису нужно только чтение).
+if [ -f "$ENV_FILE" ]; then
+    chown root:"$SERVICE_USER" "$ENV_FILE"
+    chmod 640 "$ENV_FILE"
+fi
+
+# Каталог состояния создаёт и пересоздаёт systemd (StateDirectory=), но на
+# этапе установки он нужен уже сейчас — самопроверка пишет в базу.
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR"
+ok "Файлы на месте (код — root, состояние — $SERVICE_USER в $STATE_DIR)"
+
+step "Создаём venv и ставим Python-зависимости"
+
+if [ ! -x "$PREFIX/.venv/bin/python" ]; then
+    "$PYTHON_BIN" -m venv "$PREFIX/.venv" || fail "Не удалось создать venv"
+    ok "Окружение создано"
+else
+    info "Окружение уже есть, обновляем пакеты"
+fi
+"$PREFIX/.venv/bin/pip" install -q --upgrade pip >/dev/null 2>&1 \
+    || warn "Не удалось обновить pip, продолжаем"
+info "python-telegram-bot, httpx, psutil…"
+"$PREFIX/.venv/bin/pip" install -q -r "$PREFIX/requirements.txt" >/dev/null 2>&1 \
+    || fail "Не удалось поставить зависимости из requirements.txt"
+"$PREFIX/.venv/bin/python" -c 'import telegram, httpx, psutil, dotenv' \
+    || fail "Зависимости установились, но не импортируются — проверьте venv"
+# umask 077 нужен для секретов, но venv создаётся уже после него и получил бы
+# права 700 (только root). Сервисный пользователь обязан уметь запускать
+# интерпретатор, поэтому возвращаем чтение и исполнение для всех.
+chmod -R a+rX "$PREFIX/.venv"
+ok "Зависимости установлены"
+
+# ---------------------------------------------------------------- конфиг
 
 # ------------------------------------------------------- sudo-обёртка
 

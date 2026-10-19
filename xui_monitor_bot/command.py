@@ -60,6 +60,10 @@ async def run_command(
         # Бота выключают или задача отменена: без этого дочерний процесс
         # (например, apt) оставался работать в фоне после остановки бота.
         _terminate(process)
+        # Дожидаемся переработки процесса: иначе транспорт всплывёт при сборке
+        # мусора уже после закрытия цикла событий.
+        with suppress(BaseException):
+            await asyncio.wait_for(process.wait(), timeout=2)
         raise
 
     return CommandResult(
