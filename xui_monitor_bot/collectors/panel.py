@@ -44,9 +44,14 @@ class PanelClient:
 
     def _session(self) -> httpx.AsyncClient:
         if self._client is None:
+            # Свой CA-файл важнее флага проверки: он задаёт, чему именно
+            # доверяем (пиннинг сертификата панели или внутреннего CA).
+            verify: bool | str = self.settings.panel_verify_tls
+            if self.settings.panel_ca_bundle:
+                verify = self.settings.panel_ca_bundle
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.settings.panel_timeout),
-                verify=self.settings.panel_verify_tls,
+                verify=verify,
                 headers={
                     "Authorization": f"Bearer {self.settings.panel_api_token}",
                     "Accept": "application/json",

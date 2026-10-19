@@ -136,6 +136,7 @@ class Settings:
     panel_url: str
     panel_api_token: str
     panel_verify_tls: bool
+    panel_ca_bundle: str
     panel_timeout: float
     panel_base_path: str
 
@@ -207,6 +208,7 @@ def _build_settings() -> Settings:
         panel_url=env_str("PANEL_URL", "https://127.0.0.1:2053"),
         panel_api_token=env_str("PANEL_API_TOKEN"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
+        panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),
         panel_base_path=env_str("PANEL_BASE_PATH", ""),
         services=tuple(env_str_list("SERVICES", ["x-ui"])),
@@ -275,6 +277,11 @@ def _validate(settings: Settings) -> list[str]:
         problems.append("PANEL_URL должен начинаться с http:// или https://")
     if not settings.panel_api_token:
         problems.append("PANEL_API_TOKEN не задан (создайте токен в 3X-UI)")
+    if settings.panel_ca_bundle and not Path(settings.panel_ca_bundle).is_file():
+        problems.append(
+            f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "
+            "(нужен PEM-файл с сертификатом панели или её CA)"
+        )
     if not settings.services:
         problems.append("SERVICES пуст: нечего проверять через systemd")
     problems.extend(_service_problems(settings.services))

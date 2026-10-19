@@ -28,6 +28,7 @@ def make_settings(tmp_path: Path) -> Callable[..., Settings]:
             "panel_url": "https://panel.example.com",
             "panel_api_token": "secret-token",
             "panel_verify_tls": True,
+            "panel_ca_bundle": "",
             "panel_timeout": 5.0,
             "panel_base_path": "",
             "services": ("x-ui",),

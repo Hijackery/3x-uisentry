@@ -13,15 +13,17 @@ from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from telegram.error import RetryAfter
 
 from xui_monitor_bot import ui
 from xui_monitor_bot.actions import ActionError, ActionManager
 from xui_monitor_bot.app import _send_with_retry
+from xui_monitor_bot.collectors.panel import PanelClient
 from xui_monitor_bot.command import run_command
 from xui_monitor_bot.models import CommandResult
-from xui_monitor_bot.settings import Settings
+from xui_monitor_bot.settings import ConfigError, Settings, load_settings
 from xui_monitor_bot.storage import Storage, StorageError
 
 # ------------------------------------------------------ подтверждения
@@ -249,7 +251,69 @@ def test_broken_audit_rows_do_not_crash_render() -> None:
     conn.close()
 
 
-# ------------------------------------------------------- нестандартный API
+# --------------------------------------------- пиннинг сертификата панели
+
+
+def _capture_httpx_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    """Подменяет httpx.AsyncClient, чтобы увидеть аргументы подключения.
+
+    Патчим именно модуль httpx: panel.py обращается к нему по имени, поэтому
+    подмена видна и там (и снимается автоматически после теста).
+    """
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    return captured
+
+
+def test_panel_uses_custom_ca_bundle(
+    make_settings: Callable[..., Settings],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """PANEL_CA_BUNDLE должен доходить до httpx как путь к CA-файлу."""
+    bundle = tmp_path / "panel-ca.pem"
+    bundle.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    captured = _capture_httpx_kwargs(monkeypatch)
+
+    PanelClient(make_settings(panel_ca_bundle=str(bundle)))._session()  # noqa: SLF001
+
+    assert captured["verify"] == str(bundle)
+
+
+def test_panel_verifies_tls_by_default(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_httpx_kwargs(monkeypatch)
+
+    PanelClient(make_settings())._session()  # noqa: SLF001
+
+    assert captured["verify"] is True
+
+
+def test_missing_ca_bundle_is_rejected(tmp_path: Path) -> None:
+    """Опечатка в пути должна падать при старте, а не при первом запросе."""
+    path = tmp_path / ".env"
+    path.write_text(
+        "TELEGRAM_BOT_TOKEN=123456789:AArealish\n"
+        "TELEGRAM_ADMIN_IDS=42\n"
+        "PANEL_URL=https://panel.example.com\n"
+        "PANEL_API_TOKEN=token\n"
+        "PANEL_CA_BUNDLE=/nowhere/panel-ca.pem\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="PANEL_CA_BUNDLE"):
+        load_settings(path)
 
 
 def test_nonstandard_bot_api_is_warned(
