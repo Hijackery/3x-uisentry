@@ -7,7 +7,7 @@ on:
 
 jobs:
   python:
-    name: Проверки кода (Python ${{ matrix.python-version }})
+    name: Тесты (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,6 +35,9 @@ jobs:
 
       - name: Типы (mypy strict)
         run: mypy .
+
+      - name: Тесты (pytest)
+        run: pytest -q
 
   shell:
     name: Скрипты установки
