@@ -125,3 +125,27 @@ def test_pending_jobs_survive_restart(storage: Storage) -> None:
 
     storage.remove_pending_job(job_id)
     assert storage.list_pending_jobs() == []
+
+
+def test_pending_jobs_migration_adds_message_id(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """База прошлой версии (без message_id) должна мигрировать, а не падать."""
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE pending_jobs ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, "
+        "kind TEXT NOT NULL, chat_id INTEGER NOT NULL, "
+        "user_id INTEGER NOT NULL, created_at REAL NOT NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    storage = Storage(path)
+    try:
+        storage.add_pending_job("apt_upgrade", "upgrade", 1, 2, message_id=777)
+        rows = storage.list_pending_jobs()
+        assert rows[0]["message_id"] == 777
+    finally:
+        storage.close()

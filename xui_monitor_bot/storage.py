@@ -91,6 +91,13 @@ class Storage:
             # параллельный доступ падал с «database is locked».
             self.conn.execute("PRAGMA busy_timeout = 5000")
             self.conn.executescript(SCHEMA)
+            # Миграция баз, созданных до появления message_id. Ошибку
+            # «duplicate column» глушим, остальные DatabaseError — нет.
+            with suppress(sqlite3.OperationalError):
+                self.conn.execute(
+                    "ALTER TABLE pending_jobs ADD COLUMN message_id "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
         except sqlite3.DatabaseError as exc:
             self.conn.close()
             raise StorageError(
@@ -233,12 +240,21 @@ class Storage:
     ) -> int:
         """Запоминает фоновое обновление: после рестарта бот допишет отчёт."""
         with self._lock:
-            cur = self.conn.execute(
-                "INSERT INTO pending_jobs "
-                "(action, kind, chat_id, user_id, created_at, message_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (action, kind, chat_id, user_id, time.time(), message_id),
-            )
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO pending_jobs "
+                    "(action, kind, chat_id, user_id, created_at, message_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (action, kind, chat_id, user_id, time.time(), message_id),
+                )
+            except sqlite3.OperationalError:
+                # Старая база без миграции: задача важнее привязки к сообщению.
+                cur = self.conn.execute(
+                    "INSERT INTO pending_jobs "
+                    "(action, kind, chat_id, user_id, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (action, kind, chat_id, user_id, time.time()),
+                )
             return int(cur.lastrowid or 0)
 
     def list_pending_jobs(self) -> list[sqlite3.Row]:
