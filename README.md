@@ -1,7 +1,5 @@
 # xui-monitor-bot
 
-[![CI](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml)
-
 **Русский** · [English](README.en.md)
 
 Telegram-бот для сервера с панелью 3X-UI: следит за железом, systemd-сервисами
@@ -298,16 +296,14 @@ journalctl -u xui-monitor-bot -n 50 --no-pager
 
 ## Разработка
 
-```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/ruff format --check .
-.venv/bin/ruff check .
-.venv/bin/python -m mypy .
-.venv/bin/python -m pytest
-```
+Проверки качества нужны только при правках кода:
 
-Те же проверки (плюс shellcheck и `visudo -cf`) гоняются в GitHub Actions на
-каждый push — см. `.github/workflows/ci.yml`.
+```bash
+pip install ruff mypy
+ruff format --check .
+ruff check .
+mypy .
+```
 
 ## Лицензия
 

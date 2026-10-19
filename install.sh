@@ -173,6 +173,12 @@ split_panel_address() {
     printf '%s %s' "${_scheme}${_host}" "$(normalize_path "$_path")"
 }
 
+#: Сворачивает повторные слеши в адресе («https://host//» → «https://host/»),
+#: не трогая «://» в схеме. Последняя страховка перед проверкой панели.
+collapse_slashes() {
+    printf '%s' "$1" | sed -E 's#([^:])//+#\1/#g'
+}
+
 detect_ips() {
     if command -v hostname >/dev/null 2>&1 && hostname -I >/dev/null 2>&1; then
         hostname -I 2>/dev/null | tr -s ' \n' ' ' | sed 's/ *$//'
@@ -837,6 +843,8 @@ else
     # Ровно один слеш между адресом и путём: иначе панель отвечает 404.
     PROBE_URL="$PANEL_URL_VALUE"
     [ -n "$PANEL_BASE" ] && PROBE_URL="$PANEL_URL_VALUE/$PANEL_BASE"
+    PROBE_URL="$(collapse_slashes "$PROBE_URL")"
+    PANEL_URL_VALUE="$(collapse_slashes "$PANEL_URL_VALUE")"
     if curl -sS --max-time 5 -o /dev/null "$PROBE_URL/" 2>/dev/null; then
         ok "Панель отвечает: $PROBE_URL"
     else
@@ -924,7 +932,7 @@ fi
 # Копия установщика лежит рядом с ботом: `xui-menu update` берёт её локально
 # и обновляет сама себя при каждом запуске.
 cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
-cp -a "$SOURCE_DIR/requirements.txt" "$SOURCE_DIR/requirements-dev.txt" \
+cp -a "$SOURCE_DIR/requirements.txt" \
     "$SOURCE_DIR/pyproject.toml" "$SOURCE_DIR/README.md" "$SOURCE_DIR/.env.example" \
     "$PREFIX/" 2>/dev/null || true
 # Код и venv — только root: иначе скомпрометированный бот перепишет сам себя
