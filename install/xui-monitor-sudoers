@@ -14,6 +14,7 @@ Cmnd_Alias XUI_MONITOR_CMNDS = \
     /usr/local/bin/xui-ctl restart_service *, \
     /usr/local/bin/xui-ctl journal * *, \
     /usr/local/bin/xui-ctl apt_upgrade, \
+    /usr/local/bin/xui-ctl apt_upgrade_phased, \
     /usr/local/bin/xui-ctl dist_upgrade, \
     /usr/local/bin/xui-ctl reboot, \
     /usr/local/bin/xui-ctl run_command *

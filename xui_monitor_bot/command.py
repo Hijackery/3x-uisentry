@@ -11,6 +11,11 @@ from .models import CommandResult
 #: Максимальный объём вывода, который держим в памяти (хвост команды informative).
 MAX_CAPTURED_OUTPUT = 16_000
 
+#: До Python 3.11 asyncio бросал СВОЙ TimeoutError, не связанный со встроенным.
+#: `except TimeoutError` на 3.10 не срабатывал, и таймаут уносил исключение
+#: наружу: команда не прерывалась, а процесс оставался жить.
+ASYNC_TIMEOUTS: tuple[type[BaseException], ...] = (TimeoutError, asyncio.TimeoutError)
+
 
 async def run_command(
     argv: list[str],
@@ -35,11 +40,11 @@ async def run_command(
 
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-    except TimeoutError:
+    except ASYNC_TIMEOUTS:
         _terminate(process)
         # Забираем остаток вывода, но не бесконечно: процесс мог оставить
         # детей, которые держат пайпы открытыми.
-        with suppress(TimeoutError, asyncio.CancelledError):
+        with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError):
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
         return CommandResult(
             action=action or command,

@@ -130,6 +130,48 @@ case "$cmd" in
         echo "full-upgrade завершён"
         ;;
 
+    apt_upgrade_phased)
+        # Обычный upgrade, но с явно включёнными phased-обновлениями. Ubuntu
+        # придерживает часть пакетов (phased rollout), из-за чего «обновлений
+        # нет», хотя они есть. Отдельная подкоманда, а не флаг: бот не должен
+        # уметь собирать произвольные команды apt.
+        require_no_extra_args 0 "$@"
+        unit="xui-monitor-apt-phased"
+        log "apt upgrade (phased) requested"
+
+        if systemctl is-active --quiet "$unit" 2>/dev/null; then
+            echo "Обновление уже выполняется, следите: journalctl -u $unit"
+            exit 3
+        fi
+
+        if ! command -v systemd-run >/dev/null 2>&1; then
+            die "systemd-run недоступен, обновление нельзя запустить безопасно"
+        fi
+
+        systemd-run --quiet --unit="$unit" --collect \
+            --description="apt upgrade с phased-обновлениями по команде бота" \
+            --property=Type=exec \
+            --property=TimeoutStartSec=3600 \
+            "$0" _apt_worker_phased ||
+            die "не удалось поставить обновление в очередь"
+
+        echo "Обновление поставлено в очередь systemd."
+        echo "Следить за ходом: journalctl -u $unit -f"
+        ;;
+
+    _apt_worker_phased)
+        # Внутренняя подкоманда для transient-юнита (см. _apt_worker).
+        [ "$(id -u)" -eq 0 ] || die "_apt_worker_phased требует root"
+        [ -z "${SUDO_USER:-}" ] || die "_apt_worker_phased недоступен через sudo"
+        require_no_extra_args 0 "$@"
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get -y -o APT::Get::Always-Include-Phased-Updates=true upgrade
+        apt-get -y autoremove
+        apt-get clean
+        echo "upgrade (phased) завершён"
+        ;;
+
     dist_upgrade)
         require_no_extra_args 0 "$@"
         export DEBIAN_FRONTEND=noninteractive

@@ -58,6 +58,17 @@ def test_every_button_callback_is_handled() -> None:
         assert handled, f"кнопка {item!r} нигде не обрабатывается"
 
 
+def test_every_confirm_button_has_description() -> None:
+    """Кнопка подтверждения без описания = «Неизвестное действие» у админа."""
+    from xui_monitor_bot.app import CONFIRM_DESCRIPTIONS
+
+    for data in sorted(_all_callback_data()):
+        if not data.startswith("ask:"):
+            continue
+        action = data[4:].split(":", 1)[0]
+        assert action in CONFIRM_DESCRIPTIONS, action
+
+
 def test_callback_data_fits_telegram_limit() -> None:
     """Лимит Telegram — 64 байта; длинное имя юнита не должно ломать меню."""
     for markup in (

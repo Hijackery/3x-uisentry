@@ -447,8 +447,14 @@ def maintenance_menu() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "📦 Обновить систему (apt, в фоне)",
+                    "📦 Обновить систему (full-upgrade)",
                     callback_data="ask:apt_upgrade:",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬆️ Обновить с phased (обычный upgrade)",
+                    callback_data="ask:apt_upgrade_phased:",
                 )
             ],
             [

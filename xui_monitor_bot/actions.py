@@ -23,6 +23,7 @@ ACTION_RESTART_SERVICE = "restart_service"
 ACTION_RESTART_XRAY = "restart_xray"
 ACTION_JOURNAL = "journal"
 ACTION_UPGRADE = "apt_upgrade"
+ACTION_UPGRADE_PHASED = "apt_upgrade_phased"
 ACTION_DIST_UPGRADE = "dist_upgrade"
 ACTION_REBOOT = "reboot"
 ACTION_COMMAND = "run_command"
@@ -182,6 +183,18 @@ class ActionManager:
             [ACTION_UPGRADE], ACTION_UPGRADE, timeout=self.settings.command_timeout
         )
 
+    async def apt_upgrade_phased(self) -> CommandResult:
+        """Обновление с разрешёнными phased-обновлениями (Ubuntu).
+
+        Обычный `apt upgrade` часть пакетов придерживает, поэтому кнопка
+        выглядит нерабочей: «обновлений нет», хотя они есть.
+        """
+        return await self._privileged(
+            [ACTION_UPGRADE_PHASED],
+            ACTION_UPGRADE_PHASED,
+            timeout=self.settings.command_timeout,
+        )
+
     async def dist_upgrade(self) -> CommandResult:
         """Проверка и запуск do-release-upgrade на Ubuntu."""
         return await self._privileged(
@@ -235,6 +248,8 @@ class ActionManager:
             return await self.restart_xray()
         if pending.action == ACTION_UPGRADE:
             return await self.apt_upgrade()
+        if pending.action == ACTION_UPGRADE_PHASED:
+            return await self.apt_upgrade_phased()
         if pending.action == ACTION_DIST_UPGRADE:
             return await self.dist_upgrade()
         if pending.action == ACTION_REBOOT:

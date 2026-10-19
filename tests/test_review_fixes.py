@@ -114,6 +114,9 @@ class _FakeProcess:
             return b"", b""
         if self.mode == "cancel":
             raise asyncio.CancelledError
+        if self.mode == "asyncio-timeout":
+            # На Python < 3.11 это отдельный класс, не встроенный TimeoutError.
+            raise asyncio.TimeoutError
         await asyncio.sleep(30)
         return b"", b""
 
@@ -134,6 +137,23 @@ async def test_timeout_kills_process(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_process(monkeypatch, process)
 
     result = await run_command(["dummy"], timeout=0.05)
+
+    assert result.returncode == 124
+    assert process.killed is True
+
+
+async def test_asyncio_timeout_error_is_also_handled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """На Python 3.10 asyncio бросал собственный TimeoutError.
+
+    Ловить только встроенный было недостаточно: на 3.10 таймаут улетал наружу,
+    команда не прерывалась, а дочерний процесс продолжал работать.
+    """
+    process = _FakeProcess("asyncio-timeout")
+    _patch_process(monkeypatch, process)
+
+    result = await run_command(["dummy"], timeout=30)
 
     assert result.returncode == 124
     assert process.killed is True
@@ -226,3 +246,34 @@ def test_broken_audit_rows_do_not_crash_render() -> None:
     assert "reboot" in text
     assert "—" in text
     conn.close()
+
+
+# ------------------------------------------------- обновление с phased
+
+
+async def test_phased_upgrade_goes_through_privileged_wrapper(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Кнопка phased-обновления обязана идти через ту же обёртку и allowlist."""
+    seen: list[list[str]] = []
+
+    async def fake_run(
+        argv: list[str], *, timeout: float, action: str
+    ) -> CommandResult:
+        seen.append(list(argv))
+        return CommandResult(
+            action=action,
+            command=" ".join(argv),
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration=0.0,
+        )
+
+    monkeypatch.setattr("xui_monitor_bot.actions.run_command", fake_run)
+    actions = ActionManager(make_settings())
+
+    await actions.apt_upgrade_phased()
+
+    assert seen[0][0] == "/usr/local/bin/xui-ctl"
+    assert seen[0][1] == "apt_upgrade_phased"

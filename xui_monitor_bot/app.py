@@ -35,6 +35,7 @@ from .actions import (
     ACTION_RESTART_SERVICE,
     ACTION_RESTART_XRAY,
     ACTION_UPGRADE,
+    ACTION_UPGRADE_PHASED,
     ActionError,
     ActionManager,
 )
@@ -76,6 +77,7 @@ CONFIRM_DESCRIPTIONS: dict[str, str] = {
     ACTION_RESTART_SERVICE: "Перезапустить сервис",
     ACTION_RESTART_XRAY: "Перезапустить xray через API панели",
     ACTION_UPGRADE: "Поставить apt update + full-upgrade в очередь systemd",
+    ACTION_UPGRADE_PHASED: "Поставить apt update + upgrade (phased) в очередь systemd",
     ACTION_DIST_UPGRADE: "Проверить доступность релиз-обновления ОС",
     ACTION_REBOOT: "Перезагрузить сервер",
 }
@@ -605,7 +607,7 @@ class MonitorBot:
             if action == ACTION_REBOOT:
                 await self._do_reboot(status, user_id)
                 return
-            if action in (ACTION_UPGRADE, ACTION_DIST_UPGRADE):
+            if action in (ACTION_UPGRADE, ACTION_UPGRADE_PHASED, ACTION_DIST_UPGRADE):
                 self._schedule_long_action(action, chat_id, user_id)
                 await _safe_edit(
                     status,
@@ -670,11 +672,12 @@ class MonitorBot:
         user_id = int(data.get("user_id", 0) or 0)
 
         try:
-            result = (
-                await self.actions.apt_upgrade()
-                if action == ACTION_UPGRADE
-                else await self.actions.dist_upgrade()
-            )
+            if action == ACTION_UPGRADE:
+                result = await self.actions.apt_upgrade()
+            elif action == ACTION_UPGRADE_PHASED:
+                result = await self.actions.apt_upgrade_phased()
+            else:
+                result = await self.actions.dist_upgrade()
         except ActionError as exc:
             await self._notify(chat_id, f"❌ {ui.esc(str(exc))}")
             await asyncio.to_thread(
