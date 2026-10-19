@@ -258,3 +258,15 @@ def test_prefix_exists_before_env_is_written() -> None:
         text.index('touch "$ENV_FILE"'),
     )
     assert first_mkdir < first_write, "каталог установки создаётся после записи .env"
+
+
+def test_incomplete_env_does_not_block_install() -> None:
+    """Регрессия: .env после прерванного запуска не должен требовать правки руками.
+
+    На реальной машине установка падала с «В .env пусто PANEL_API_TOKEN» сразу
+    после неудачного прогона — вместо этого мастер обязан дозаполнить значения.
+    """
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "CONFIG_COMPLETE=0" in text
+    assert "дозаполняю через мастер" in text
+    assert "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN" in text

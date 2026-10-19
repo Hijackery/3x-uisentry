@@ -36,7 +36,9 @@ curl -fsSL https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/inst
 The script downloads the code, installs dependencies, asks for the tokens,
 creates the `xui-monitor` system user, enables autostart and runs a self-check at
 the end. **The wizard asks its questions early (step 4 of 11) — before installing
-dependencies — so answer right away.** The questions are read from the terminal,
+dependencies — so answer right away.** If a `.env` is left over from an
+interrupted run, the wizard fills in the missing values (existing ones become the
+defaults), so there is no need to edit the file by hand. The questions are read from the terminal,
 so the dialogue works both with a pipe and with process substitution.
 
 The panel API token must have the `node-sync` scope, otherwise the bot will not

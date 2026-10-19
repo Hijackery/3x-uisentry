@@ -709,10 +709,27 @@ print(found[0] if found else "")
 '
 }
 
+# .env может остаться после прерванного запуска: тогда в нём заглушки или пустые
+# значения. В этом случае не требуем править файл руками, а дозаполняем мастером
+# (существующие значения подставляются как значения по умолчанию).
+CONFIG_COMPLETE=0
 if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
+    CONFIG_COMPLETE=1
+    for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
+        _value="$(env_get "$_key")"
+        case "$_value" in
+            "" | *ExampleTokenReplaceMe*) CONFIG_COMPLETE=0 ;;
+        esac
+    done
+fi
+
+if [ "$CONFIG_COMPLETE" -eq 1 ]; then
     ok "Файл .env уже есть — сохраняю ваши токены"
-    info "Изменить: nano $ENV_FILE && systemctl restart $SERVICE_NAME"
+    info "Изменить: sudo xui-menu (или nano $ENV_FILE)"
 else
+    if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
+        warn "В $ENV_FILE не всё заполнено — дозаполняю через мастер"
+    fi
     [ -f "$ENV_FILE" ] || { cp "$SOURCE_DIR/.env.example" "$ENV_FILE" 2>/dev/null || touch "$ENV_FILE"; }
 
     read -r DETECTED_PORT DETECTED_BASE <<<"$(panel_settings)"
@@ -823,7 +840,7 @@ chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
-    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — допишите и запустите установку снова"
+    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo xui-menu (или повторите установку)"
 done
 
 # Заглушка из .env.example: с ней бот стартует, но Telegram отвечает 401.
