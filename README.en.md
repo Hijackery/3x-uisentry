@@ -7,27 +7,57 @@
 
 [Русский](README.md) · **English**
 
-A Telegram bot for a server with a 3X-UI panel: it watches hardware, systemd
-services and the panel, sends alerts, shows subscriptions and traffic. Dangerous
-actions (restart a service, restart xray, upgrade the system, reboot) run only
-after a button confirmation and only for the administrator.
+A Telegram bot for a server running the **3X-UI** panel: it watches the hardware,
+services and the panel, sends clear alerts and shows subscriptions. Risky actions
+— restart, system upgrade, reboot — happen only from a confirmed button and only
+for an administrator.
 
-## Features
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+```
 
-- **Monitoring** — system, systemd services, 3X-UI panel, xray, inbounds,
-  subscriptions and traffic, plus hourly averages for the last day.
-- **Alerts** — hysteresis (no flapping), cooldown and an “I know, until morning”
-  mute; every alert carries “Restart” and “Log” buttons.
-- **Safe actions** — service/xray restart, `apt` (full and phased), release-upgrade
-  check, reboot: confirmation required, everything audited.
-- **One-command install** — the wizard asks for tokens immediately, verifies the
-  @BotFather token and panel reachability, and finishes with an 8-point self-test.
-- **Any popular Linux** — systemd, OpenRC (Alpine, Gentoo), SysVinit;
-  `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+.
-- **`xui-menu` terminal panel** — edit settings, restart, read the log and update,
-  with secrets always masked.
+> One command: the wizard downloads the code, asks for tokens, installs
+> dependencies, creates a dedicated user, enables autostart and verifies that
+> everything works.
+
+## Contents
+
+1. [Why use it](#why-use-it)
+2. [What it looks like](#what-it-looks-like)
+3. [Compatibility](#compatibility)
+4. [Quick start](#quick-start)
+5. [Connecting to the panel](#connecting-to-the-panel)
+6. [How it works](#how-it-works)
+7. [Commands and screens](#commands-and-screens)
+8. [`xui-menu` settings menu](#xui-menu-settings-menu)
+9. [Settings](#settings)
+10. [Security](#security)
+11. [Update and removal](#update-and-removal)
+12. [Troubleshooting](#troubleshooting)
+13. [Development](#development)
+14. [Project](#project)
+
+---
+
+## Why use it
+
+The 3X-UI panel shows the state, but you have to open it. The bot brings what
+matters to Telegram and stays quiet when everything is fine.
+
+| | |
+|---|---|
+| **Monitoring** | CPU, RAM, swap, disk, network, load average; services; panel and xray; inbounds, subscriptions and client traffic |
+| **Alerts** | hysteresis without flapping, cooldown, an “I know, until morning” mute; restart and log buttons right on the alert |
+| **Actions** | service and xray restart, `apt` full/phased, release upgrade check, reboot, allow-listed diagnostic commands |
+| **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
+| **Install** | one command, terminal prompts (works through `curl \| bash` too), an 8-point self-check |
+| **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+ |
+| **Terminal** | `xui-menu` — edit settings, restart, read the log, update; secrets are masked |
+| **Security** | a dedicated unprivileged user, a narrow sudoers list of exact commands, every risky action confirmed and audited |
 
 ## What it looks like
+
+The summary starts with a verdict — one glance is enough at night:
 
 ```text
 🟢 Server state: all good · CPU 12% · RAM 41% · Disk 63% · x-ui 🟢 · panel 🟢
@@ -37,108 +67,84 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 Disk ▓▓▓▓▓▓░░░░  63.0% 🟢
 ```
 
-```text
-🔴 CRITICAL · Service x-ui is not running · 03:12
-State failed, SubState failed
+An alert with a reason and actions:
 
-[♻️ Restart x-ui] [📜 Log x-ui]
-[📊 Current state] [🏠 Back to menu]
+```text
+🔴 CRITICAL · Service x-ui is down · 03:12
+Status failed, SubState failed
+
+[♻️ Restart x-ui] [📜 x-ui log]
+[📊 Current state] [🏠 Menu]
 [😴 I know, until morning]
 ```
+
+An action result with the return code and a contextual button:
 
 ```text
 ✅ x-ui restarted in 1.2 s
 Service x-ui restarted
-[📜 Log x-ui] [🏠 Back to menu]
+[📜 x-ui log] [🏠 Menu]
 ```
 
-## How it works
+## Compatibility
 
-```text
-Telegram  ⇄  bot (unprivileged user xui-monitor)
-                 ├─ psutil / systemctl / journalctl    — metrics and services
-                 ├─ panel API (Bearer, scope node-sync) — inbounds, subscriptions, xray restart
-                 └─ sudo xui-ctl (narrow sudoers)       — restart, apt, reboot, log
-```
+| Item | Support |
+|---|---|
+| **Services** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
+| **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman` — detected automatically |
+| **Python** | 3.10+; the installer picks a suitable interpreter |
+| **Panel** | 3X-UI 2.x and 3.x (`/panel/api/...`, Bearer token) |
+| **sudo** | classic sudo and `sudo-rs` (Ubuntu 26.04+): rules are generated without wildcards or aliases |
+| **Architectures** | x86_64, ARM — anything with Python and a supported init system |
 
-Secrets live in `.env` (`640 root:xui-monitor`), state in SQLite
-(`/var/lib/xui-monitor`), the code is owned by `root`. See
-[Security](#security) and [SECURITY.md](SECURITY.md).
+You can pick the service manager explicitly with `--init systemd|openrc|sysv`.
+Without systemd the bot still works: the log is read from `bot.log`, and service
+state is reported as unavailable (no false “crit” alerts).
 
-## Requirements
+## Quick start
 
-- Linux; the service manager is detected automatically: **systemd**
-  (Debian/Ubuntu, RHEL/CentOS/Rocky/Alma, Fedora, openSUSE, Arch/Manjaro) or
-  **no systemd** — OpenRC (Alpine, Gentoo) and SysVinit. The package manager is
-  detected as well (`apt`/`dnf`/`yum`/`zypper`/`pacman`). Force it manually:
-  `--init systemd|openrc|sysv`.
-- Python 3.10+ — the installer picks a suitable interpreter itself.
-- A 3X-UI panel and its API token.
-- A Telegram bot (token from [@BotFather](https://t.me/BotFather)) and your
-  numeric ID (get it from [@userinfobot](https://t.me/userinfobot)).
+### 1. What you need
 
-## Install
+- a Linux server with the 3X-UI panel;
+- a Telegram bot token from [@BotFather](https://t.me/BotFather);
+- your numeric ID (e.g. [@userinfobot](https://t.me/userinfobot));
+- a panel API token with the `node-sync` or `admin` scope — see the
+  [next section](#connecting-to-the-panel).
+
+### 2. Install
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
 ```
 
-or through a pipe:
+Or through a pipe:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh | sudo bash
 ```
 
-The script downloads the code, installs dependencies, asks for the tokens,
-creates the `xui-monitor` system user, enables autostart and runs a self-check at
-the end. **The wizard asks its questions early (step 4 of 11) — before installing
-dependencies — so answer right away.** If a `.env` is left over from an
-interrupted run, the wizard fills in the missing values (existing ones become the
-defaults), so there is no need to edit the file by hand. The questions are read from the terminal,
-so the dialogue works both with a pipe and with process substitution.
+The wizard asks questions as **step 4, before installing dependencies**, so
+answer them at the beginning. Questions are read from the terminal (`/dev/tty`),
+so the dialogue works even when the script is piped.
 
-Trailing slashes and spaces in the address (`https://host:5580/`) are stripped by
-the installer itself. The `webBasePath` field is the separate **“Panel URL”**
-setting in 3X-UI (usually `/`, so leave the field empty). Do not enter the
-`/panel` path from the browser: the 3X-UI UI always lives at `.../panel`, and
-putting that into `webBasePath` adds a duplicate segment
-(`.../panel/panel/api`). The installer verifies the path before asking for the
-token and silently corrects it when it does not check out; pasting a full
-address into that field is handled too.
+What the wizard asks:
 
-The token is created **inside the 3X-UI panel** (not in Telegram and not in the
-bot):
+1. the bot token and admin IDs (the token is verified with Telegram immediately);
+2. the panel address, `webBasePath` and API token (the address is verified);
+3. the services to watch;
+4. an optional alert chat.
 
-1. **3X-UI v3.x:** “Panel settings → Account → API token” → create a token with
-   the **`node-sync`** scope (or `admin`). **3X-UI 2.x:** “Settings → API
-   Tokens”.
-2. `node-sync` exposes inbounds and subscriptions — exactly what the bot needs.
-   `monitor` gives status only and is not enough.
-3. **Copy the value immediately**: v3 shows a token only once, afterwards just
-   “set”. That value is `PANEL_API_TOKEN`.
-
-On v3 the `sudo x-ui setting -getApiToken` command no longer creates admin tokens
-— it rotates the service `cli-fallback` one. Create the token in the UI or via
-`POST /panel/api/setting/apiTokens/create` with `name`, `scope` (`node-sync` or
-`admin`) and `expiresAt`; the value is returned only once.
-
-The quickest way is from the server terminal (the command prints the value):
+### 3. After installation
 
 ```bash
-sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
+sudo xui-menu          # menu: state, settings, restart, log, update
+systemctl status xui-monitor-bot
 ```
 
-Verify the token works (the response must be `{"success":true,…}`):
+Open the bot in Telegram, press `/start` → `/status`. If something is wrong, the
+bot tells you what exactly.
 
-```bash
-curl -fsS -H "Authorization: Bearer <token>" \
-  https://panel.example.com:2053/panel/api/server/status
-```
-
-The installer performs the same check itself, and if you leave the field empty
-while the panel is running it issues a token automatically.
-
-Unattended mode (values from the environment):
+### Unattended install
 
 ```bash
 sudo env \
@@ -149,55 +155,149 @@ sudo env \
   bash install.sh --yes
 ```
 
-If the sources are not on GitHub, but on your own server or in your own Git:
+Useful options: `--repo owner/name`, `--ref branch`, `--prefix DIR`, `--user NAME`,
+`--no-start`, `--force-config`, `--print-source` (show the version source),
+`--sha256 HASH`, `--init TYPE`, `--menu`. Full list — `--help`.
+
+If an incomplete `.env` is left from an aborted run, the wizard fills in the
+missing values and offers the existing ones as defaults — no manual editing.
+
+## Connecting to the panel
+
+### 3X-UI token
+
+The token is created **inside the panel**, not in Telegram and not in the bot.
+
+**3X-UI v3.x**
+
+1. “Panel settings → Account → API token” → create.
+2. Scope: **`node-sync`** (or `admin`).
+3. **Copy the value immediately** — the panel shows it once, later only a
+   “configured” marker remains.
+
+The same via API: `POST /panel/api/setting/apiTokens/create` with `name`, `scope`,
+`expiresAt` (an existing admin token is required).
+
+**3X-UI 2.x**
+
+“Settings → API Tokens”, or from the terminal:
 
 ```bash
-sudo bash install.sh --tarball https://host/xui-monitor-bot.tar.gz
-sudo bash install.sh --repo my-login/xui-monitor-bot --ref main
-sudo env GIT_URL=https://git.example.com/me/xui-monitor-bot.git bash install.sh --yes
+sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
 ```
 
-Check where the version will come from (without touching the system):
+On v3 this command no longer creates tokens — it only rotates the service
+`cli-fallback` one.
+
+Why not `monitor`: that scope only exposes panel status. Inbounds and
+subscriptions need `node-sync`; actions inside the panel need `admin`.
+
+### `webBasePath` — a common mistake
+
+`webBasePath` is the separate **“Panel URL”** setting in 3X-UI. It is usually `/`,
+and then the wizard field is left empty.
+
+Do not enter the `/panel` path from the browser: the 3X-UI UI always lives at
+`.../panel`, and the API at `.../panel/api`. Putting `/panel` into `webBasePath`
+adds a duplicate segment (`.../panel/panel/api`).
+
+The installer checks the path before requesting the token (a valid path answers
+`401` without a token, a wrong one `404`) and silently fixes the mistake. A full
+address pasted into that field is recognised too.
+
+### Manual check
 
 ```bash
-bash install.sh --print-source --repo my-login/xui-monitor-bot
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  https://panel.example.com:2053/panel/api/server/status
 ```
 
-Useful options: `--repo owner/name`, `--ref BRANCH`, `--prefix DIR`, `--user NAME`,
-`--no-start`, `--force-config`, `--print-source`, `--sha256 HASH`, `--init TYPE`,
-`--menu`. Full list — `--help`.
-
-
-GitHub may serve the branch from its cache for a couple of minutes after a
-repository update — if you see an old revision, just run the command again later.
-The code archive is fetched with a cache-busting timestamp and is always current.
-
-### If the system has no systemd
-
-The installer drops `/etc/init.d/xui-monitor-bot` (`start`/`stop`/`status`/
-`restart`) and registers autostart via `rc-update` (OpenRC) or
-`update-rc.d`/`chkconfig` (SysVinit). Management, `.env`, the sudoers wrapper and
-`xui-menu` work the same; the log is taken from `bot.log` when `journalctl` is
-unavailable. Differences: no systemd unit isolation, and `/services` reports that
-service state is unavailable (the bot says so under “Needs attention”).
-
-## Settings menu (`xui-menu`)
-
-After installation a console panel appears — faster than editing `.env` by hand:
+`401` means the path is correct and a token is needed. With the token:
 
 ```bash
-sudo xui-menu          # interactive menu
-sudo xui-menu show     # current settings (secrets are masked)
-sudo xui-menu keys     # which keys may be changed
-xui-menu check PANEL_TIMEOUT 20   # validate a value without changes (no root)
+curl -fsS -H "Authorization: Bearer <token>" \
+  https://panel.example.com:2053/panel/api/server/status
+```
+
+The response must contain `"success":true`.
+
+### Address: IP, domain, localhost
+
+- If the panel has **“Panel domain”** (`webDomain`) configured, 3X-UI checks the
+  `Host` header and answers `403` to everything else. Then `PANEL_URL` must use
+  exactly that name, not the IP.
+- The name must resolve **from the server itself**. If the domain points to a
+  public IP and there is no hairpin NAT, use `http://127.0.0.1:2053` with the same
+  `PANEL_BASE_PATH`. Write IPv6 in brackets: `http://[::1]:2053`.
+- `http` is fine when the panel listens on localhost: traffic never leaves the
+  machine. If the panel is reachable publicly, use `https://` only — otherwise the
+  token and API contents travel in plain text. For a self-signed certificate, do
+  not disable verification; set `PANEL_CA_BUNDLE` instead.
+- The bot does not follow redirects: if `http` redirects to `https`, just change
+  the scheme.
+
+## How it works
+
+```text
+Telegram  ⇄  bot (unprivileged user xui-monitor)
+                 ├─ psutil / systemctl / journalctl        — metrics and services
+                 ├─ panel API (Bearer, node-sync scope)     — inbounds, subscriptions, xray restart
+                 └─ sudo xui-ctl (narrow sudoers)           — restart, apt, reboot, journal
+```
+
+- **Code** — `/opt/xui-monitor-bot`, owned by `root`; the bot cannot rewrite itself.
+- **Secrets** — `.env` with `640 root:xui-monitor`.
+- **State** — SQLite in `/var/lib/xui-monitor` (history, audit, mutes).
+- **Privileges** — only through `sudo xui-ctl`; the allowed subcommands are listed
+  exactly, without wildcards.
+- **`apt`** — runs in dedicated systemd units (`xui-monitor-apt-*.service`)
+  because the bot lives with `ProtectSystem=strict`.
+
+## Commands and screens
+
+| Command | What it shows |
+|---|---|
+| `/status` | a one-line verdict, issues, metrics, services and panel |
+| `/services` | service state; restart and log next to each |
+| `/panel` | panel and xray availability, versions, updates |
+| `/subs` | subscriptions: expiry, traffic, depleted and disabled |
+| `/history` | hourly CPU/RAM/disk averages for the last day |
+| `/logs` | selected service log with an “errors only” filter |
+| `/audit` | bot action log with “denied / actions” filters |
+| `/maint` | maintenance: `apt`, release upgrade, reboot, allowlisted command |
+| `/help` | plain-language help: what to press and what the numbers mean |
+
+Buttons duplicate the commands; every screen has “🏠 Menu”, so you cannot get
+stuck. Guests do not see the buttons.
+
+**Commands and buttons work only in the administrator's private chat.** In a group
+the bot refuses: addresses, subscriptions and traffic must not leak into a shared
+chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only — management there
+is unavailable.
+
+`/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
+are aligned in a monospace block, and time is labelled “server time”. Alerts carry
+`♻️ Restart`, `📜 Log` and `😴 I know, until morning` — an 8-hour mute stored in
+SQLite that survives restarts.
+
+## `xui-menu` settings menu
+
+A console panel is available after installation:
+
+```bash
+sudo xui-menu              # interactive menu
+sudo xui-menu show         # settings (secrets masked)
+sudo xui-menu keys         # which keys may be changed
+xui-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
 sudo xui-menu set PANEL_TIMEOUT 20
 sudo xui-menu restart       # apply
-sudo xui-menu restart-xray  # restart xray in the panel (via API)
+sudo xui-menu restart-xray  # restart xray via the panel API
 sudo xui-menu logs 100
 ```
 
-The interactive menu is drawn in a frame and grouped into sections; the service
-state is shown at the top:
+The interactive menu is drawn in a frame and grouped into sections; the live
+service state is shown on top:
 
 ```text
 ╔════════════════════════════════════════════════════════╗
@@ -218,210 +318,133 @@ state is shown at the top:
 ╚════════════════════════════════════════════════════════╝
 ```
 
-What each item does:
-
 | Item | Action |
 |---|---|
-| 1 | `systemctl status` plus the latest warnings from the bot log |
-| 2 | show settings; tokens are masked (`123456 ···a1b2`, short ones — `*** (N chars)`) |
+| 1 | service state and recent warnings |
+| 2 | show settings; tokens masked |
 | 3 | bot log (50 lines) |
-| 4–6 | guided change of the bot token, admin IDs, alert chat |
-| 7–9 | panel address, `webBasePath`, panel API token |
-| 10 | TLS verification (`PANEL_VERIFY_TLS`) and the CA bundle (`PANEL_CA_BUNDLE`) |
-| 11–13 | CPU / memory / disk thresholds (submenu: warning and critical) |
+| 4–6 | bot token, admin IDs, alert chat |
+| 7–9 | panel address, `webBasePath`, API token |
+| 10 | TLS (`PANEL_VERIFY_TLS`) and CA bundle (`PANEL_CA_BUNDLE`) |
+| 11–13 | CPU / memory / disk thresholds (warning and critical) |
 | 14 | alert hysteresis and cooldown |
 | 15 | how many days before a subscription expiry to warn |
 | 16–17 | monitored services, log level |
-| 18 | edit any key from the allowlist by name (`xui-menu keys`) |
-| 19 | restart the bot and verify that the service is active |
-| 20 | restart xray in the panel via the API (with confirmation) |
-| 21 | update: downloads a fresh installer from the `main` branch and runs it with the same `PREFIX`; without network it falls back to the local copy at `/opt/xui-monitor-bot/install.sh` |
-| 22 | removal; the menu asks you to type `yes` |
+| 18 | edit any allow-listed key by name |
+| 19 | restart the bot and verify |
+| 20 | restart xray via the API (with confirmation) |
+| 21 | update from the `main` branch |
+| 22 | remove (asks for `yes`) and exit |
 
 Worth knowing:
 
-- input is validated: a wrong number prints the range (`0–22`), while `q` or an
-  empty line just redraws the menu; the frame auto-sizes to the longest line;
-- only keys from the allowlist can be changed (`xui-menu keys`); values are
-  validated before writing (`check`) — for example `LOG_LEVEL` accepts only
-  `DEBUG/INFO/WARNING/ERROR`, and `PANEL_URL` must start with `http`;
-- `.env` is rewritten atomically with `640 root:<service user>` permissions, as
-  during installation; changes are applied after a restart (the menu offers it);
-- secrets are never printed in full, and `.env` should never be shared with
-  anyone — it holds both tokens;
+- input is validated: a wrong number prints the valid range, `q` exits;
+- only allow-listed keys can be changed (`xui-menu keys`); values are validated
+  before writing;
+- `.env` is rewritten atomically with `640 root:<service user>`;
+- secrets are never printed in full;
 - paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env xui-menu`;
 - screen clearing can be disabled: `XUI_MENU_NO_CLEAR=1 sudo xui-menu`.
 
-## Update and removal
+## Settings
 
-```bash
-# update (config and state are kept)
-bash <(curl -Ls .../install.sh)
-
-# remove everything: service, sudoers, wrapper, menu, code, database, user
-sudo bash install.sh --uninstall
-
-# keep the database and the user (e.g. to preserve the audit log)
-sudo bash install.sh --uninstall --keep-state
-
-# interactive menu
-sudo bash install.sh --menu
-```
-
-## Commands
-
-| Command | What it shows |
-|---|---|
-| `/status` | summary: server, services, panel, traffic |
-| `/services` | systemd unit state, restart, log |
-| `/panel` | panel and xray availability, versions, updates |
-| `/subs` | subscriptions: expiry, traffic, disabled |
-| `/history` | hourly CPU/RAM/disk averages for a day |
-| `/logs` | log of the selected service |
-| `/audit` | bot action log |
-| `/maint` | maintenance: apt (full and phased), release upgrade, arbitrary command, reboot |
-| `/help` | plain-language help: what to press and what the numbers mean (“❓ Help” button) |
-
-The buttons under messages duplicate the commands: every screen has “🏠 В меню”
-(“Back to menu”), so you can never get stuck. Guests are not shown any buttons.
-
-Commands and buttons work **only in the administrator's private chat**: in a group
-the bot refuses, so addresses, subscriptions and traffic never leak into a shared
-chat.
-
-`/status` starts with a one-line verdict (`всё в норме` / `сервисы не работают: …`),
-warnings come right after it, and the details are hidden behind `📋 Подробнее`
-(“More”). Metrics are aligned in a monospaced block, the time is labelled
-“server time”.
-
-Buttons that collect data show an intermediate “⏳”, and after an action
-contextual buttons remain (for example the log of the restarted service). Under an
-alert there is `♻️ Restart <service>`, `📜 Log` and `😴 “I know, until morning”`
-to mute a specific problem for 8 hours (the mute is stored in SQLite and survives
-a restart). The service log offers `🔎 Errors only` and `📜 200 more lines`, and
-`/audit` offers “denials / actions” filters. Confirmations explain the
-consequences (“the panel and VPN will be down for 1–2 minutes”). Rebooting the
-server lives in `/maint` → `🔻 Перезагрузить сервер` (“Reboot the server”), behind
-a confirmation.
-
-## Configuration
-
-All settings are in `/opt/xui-monitor-bot/.env`, an annotated example is
-[`.env.example`](.env.example).
+All parameters live in `/opt/xui-monitor-bot/.env`; a commented example is in
+[`.env.example`](.env.example). Process environment variables take precedence
+over the file.
 
 | Key | Meaning |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | bot token from @BotFather |
 | `TELEGRAM_ADMIN_IDS` | administrator IDs, comma-separated |
-| `ALERT_CHAT_ID` | chat for alerts (empty — admins in private) |
+| `ALERT_CHAT_ID` | alert chat (empty — admins in private) |
 | `TELEGRAM_API_URL` | custom Bot API or proxy (official by default) |
-| `PANEL_URL` | panel address: IP or domain name, e.g. `https://panel.example.com:2053` (if the panel has “Panel domain” set, use exactly that) |
-| `PANEL_BASE_PATH` | panel `webBasePath`, if set |
-| `PANEL_API_TOKEN` | panel token (scope `node-sync`) |
-| `PANEL_VERIFY_TLS` | verify the panel TLS certificate (default `true`) |
-| `PANEL_CA_BUNDLE` | custom CA file (PEM) for the panel; overrides `PANEL_VERIFY_TLS` |
+| `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
+| `PANEL_BASE_PATH` | “Panel URL” (`webBasePath`), if set |
+| `PANEL_API_TOKEN` | panel token (`node-sync` scope) |
+| `PANEL_VERIFY_TLS` | verify the panel TLS certificate |
+| `PANEL_CA_BUNDLE` | custom CA file (PEM); overrides `PANEL_VERIFY_TLS` |
 | `PANEL_TIMEOUT` | panel request timeout, seconds |
-| `SERVICES` | monitored units, comma-separated (`x-ui,fail2ban`) |
+| `SERVICES` | services to watch, comma-separated (`x-ui,fail2ban`) |
 | `DISK_PATH` | path to check for free space |
 | `CPU_WARN` | CPU warning threshold, % |
 | `CPU_CRIT` | CPU critical threshold, % |
-| `MEM_WARN` | RAM warning threshold, % |
-| `MEM_CRIT` | RAM critical threshold, % |
+| `MEM_WARN` | memory warning threshold, % |
+| `MEM_CRIT` | memory critical threshold, % |
 | `DISK_WARN` | disk warning threshold, % |
 | `DISK_CRIT` | disk critical threshold, % |
-| `ALERT_HYSTERESIS` | how far a metric must fall back to clear the alert |
-| `ALERT_COOLDOWN` | how often an active alert is repeated, seconds |
-| `EXPIRING_SOON_DAYS` | when a subscription counts as expiring soon |
+| `ALERT_HYSTERESIS` | how far a metric must recover before an alert clears, % |
+| `ALERT_COOLDOWN` | how often an active alert repeats, seconds |
+| `EXPIRING_SOON_DAYS` | days before expiry when a subscription is “soon” |
 | `CHECK_INTERVAL` | background check period, seconds (minimum 15) |
 | `ACTION_COOLDOWN` | pause between identical actions, seconds |
-| `CONFIRM_TTL` | how long the confirmation button lives, seconds |
-| `COMMAND_TIMEOUT` | timeout for allowed commands, seconds |
-| `COMMAND_ALLOWLIST` | diagnostic command allowlist (must match `install/xui-ctl`) |
+| `CONFIRM_TTL` | confirmation button lifetime, seconds |
+| `COMMAND_TIMEOUT` | allowlisted command timeout, seconds |
+| `COMMAND_ALLOWLIST` | diagnostic commands (must match `xui-ctl`) |
 | `STATE_PATH` | SQLite database |
 | `LOG_PATH` | log file |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `SUDO_WRAPPER` | path to `xui-ctl` |
 
-`PANEL_URL` accepts both an IP and a domain name. Two practical rules:
-
-- if the panel has **“Panel domain”** (`webDomain`) configured, 3X-UI validates
-  the `Host` header and answers `403` to anything else — then `PANEL_URL` must use
-  exactly that name, not the IP;
-- the name must resolve **from the server itself** (the bot runs there). If the
-  domain points to the public IP and NAT loopback is unavailable, use
-  `http://127.0.0.1:2053` with the same `PANEL_BASE_PATH`. Bracket IPv6:
-  `http://[::1]:2053`.
-
-Quick check: `curl -fsS -o /dev/null -w '%{http_code}\n' https://your-domain:5580/panel/`
-(a `403` means the domain validation is the reason).
-
-`http` or `https` — both work, but choose deliberately:
-
-- panel and bot on the same host, panel listening on localhost → use
-  `http://127.0.0.1:2053` (+ `PANEL_BASE_PATH`): traffic never leaves the machine;
-- panel reachable on a public address → `https://` only, otherwise the token and
-  the whole API payload (inbounds, clients, subscriptions) travel in cleartext.
-  For a self-signed certificate do not disable verification — set
-  `PANEL_CA_BUNDLE` instead;
-- specified `http` but the panel redirects to `https`? The installer says so
-  explicitly (“panel answered with a redirect”) and the bot does not follow
-  redirects — just switch the scheme to `https://`.
-
 ### Where alerts go
 
-`ALERT_CHAT_ID` may be left empty: alerts then go to the private chats of every ID
-in `TELEGRAM_ADMIN_IDS`. If you want a shared chat, add the bot there, send any
-message and find the chat ID (`@userinfobot`, `@getidsbot`); group and channel IDs
-are negative, e.g. `-1001234567890`. Remember that alerts contain addresses,
-subscriptions and traffic — in a group every member sees them, while commands are
-still accepted only in the administrator's private chat.
+Leave `ALERT_CHAT_ID` empty and alerts go to every ID in `TELEGRAM_ADMIN_IDS` in
+private. For a shared chat, add the bot there, send a message and find the chat ID
+(`@userinfobot`, `@getidsbot`); group IDs are negative, e.g. `-1001234567890`.
 
-Process environment variables take precedence over the `.env` file.
+Remember: alerts contain addresses, subscriptions and traffic — everyone in the
+group will see them. Commands and buttons still work only in private chat.
 
 ## Security
 
 - The bot runs as the unprivileged `xui-monitor` user; code and venv belong to
-  root, and `.env` is read-only for the service.
-- All privileged operations go through `/usr/local/bin/xui-ctl` and a narrow
-  sudoers list of **exact commands** (no wildcards in arguments — required by both
-  classic sudo and `sudo-rs` on Ubuntu 26.04+); there is no arbitrary shell. `apt` runs as a separate
-  systemd transient unit, because the service lives with `ProtectSystem=strict`.
-- Dangerous actions require confirmation, the token is bound to the requesting
-  administrator, and everything is written to `audit_log`.
-- The panel client does not follow redirects (otherwise the token could leak to a
-  foreign host), values from the panel are escaped before sending, and the bot
-  token never ends up in logs, even at `DEBUG`.
-- Repeats are protected: a confirmation fires once, identical actions are limited
-  by `ACTION_COOLDOWN` (including the xray restart), and messages rejected by
-  Telegram flood control are retried.
-- Commands are accepted only in a private chat; foreign access attempts are
-  logged (`denied`), and reading the service log is rate-limited.
-- A non-standard `TELEGRAM_API_URL` is reported in the log, and the installer can
-  verify the archive checksum (`--sha256`).
-- Secrets never reach the logs: third-party loggers (`telegram`, `httpx`) are
-  throttled, and a formatter on top strips the bot token from URLs and the exact
-  token values from the configuration — including exception tracebacks. Telegram
-  IDs in messages are masked (`…789`), and `xui-menu show/check` never print
-  secrets.
-- For a self-signed panel certificate there is `PANEL_CA_BUNDLE`: instead of
-  disabling TLS verification you can supply your own CA and keep pinning.
+  `root`, and `.env` is read-only for the service.
+- All privileged operations go through `sudo xui-ctl` and a narrow sudoers list of
+  **exact commands** (no wildcards in arguments — required by both classic sudo
+  and `sudo-rs`). There is no arbitrary shell.
+- `apt` runs in dedicated `xui-monitor-apt-*.service` units that do not inherit the
+  bot's sandbox; a fallback exists when a transient unit is denied.
+- Risky actions require confirmation; the token is bound to the requesting
+  administrator, is single-use, and everything is written to `audit_log`.
+- The panel client does not follow redirects, panel values are escaped, and the
+  bot token never reaches the logs even at `DEBUG`.
+- Repeats are limited by `ACTION_COOLDOWN`; Telegram flood control is retried with
+  a pause, and long messages are split by lines.
+- Commands are accepted only in private chat; outsider attempts are audited
+  (`denied`).
+- The installer can verify the archive checksum (`--sha256`).
+- Secrets are stripped from logs by a formatter (including exception text),
+  Telegram IDs are masked (`…789`), and `xui-menu show/check` never print secrets.
+- For a self-signed panel certificate use `PANEL_CA_BUNDLE` instead of disabling
+  TLS verification.
 
-### Spam and accidental-damage protection
+Service resources are limited (`MemoryMax=256M`, `TasksMax=64`), command output is
+truncated (16 KB) and has a timeout.
 
-- Every server-changing action requires a button confirmation; the confirmation
-  token is single-use and bound to the administrator who requested it.
-- Cooldowns: `ACTION_COOLDOWN` (30 s by default) for actions, 5 s for reading the
-  log, 2 s for “Refresh” — the buttons cannot be used to load the panel.
-- `apt` runs as a separate transient unit, and a second run is impossible while
-  the first is going; the command itself is fixed.
-- The bot **cannot** run arbitrary commands (`run_command` is six literals from
-  the allowlist), delete files, edit system configs, or write to `/usr`, `/boot`,
-  `/etc`. Privileges are limited by a narrow sudoers rule for
-  `/usr/local/bin/xui-ctl`.
-- Service resources are capped (`MemoryMax=256M`, `TasksMax=64`), command output
-  is truncated (16 KB) and timed out, and the database is pruned on a schedule.
-- Telegram load is capped: on flood control at most 3 attempts and no longer than
-  30 s, long messages are split by lines.
+## Update and removal
+
+```bash
+# update (config and state are kept)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+
+# same from the menu
+sudo xui-menu          # item 21
+
+# full removal: service, sudoers, wrapper, menu, code, database and user
+sudo bash install.sh --uninstall
+
+# keep the database and user
+sudo bash install.sh --uninstall --keep-state
+
+# installer's interactive menu
+sudo bash install.sh --menu
+```
+
+Removal prints a single “Bot removed.” line and closes `xui-menu`. With
+`--keep-state` a warning remains that the database and user were preserved.
+
+> The project publishes no releases or tags: the current version is always the
+> `main` branch. GitHub may serve it from cache for a couple of minutes — simply
+> re-run the installer.
 
 ## Troubleshooting
 
@@ -430,34 +453,38 @@ systemctl status xui-monitor-bot
 journalctl -u xui-monitor-bot -n 50 --no-pager
 ```
 
-- “Sudoers syntax is invalid” — the installer prints the `visudo` message; please
-  report it: the rules are generated, so this is our bug, not yours.
-- Ubuntu 26.04+: `visudo` is the Rust rewrite (`sudo-rs`), which forbids wildcards
-  in command arguments and does not know some `Defaults`; the installer accounts
-  for that by listing exact commands, so no manual edits are needed.
-- “Token rejected” — check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN`
-  (easier through `sudo xui-menu` → “Show settings” / “Change bot token”).
-- `inbounds/list unavailable` — the panel token lacks the `node-sync` scope.
-- Service logs are not visible — make sure the sudoers file has the `journal` rule.
+| Symptom | What to do |
+|---|---|
+| “Invalid sudoers syntax” | the installer prints the `visudo` line — attach it to an issue |
+| “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/xui-monitor-bot.service && sudo systemctl daemon-reload && sudo systemctl restart xui-monitor-bot` |
+| “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo xui-menu` → “Show settings” |
+| `inbounds/list unavailable` | the panel token lacks the `node-sync` scope |
+| Panel returns `404` for the API | check `PANEL_URL`/`PANEL_BASE_PATH` (a common mistake is `/panel` in `webBasePath`) |
+| Service logs are not visible | check the `journal` sudoers rule and that the call goes through `sudo` |
+| Ubuntu 26.04+ | `sudo-rs` forbids wildcards in arguments — the installer already accounts for it |
+
+More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Development
 
-Quality checks are needed only when changing the code:
-
 ```bash
-pip install ruff mypy
+pip install -r requirements-dev.txt
 ruff format --check .
 ruff check .
 mypy .
+pytest -q
 ```
+
+Tests need no panel, Telegram or systemd: external calls are mocked. CI runs
+Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 
 ## Project
 
-- [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is already
-  protected.
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is protected.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
-- [CHANGELOG.md](CHANGELOG.md) — what the project already does.
+- [CHANGELOG.md](CHANGELOG.md) — change history.
 - [`.env.example`](.env.example) — every setting with comments.
+- [Русский README](README.md).
 
 ## License
 

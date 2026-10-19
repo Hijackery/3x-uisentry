@@ -51,10 +51,37 @@ jobs:
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n install.sh
           bash -n install/xui-ctl
-          shellcheck install.sh install/xui-ctl
+          bash -n install/xui-menu
+          sh -n install/xui-monitor-bot.init
+          shellcheck install.sh install/xui-ctl install/xui-menu
 
       - name: Синтаксис sudoers
         run: sudo visudo -cf install/xui-monitor-sudoers
+
+      - name: Sudoers, который генерирует установщик
+        run: |
+          # Проверяем именно сгенерированные правила (с реальными именами
+          # юнитов и ключами), а не только статический пример.
+          set -euo pipefail
+          svc=xui-monitor
+          wrapper=/usr/local/bin/xui-ctl
+          units="x-ui fail2ban"
+          keys="df_-h free_-h uptime"
+          rules=""
+          for unit in $units; do
+            for sub in is_active restart_service journal journal_more journal_errors; do
+              rules="$rules${rules:+, }$wrapper $sub $unit"
+            done
+          done
+          for sub in apt_upgrade apt_upgrade_phased dist_upgrade reboot; do
+            rules="$rules${rules:+, }$wrapper $sub"
+          done
+          for key in $keys; do
+            rules="$rules${rules:+, }$wrapper run_command $key"
+          done
+          sudo sh -c "printf '%s ALL=(root) NOPASSWD: %s\n' '$svc' '$rules' > /etc/sudoers.d/ci-generated"
+          sudo visudo -cf /etc/sudoers.d/ci-generated
+          sudo rm -f /etc/sudoers.d/ci-generated
 
       - name: Адреса по умолчанию в установщике
         run: bash install.sh --print-source

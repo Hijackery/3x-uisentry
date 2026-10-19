@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### Документация
+
+- README (ru/en) переписан по логической цепочке: зачем → как выглядит →
+  совместимость → быстрый старт → подключение панели → устройство → команды →
+  `xui-menu` → настройки → безопасность → обновление/удаление → диагностика →
+  разработка. Добавлены содержание, таблицы совместимости и симптомов, примеры
+  экранов и точные команды проверки API/пути.
+- CI теперь проверяет синтаксис `xui-menu` и init-скрипта, `shellcheck` для меню
+  и `visudo -cf` для sudoers, сгенерированного из реальных имён юнитов и ключей.
+
 ### Возможности
 
 - Telegram-бот мониторинга: система, systemd-службы, панель 3X-UI, xray,
@@ -97,7 +107,7 @@
   архив по `--sha256`; клиент панели не следует редиректам.
 - Команды и кнопки принимаются только в личном чате администратора; отказы
   пишутся в журнал; обёртка `xui-ctl` работает только по узкому sudoers-списку.
-- `run_command` запускает фиксированныеargv без `bash -c`; аргументы подкоманд
+- `run_command` запускает фиксированные argv без `bash -c`; аргументы подкоманд
   валидируются (`safe_unit`, `safe_int`, запрет лишних аргументов).
 
 ---
@@ -128,6 +138,16 @@ tags are published — the current version is always the `main` branch; update v
 - systemd, OpenRC (Alpine, Gentoo) and SysVinit support with automatic service
   manager detection (`--init` to force) and an init script plus log file fallback
   for non-systemd hosts.
+
+### Documentation
+
+- README (ru/en) restructured into a logical chain: why → preview → compatibility
+  → quick start → panel connection → internals → commands → `xui-menu` → settings
+  → security → update/removal → troubleshooting → development. Added a table of
+  contents, compatibility and symptom tables, screen examples and exact API/path
+  checks.
+- CI now checks `xui-menu` and the init script syntax, runs `shellcheck` on the
+  menu, and validates the sudoers generated from real unit names and command keys.
 
 ### Fixed
 
