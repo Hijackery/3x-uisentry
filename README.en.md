@@ -232,11 +232,11 @@ Worth knowing:
 # update (config and state are kept)
 bash <(curl -Ls .../install.sh)
 
-# remove the bot (service, sudoers, wrapper, code)
+# remove everything: service, sudoers, wrapper, menu, code, database, user
 sudo bash install.sh --uninstall
 
-# the same, but also the state and the system user
-sudo bash install.sh --purge
+# keep the database and the user (e.g. to preserve the audit log)
+sudo bash install.sh --uninstall --keep-state
 
 # interactive menu
 sudo bash install.sh --menu

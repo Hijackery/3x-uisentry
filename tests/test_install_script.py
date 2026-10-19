@@ -43,6 +43,7 @@ def test_help_lists_install_options_and_exits_zero() -> None:
         "--menu",
         "--uninstall",
         "--purge",
+        "--keep-state",
         "TARBALL_URL",
     ):
         assert fragment in result.stdout, fragment
@@ -448,3 +449,12 @@ def test_installer_mentions_v3_token_location() -> None:
     assert "Учётная запись" in text
     assert "скопируйте сразу" in text
     assert "node-sync" in text
+
+
+def test_uninstall_removes_state_by_default() -> None:
+    """«Под ноль» — значит вместе с базой и пользователем (--keep-state отменяет)."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'rm -rf "$STATE_DIR"' in text
+    assert "--keep-state" in text
+    assert "Остался каталог состояния" not in text
+    assert "Удалено всё: служба" in text

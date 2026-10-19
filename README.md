@@ -218,11 +218,11 @@ sudo xui-menu logs 100
 # обновить (конфиг и состояние сохранятся)
 bash <(curl -Ls .../install.sh)
 
-# удалить бота (служба, sudoers, обёртка, код)
+# удалить бота целиком: служба, sudoers, обёртка, меню, код, база и пользователь
 sudo bash install.sh --uninstall
 
-# то же, но вместе с состоянием и системным пользователем
-sudo bash install.sh --purge
+# оставить базу и пользователя (например, чтобы сохранить журнал действий)
+sudo bash install.sh --uninstall --keep-state
 
 # интерактивное меню
 sudo bash install.sh --menu

@@ -211,7 +211,7 @@ INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
 UNINSTALL=0
-PURGE=0
+KEEP_STATE=0
 MENU=0
 PRINT_SOURCE=0
 
@@ -231,8 +231,10 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
   --menu           меню: установить/обновить, удалить, справка
                    (после установки для правок настроек: sudo xui-menu)
-  --uninstall      удалить бота: служба, sudoers, обёртка, код
-  --purge          вместе с --uninstall удалить состояние и пользователя
+  --uninstall      удалить бота целиком: служба, sudoers, обёртка, меню, код,
+                   состояние (/var/lib/xui-monitor) и системный пользователь
+  --purge          то же самое (синоним, оставлен для совместимости)
+  --keep-state     не трогать состояние и пользователя
   --yes            без вопросов: берём значения из окружения или готового .env
   --force-config   перезаписать существующий .env значениями по умолчанию
   --no-start       установить, но не запускать сервис
@@ -265,7 +267,8 @@ while [ $# -gt 0 ]; do
         --sha256)       SOURCE_SHA256="${2:?--sha256 требует хеш}"; shift 2 ;;
         --menu|-m)      MENU=1; shift ;;
         --uninstall)    UNINSTALL=1; shift ;;
-        --purge)        UNINSTALL=1; PURGE=1; shift ;;
+        --purge)        UNINSTALL=1; shift ;;   # синоним: удаление и так полное
+        --keep-state)   KEEP_STATE=1; shift ;;
         --yes|-y)       ASSUME_YES=1; shift ;;
         --force-config) KEEP_CONFIG=0; shift ;;
         --no-start)     START_SERVICE=0; shift ;;
@@ -299,7 +302,7 @@ uninstall() {
 
     section "Удаление бота $SERVICE_NAME"
     if [ "$ASSUME_YES" -eq 0 ] && [ "$INTERACTIVE" -eq 1 ]; then
-        ask "Удалить бота целиком (служба, sudoers, обёртка, код)? [y/N]"
+        ask "Удалить бота целиком (код, база, пользователь)? [y/N]"
         read -r answer <&$READ_FD || answer=""
         case "$answer" in
             [yYдД]*) ;;
@@ -341,20 +344,23 @@ uninstall() {
     rm -rf "$PREFIX"
     ok "Каталог с кодом удалён: $PREFIX"
 
-    if [ "$PURGE" -eq 1 ]; then
+    if [ "$KEEP_STATE" -eq 1 ]; then
+        warn "Оставлено по просьбе (--keep-state): $STATE_DIR и пользователь $SERVICE_USER"
+        info "Стереть позже: sudo rm -rf $STATE_DIR && sudo userdel $SERVICE_USER"
+    else
+        # По умолчанию вычищаем под ноль: база и логи больше не нужны.
         rm -rf "$STATE_DIR"
         if id "$SERVICE_USER" >/dev/null 2>&1; then
             userdel "$SERVICE_USER" >/dev/null 2>&1 \
                 || warn "Пользователя $SERVICE_USER удалить не удалось"
         fi
         ok "Состояние и системный пользователь удалены"
-    else
-        info "Состояние сохранено: $STATE_DIR (стереть: --purge)"
     fi
 
     printf '\n%s%sБот удалён.%s\n' "$BOLD" "$GREEN" "$RESET"
-    if [ "$PURGE" -eq 0 ]; then
-        info "Остался каталог состояния $STATE_DIR — он больше никому не мешает."
+    if [ "$KEEP_STATE" -eq 0 ]; then
+        info "Удалено всё: служба, автозапуск, sudoers, обёртка, меню, код,"
+        info "$STATE_DIR и пользователь $SERVICE_USER."
     fi
 }
 
@@ -364,8 +370,8 @@ interactive_menu() {
     fi
     printf '\n%sБот мониторинга 3X-UI — установка%s\n\n' "$BOLD" "$RESET"
     printf '  1) Установить или обновить бота\n'
-    printf '  2) Удалить бота (служба, sudoers, код)\n'
-    printf '  3) Удалить бота вместе с состоянием и пользователем\n'
+    printf '  2) Удалить бота целиком (код, база, пользователь)\n'
+    printf '  3) Удалить бота, оставив базу и пользователя\n'
     printf '  h) Справка\n'
     printf '  0) Выход\n\n'
     ask "Выберите пункт [1]: "
@@ -373,7 +379,7 @@ interactive_menu() {
     case "${choice:-1}" in
         1) return 0 ;;
         2) UNINSTALL=1 ;;
-        3) UNINSTALL=1; PURGE=1 ;;
+        3) UNINSTALL=1; KEEP_STATE=1 ;;
         h|H|help|--help) usage; exit 0 ;;
         0|q|Q) exit 0 ;;
         *) fail "Не понял выбор: $choice" ;;
@@ -902,7 +908,7 @@ else
             warn "Панель отклонила токен — проверьте значение и его область (нужен node-sync или admin)."
             info "3X-UI v3: Настройки панели → Учётная запись → API-токен (создать, скопировать сразу)."
             info "3X-UI 2.x: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
-            info "В PANEL_API_TOKEN вставляется значение токена, а не название области ("update-all-geofiles")."
+            info "В PANEL_API_TOKEN вставляется значение токена, а не название области — например update-all-geofiles."
         else
             warn "Проверить токен не удалось (панель не ответила) — это заметит самопроверка"
         fi

@@ -274,8 +274,8 @@ cmd_uninstall() {
     local installer="$PREFIX/install.sh"
     [ -f "$installer" ] || installer="$PWD/install.sh"
     [ -f "$installer" ] || die "не найден install.sh"
-    if [ "$purge" = "--purge" ]; then
-        bash "$installer" --purge --yes
+    if [ "$purge" = "--keep-state" ]; then
+        bash "$installer" --uninstall --keep-state --yes
     else
         bash "$installer" --uninstall --yes
     fi
@@ -374,7 +374,7 @@ ${BOLD}xui-menu${RESET} — панель управления ботом мон�
   sudo xui-menu restart             перезапустить бота
   sudo xui-menu logs [N]            журнал бота (по умолчанию 50 строк)
   sudo xui-menu update              обновить бота с GitHub
-  sudo xui-menu uninstall [--purge] удалить бота
+  sudo xui-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
 
 Пути: PREFIX=$PREFIX, .env=$ENV_FILE
 
@@ -387,7 +387,7 @@ ${BOLD}English${RESET}
   sudo xui-menu set KEY VALUE       change a setting, then restart
   sudo xui-menu restart | logs [N]  restart the bot / show the log
   sudo xui-menu update              update the bot from GitHub
-  sudo xui-menu uninstall [--purge] remove the bot
+  sudo xui-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
 EOF
 }
