@@ -399,3 +399,44 @@ def test_sudoers_template_still_valid_after_stripping_comments(tmp_path: Path) -
     if result.returncode == 127:
         return  # visudo нет — проверка пропускается
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_token_detection_ignores_scope_names(tmp_path: Path) -> None:
+    """Регрессия: в .env попадало «update-all-geofiles» — это scope, а не токен."""
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("detect_panel_token() {")
+    end = script.index("\n}\n", start) + 3
+
+    shim_dir = tmp_path / "bin"
+    shim_dir.mkdir()
+    fake_xui = shim_dir / "x-ui"
+    fake_xui.write_text(
+        "#!/bin/sh\ncat <<'OUT'\n"
+        "API token generated successfully.\n"
+        "Available scopes: update-all-geofiles, node-sync\n"
+        "Token name: monitor-bot\n"
+        "Token: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6\n"
+        "OUT\n",
+        encoding="utf-8",
+    )
+    fake_xui.chmod(0o755)
+
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"PYTHON_BIN={shutil.which('python3') or '/usr/bin/python3'}\n"
+        f"{script[start:end]}\n"
+        "detect_panel_token\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(probe)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env={**os.environ, "PATH": f"{shim_dir}:{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"

@@ -737,8 +737,21 @@ detect_panel_token() {
 import re, sys
 
 text = sys.stdin.read()
-found = re.findall(r"[a-zA-Z0-9_-]{16,}", text)
-found = [item for item in found if item.lower() not in ("successful", "tokenname", "tokenscope")]
+# Сначала значение рядом со словом token («Token: <значение>»), иначе — любое
+# длинное слово, кроме названий областей доступа: x-ui печатает рядом список
+# scope (например «update-all-geofiles»), и раньше в .env попадало именно
+# название области, а не токен.
+labelled = re.search(r"(?im)^[^:\n]*token[^:\n]*[:=]\s*([A-Za-z0-9_-]{16,})\s*$", text)
+if labelled:
+    print(labelled.group(1))
+    raise SystemExit(0)
+
+deny = ("successful", "tokenname", "tokenscope", "geofile", "scope", "sync", "admin", "monitor")
+found = [
+    item
+    for item in re.findall(r"[A-Za-z0-9_-]{16,}", text)
+    if not any(bad in item.lower() for bad in deny)
+]
 print(found[0] if found else "")
 '
 }
@@ -865,6 +878,27 @@ else
    или выпустите из терминала (и скопируйте вывод):
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
    и вставьте значение в PANEL_API_TOKEN."
+    fi
+
+    # Сразу проверяем токен: без этого в .env попадал мусор (например, название
+    # области доступа), и бот потом ругался «токен не принят».
+    if [ -n "$PANEL_TOKEN" ] && [ -n "$PROBE_URL" ]; then
+        _token_reply="$(curl -sS --max-time 5 -H "Authorization: Bearer $PANEL_TOKEN" \
+            "${PROBE_URL}/panel/api/server/status" 2>/dev/null || true)"
+        if printf '%s' "$_token_reply" | grep -q '"success":true'; then
+            ok "Токен панели принят"
+        elif printf '%s' "$_token_reply" | grep -q '"success":false'; then
+            if [ "$ASSUME_YES" -eq 1 ]; then
+                fail "Панель отклонила API-токен. Нужен токен со scope node-sync
+      (панель → Настройки → API Tokens, либо: sudo x-ui setting -getApiToken true
+      -tokenName monitor-bot -tokenScope node-sync)."
+            fi
+            warn "Панель отклонила токен — проверьте область доступа (нужен node-sync)."
+            info "Выпустить заново: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
+            info "В PANEL_API_TOKEN вставляется строка «Token: ...», а не название области."
+        else
+            warn "Проверить токен не удалось (панель не ответила) — это заметит самопроверка"
+        fi
     fi
 
     DETECTED_SERVICES="x-ui"
