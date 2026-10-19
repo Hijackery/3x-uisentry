@@ -1007,9 +1007,12 @@ if [ -z "$VISUDO" ]; then
 fi
 
 SUDOERS_FILE="$SUDOERS_PATH"
+# В /etc/sudoers.d кладём только рабочие строки: комментарии из шаблона (они
+# русские) остаются в репозитории, а система получает короткий ASCII-файл —
+# так его разберёт любая сборка sudo.
 sed -e "s/^User_Alias XUI_MONITOR_USERS = .*/User_Alias XUI_MONITOR_USERS = ${SERVICE_USER}/" \
     -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
-    "$PREFIX/install/xui-monitor-sudoers" > "$SUDOERS_FILE"
+    "$PREFIX/install/xui-monitor-sudoers" | grep -v '^#' > "$SUDOERS_FILE"
 chown root:root "$SUDOERS_FILE"
 chmod 440 "$SUDOERS_FILE"
 
@@ -1018,8 +1021,10 @@ if [ -z "$VISUDO" ]; then
 elif _visudo_out="$("$VISUDO" -cf "$SUDOERS_FILE" 2>&1)"; then
     ok "Правила sudo валидны (проверено visudo)"
 else
-    # Не гасим причину: иначе непонятно, что именно не понравилось.
-    warn "visudo: ${_visudo_out##*: }"
+    # Печатаем вывод visudo как есть: обрезать его нельзя, теряется причина.
+    warn "visudo ответил:"
+    printf '%s\n' "$_visudo_out" | sed 's/^/        /'
+    warn "версия: $("$VISUDO" -V 2>&1 | head -1)"
     info "Пробую упрощённые правила — без строки Defaults (совместимость со сборками sudo)."
     grep -vE '^(Defaults|# Defaults$)' "$SUDOERS_FILE" > "$SUDOERS_FILE.tmp" 2>/dev/null || true
     install -o root -g root -m 0440 "$SUDOERS_FILE.tmp" "$SUDOERS_FILE"
@@ -1027,10 +1032,16 @@ else
     if _visudo_out2="$("$VISUDO" -cf "$SUDOERS_FILE" 2>&1)"; then
         ok "Правила sudo валидны (упрощённый вариант, без Defaults)"
     else
-        rm -f "$SUDOERS_FILE"
-        fail "Синтаксис sudoers невалиден — файл удалён, sudo не тронут.
-  visudo сообщил: ${_visudo_out2##*: }
-  Это наша недоработка: пришлите эту строку в issue проекта."
+        # Файл в sudoers.d держать нельзя (sudo сломается), но и терять нельзя:
+        # сохраняем рядом с суффиксом .invalid (sudo такие игнорирует).
+        mv -f "$SUDOERS_FILE" "${SUDOERS_FILE}.invalid" 2>/dev/null || true
+        warn "Правила не приняты сборкой sudo. Что прислать в issue:"
+        printf '        %s\n' "visudo (raw):"
+        printf '%s\n' "$_visudo_out2" | sed 's/^/          /'
+        printf '        %s\n' "содержимое ${SUDOERS_FILE}.invalid:"
+        sudo_cat="$(cat "${SUDOERS_FILE}.invalid" 2>/dev/null || echo '(нет файла)')"
+        printf '%s\n' "$sudo_cat" | sed 's/^/          /'
+        fail "Синтаксис sudoers невалиден — правила отключены, sudo не тронут."
     fi
 fi
 ok "Обёртка $WRAPPER_PATH установлена"

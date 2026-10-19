@@ -238,7 +238,7 @@ def test_installer_keeps_local_copy_for_xui_menu_update() -> None:
 def test_installer_never_asks_to_dump_env_to_terminal() -> None:
     """Подсказка не должна предлагать вывести .env (в нём токены) на экран."""
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "grep -v '^#'" not in text
+    assert "grep -v '^#' $ENV_FILE" not in text
     assert "не пересылайте" in text
 
 
@@ -353,7 +353,7 @@ def test_installer_shows_visudo_reason_and_falls_back() -> None:
     без Defaults — это совместимо с любыми сборками sudo.
     """
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "visudo сообщил" in text
+    assert "visudo ответил" in text
     assert "Пробую упрощённые правила" in text
     assert "упрощённый вариант" in text
 
@@ -363,3 +363,33 @@ def test_sudoers_template_has_only_portable_defaults() -> None:
     text = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
     defaults = [line for line in text.splitlines() if line.startswith("Defaults")]
     assert defaults == ["Defaults:XUI_MONITOR_USERS log_output"], defaults
+
+
+def test_installed_sudoers_has_no_comments() -> None:
+    """В /etc/sudoers.d уходит короткий ASCII-файл без комментариев.
+
+    Русские комментарии остаются в шаблоне репозитория: система получает только
+    рабочие строки, и разбор не зависит от сборки sudo.
+    """
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "grep -v '^#' > \"$SUDOERS_FILE\"" in text
+    assert '"${SUDOERS_FILE}.invalid"' in text
+    assert "visudo ответил" in text
+
+
+def test_sudoers_template_still_valid_after_stripping_comments(tmp_path: Path) -> None:
+    import subprocess
+
+    stripped = tmp_path / "sudoers.stripped"
+    source = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
+    stripped.write_text(
+        "\n".join(line for line in source.splitlines() if not line.startswith("#"))
+        + "\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["visudo", "-cf", str(stripped)], capture_output=True, text=True, check=False
+    )
+    if result.returncode == 127:
+        return  # visudo нет — проверка пропускается
+    assert result.returncode == 0, result.stdout + result.stderr
