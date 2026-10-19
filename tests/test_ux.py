@@ -353,9 +353,10 @@ def test_help_manual_explains_metrics() -> None:
     """Инструкция внутри бота должна объяснять метрики, а не только команды."""
     text = ui.render_help(True)
 
-    for marker in ("CPU", "RAM", "Диск", "Swap", "Load", "Inbound", "Подписки"):
+    for marker in ("Сервисы", "Панель", "Подписки", "Что значат цифры", "xui-menu"):
         assert marker in text, marker
-    assert "/status" in text and "xui-menu" in text
+    assert "/services" in text
+    assert len(text) < 2000, "помощь должна читаться с телефона за минуту"
 
 
 def test_help_button_is_in_main_menu() -> None:

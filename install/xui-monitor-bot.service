@@ -30,8 +30,10 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectClock=true
 ProtectHostname=true
+# ProtectProc скрывает чужие процессы, но /proc/stat, /proc/meminfo и /proc/net
+# остаются на месте — psutil без них не может собрать метрики. Директиву
+# ProcSubset здесь ставить нельзя: она монтирует /proc только с PID-информацией.
 ProtectProc=invisible
-ProcSubset=pid
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

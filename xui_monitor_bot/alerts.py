@@ -27,6 +27,13 @@ class Rule(str, Enum):
     swap = "swap"
     service = "service"
     panel = "panel"
+    system = "system"
+
+
+def _is_subscription_warning(text: str) -> bool:
+    """Предупреждение о inbound'ах/подписках, а не о железе."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in ("подписк", "inbound", "node-sync"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,22 +198,49 @@ class AlertEngine:
                 )
             )
         if not panel.api_authorized:
+            detail = "проверьте PANEL_API_TOKEN и его область (нужен scope node-sync)"
+            if any("404" in item for item in snapshot.warnings):
+                detail += (
+                    "\n→ 404 на inbounds/list обычно значит неверный PANEL_BASE_PATH "
+                    "(webBasePath панели) или адрес панели"
+                )
             findings.append(
                 Finding(
                     Rule.panel,
                     Severity.warning,
                     "API панели не авторизует бота",
-                    "проверьте PANEL_API_TOKEN и область его действия",
+                    detail,
                     key="panel:api",
                 )
             )
-        if snapshot.warnings:
+
+        # Проблемы железа — отдельная находка: раньше они попадали в список
+        # «Подписки: нужна проверка» и выглядели как проблема панели.
+        system_warnings = [
+            item for item in snapshot.warnings if not _is_subscription_warning(item)
+        ]
+        if snapshot.system is None or system_warnings:
+            findings.append(
+                Finding(
+                    Rule.system,
+                    Severity.unknown,
+                    "Системные метрики недоступны",
+                    "\n".join(f"• {item}" for item in system_warnings)
+                    or "сбор psutil завершился ошибкой",
+                    key="system:metrics",
+                )
+            )
+
+        sub_warnings = [
+            item for item in snapshot.warnings if _is_subscription_warning(item)
+        ]
+        if sub_warnings:
             findings.append(
                 Finding(
                     Rule.panel,
                     Severity.warning,
                     "Подписки: нужна проверка",
-                    "\n".join(f"• {item}" for item in snapshot.warnings),
+                    "\n".join(f"• {item}" for item in sub_warnings),
                     key="panel:subscriptions",
                 )
             )

@@ -41,7 +41,6 @@ def test_unit_keeps_isolation_directives() -> None:
         "PrivateTmp=true",
         "PrivateDevices=true",
         "ProtectProc=invisible",
-        "ProcSubset=pid",
         "ProtectKernelTunables=true",
         "RestrictNamespaces=true",
         "RestrictAddressFamilies=",
@@ -52,6 +51,13 @@ def test_unit_keeps_isolation_directives() -> None:
         "Group=xui-monitor",
     ):
         assert directive in text, directive
+
+
+def test_unit_does_not_hide_proc_stat() -> None:
+    """ПроцSubset=pid прячет /proc/stat — psutil без него не соберёт метрики."""
+    text = UNIT.read_text(encoding="utf-8")
+    directives = [line for line in text.splitlines() if line.startswith("ProcSubset=")]
+    assert directives == [], directives
 
 
 def test_unit_does_not_use_root_and_keeps_sudo_usable() -> None:

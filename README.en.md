@@ -249,7 +249,7 @@ sudo bash install.sh --menu
 | `/logs` | log of the selected service |
 | `/audit` | bot action log |
 | `/maint` | maintenance: apt (full and phased), release upgrade, arbitrary command, reboot |
-| `/help` | manual: how to use the bot, what each metric means (“❓ Help” button) |
+| `/help` | plain-language help: what to press and what the numbers mean (“❓ Help” button) |
 
 The buttons under messages duplicate the commands: every screen has “🏠 В меню”
 (“Back to menu”), so you can never get stuck. Guests are not shown any buttons.

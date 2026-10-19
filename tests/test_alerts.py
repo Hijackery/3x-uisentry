@@ -194,3 +194,14 @@ def test_subscription_warnings_are_passed_through(
         snapshot(metrics(5.0), warnings=["истёкшие подписки: 2"])
     )
     assert any("нужна проверка" in finding.title for finding in findings)
+
+
+def test_system_warnings_are_not_blamed_on_subscriptions() -> None:
+    """Проблемы железа и проблемы подписок — разные находки."""
+    from xui_monitor_bot.alerts import _is_subscription_warning
+
+    assert _is_subscription_warning("подписки не собраны: HTTP 404 на inbounds/list")
+    assert _is_subscription_warning("список inbound'ов недоступен: нет node-sync")
+    assert not _is_subscription_warning(
+        "метрики системы недоступны: [Errno 2] No such file or directory: '/proc/stat'"
+    )
