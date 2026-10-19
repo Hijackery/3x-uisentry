@@ -157,6 +157,22 @@ normalize_path() {
     printf '%s' "$1" | tr -d '[:space:]' | sed -E 's#^/*##; s#/*$##'
 }
 
+#: Отделяет путь от адреса, если его вставили вместе с хостом:
+#: «https://host:5580/panel/» → «https://host:5580 panel». Так делает большинство
+#: людей (копируют адрес из браузера), а потом панель отвечает 404, потому что
+#: путь попадает в адрес API как «/panel/panel/api».
+split_panel_address() {
+    _address="$1"
+    _scheme=""
+    case "$_address" in
+        *://*) _scheme="${_address%%://*}://" ;;
+    esac
+    _rest="${_address#"$_scheme"}"
+    _host="${_rest%%/*}"
+    _path="${_rest#"$_host"}"
+    printf '%s %s' "${_scheme}${_host}" "$(normalize_path "$_path")"
+}
+
 detect_ips() {
     if command -v hostname >/dev/null 2>&1 && hostname -I >/dev/null 2>&1; then
         hostname -I 2>/dev/null | tr -s ' \n' ' ' | sed 's/ *$//'
@@ -791,6 +807,11 @@ else
 
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
     PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"
+    # Адрес можно вставлять прямо из браузера, вместе с путём — отделяем путь.
+    read -r PANEL_URL_VALUE URL_PATH_SUGGEST <<<"$(split_panel_address "$PANEL_URL_VALUE")"
+    if [ -n "$URL_PATH_SUGGEST" ]; then
+        info "В адресе был путь — переношу его в webBasePath: /$URL_PATH_SUGGEST"
+    fi
     case "$PANEL_URL_VALUE" in
         http://*|https://*) ;;
         *) PANEL_URL_VALUE="$(normalize_url "$SUGGESTED_URL")"
@@ -798,8 +819,12 @@ else
     esac
 
     question PANEL_BASE "webBasePath панели (путь, например /panel; без слэшей, пусто — если не задан)" \
-        "${PANEL_BASE_PATH:-${DETECTED_BASE}}"
+        "${PANEL_BASE_PATH:-${URL_PATH_SUGGEST:-${DETECTED_BASE}}}"
     PANEL_BASE="$(normalize_path "$PANEL_BASE")"
+    # Если путь был в адресе, а поле оставили пустым — берём его оттуда.
+    if [ -z "$PANEL_BASE" ] && [ -n "$URL_PATH_SUGGEST" ]; then
+        PANEL_BASE="$URL_PATH_SUGGEST"
+    fi
     case "$PANEL_BASE" in
         *://*)
             # Частая ошибка: в webBasePath вставили полный адрес панели.

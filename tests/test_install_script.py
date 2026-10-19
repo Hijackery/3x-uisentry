@@ -311,3 +311,28 @@ def test_installer_explains_where_to_get_panel_token() -> None:
     assert "Настройки → API Tokens" in text
     assert "выпущу его сам через x-ui" in text
     assert "node-sync" in text
+
+
+def test_installer_splits_path_out_of_the_panel_address(tmp_path: Path) -> None:
+    """Адрес из браузера (с путём) не должен превращаться в «/panel/panel/api»."""
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("split_panel_address() {")
+    end = script.index("\n}\n", start) + 3
+    helpers = script[script.index("normalize_url() {") : end]
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{helpers}\n"
+        'printf "1:[%s]\n" "$(split_panel_address "https://host:5580/panel/")"\n'
+        'printf "2:[%s]\n" "$(split_panel_address "https://host:5580")"\n'
+        'printf "3:[%s]\n" "$(split_panel_address "http://1.2.3.4:2053")"\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1:[https://host:5580 panel]" in result.stdout
+    assert "2:[https://host:5580 ]" in result.stdout
+    assert "3:[http://1.2.3.4:2053 ]" in result.stdout
