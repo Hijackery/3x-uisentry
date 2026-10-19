@@ -24,10 +24,6 @@ after a button confirmation and only for the administrator.
 ## Install
 
 ```bash
-# stable version (recommended): the tag is pinned and served immediately, no branch cache
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.2/install.sh)
-
-# latest from the main branch
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
 ```
 
@@ -79,20 +75,10 @@ Useful options: `--repo owner/name`, `--ref BRANCH`, `--prefix DIR`, `--user NAM
 `--no-start`, `--force-config`, `--print-source`, `--sha256 HASH`, `--init TYPE`,
 `--menu`. Full list — `--help`.
 
-Verifiable install (pinned version plus archive checksum):
 
-```bash
-# 1) compute the archive hash of the desired version
-curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.2 | sha256sum
-
-# 2) install, verifying the archive against that hash
-sudo env SOURCE_SHA256='<hash from step 1>' \
-  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.2/install.sh)
-```
-
-GitHub caches the `main` branch for a few minutes: if the repository was just
-updated, the installer may fetch the previous revision. Pin a tag for
-reproducibility — `.../raw/v1.0.2/install.sh`.
+GitHub may serve the branch from its cache for a couple of minutes after a
+repository update — if you see an old revision, just run the command again later.
+The code archive is fetched with a cache-busting timestamp and is always current.
 
 ### If the system has no systemd
 

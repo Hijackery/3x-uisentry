@@ -222,21 +222,30 @@ cmd_restart() {
 
 cmd_update() {
     need_root "update"
-    local installer=""
-    for candidate in "$PREFIX/install.sh" "$PWD/install.sh"; do
-        [ -f "$candidate" ] && installer="$candidate" && break
-    done
-    if [ -z "$installer" ]; then
-        command -v curl >/dev/null 2>&1 || die "нужен curl"
-        local slug
+    # Сначала пробуем свежий установщик из main: локальная копия в PREFIX — это
+    # версия, которая ставила бота, и она сама себя не обновит.
+    local installer="" slug=""
+    if command -v curl >/dev/null 2>&1; then
         slug="$(printf '%s' "$REPO_URL" | sed -E 's#.*github\.com/##; s#\.git$##')"
         info "Скачиваю установщик: $slug@$REPO_REF"
         installer="$(mktemp)"
-        curl -fsSL --max-time 60 \
+        if curl -fsSL --max-time 60 \
             "https://raw.githubusercontent.com/${slug}/${REPO_REF}/install.sh" \
-            -o "$installer" || die "не удалось скачать install.sh"
-        trap 'rm -f "$installer"' EXIT
+            -o "$installer"; then
+            trap 'rm -f "$installer"' EXIT
+        else
+            warn "не удалось скачать установщик, беру локальную копию"
+            rm -f "$installer"
+            installer=""
+        fi
     fi
+    if [ -z "$installer" ]; then
+        for candidate in "$PREFIX/install.sh" "$PWD/install.sh"; do
+            [ -f "$candidate" ] && installer="$candidate" && break
+        done
+    fi
+    [ -n "$installer" ] || die "не найден install.sh и нет curl"
+
     info "Запускаю установщик (он же выполняет обновление)"
     local prefix="$PREFIX"
     PREFIX="$prefix" bash "$installer" --prefix "$prefix"

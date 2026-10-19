@@ -211,7 +211,7 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   PANEL_URL, PANEL_BASE_PATH, PANEL_API_TOKEN, SERVICES
 
 ${BOLD}English${RESET}
-  Install: bash <(curl -Ls .../v1.0.1/install.sh)
+  Install: bash <(curl -Ls .../main/install.sh)
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
             --print-source · --menu · --uninstall · --purge · --no-start
