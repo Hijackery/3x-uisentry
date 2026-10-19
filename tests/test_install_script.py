@@ -269,4 +269,7 @@ def test_incomplete_env_does_not_block_install() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "CONFIG_COMPLETE=0" in text
     assert "дозаполняю через мастер" in text
-    assert "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN" in text
+    assert (
+        "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN"
+        in text
+    )
