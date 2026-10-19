@@ -324,6 +324,18 @@ All settings are in `/opt/xui-monitor-bot/.env`, an annotated example is
 Quick check: `curl -fsS -o /dev/null -w '%{http_code}\n' https://your-domain:5580/panel/`
 (a `403` means the domain validation is the reason).
 
+`http` or `https` — both work, but choose deliberately:
+
+- panel and bot on the same host, panel listening on localhost → use
+  `http://127.0.0.1:2053` (+ `PANEL_BASE_PATH`): traffic never leaves the machine;
+- panel reachable on a public address → `https://` only, otherwise the token and
+  the whole API payload (inbounds, clients, subscriptions) travel in cleartext.
+  For a self-signed certificate do not disable verification — set
+  `PANEL_CA_BUNDLE` instead;
+- specified `http` but the panel redirects to `https`? The installer says so
+  explicitly (“panel answered with a redirect”) and the bot does not follow
+  redirects — just switch the scheme to `https://`.
+
 Process environment variables take precedence over the `.env` file.
 
 ## Security
