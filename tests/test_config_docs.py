@@ -133,7 +133,8 @@ def test_command_allowlist_matches_wrapper_whitelist() -> None:
 
     wrapper = set(
         re.findall(
-            r'"([a-z0-9][a-z0-9 ._-]*)"\s*\|', XUI_CTL.read_text(encoding="utf-8")
+            r'"([a-z0-9][a-z0-9 ._-]*)"\s*[)|]',
+            XUI_CTL.read_text(encoding="utf-8"),
         )
     )
     unknown = sorted(command for command in configured if command not in wrapper)

@@ -205,25 +205,21 @@ case "$cmd" in
 
     run_command)
         # Ровно один аргумент: команда приходит одной строкой и сверяется со
-        # списком ниже. Никаких дополнительных аргументов принять нельзя.
+        # списком ниже. Запускаем её как argv, без `bash -c`: shell-парсинга
+        # нет вообще, поэтому даже правка allowlist не даст инъекцию.
         require_no_extra_args 1 "$@"
         command="$2"
-        # Строгий белый список: сравнение с заранее одобренными строками.
         case "$command" in
-            "journalctl --disk-usage" | \
-            "systemctl list-timers --all" | \
-            "df -h" | \
-            "free -h" | \
-            "uptime" | \
-            "x-ui status")
-                log "run allowed: $command"
-                # shellcheck disable=SC2086
-                exec bash -c "$command"
-                ;;
-            *)
-                die "команда не разрешена: $command"
-                ;;
+            "journalctl --disk-usage")     set -- journalctl --disk-usage ;;
+            "systemctl list-timers --all") set -- systemctl list-timers --all ;;
+            "df -h")                       set -- df -h ;;
+            "free -h")                     set -- free -h ;;
+            "uptime")                      set -- uptime ;;
+            "x-ui status")                 set -- x-ui status ;;
+            *) die "команда не разрешена: $command" ;;
         esac
+        log "run allowed: $command"
+        exec "$@"
         ;;
 
     *)
