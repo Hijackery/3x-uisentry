@@ -22,6 +22,38 @@ from .settings import Settings
 logger = logging.getLogger(__name__)
 
 
+#: Последняя ошибка каждого сборщика: повторные сбои не льём в журнал целиком.
+_LOGGED_ERRORS: dict[str, str] = {}
+
+
+def _log_collector_error(key: str, message: str, exc: Exception) -> None:
+    """Полный трейсбек — только при новой ошибке, повторы — на уровне DEBUG.
+
+    Иначе сбойный сбор (например, пропавший /proc/stat) пишет простыню в журнал
+    каждую минуту, и в ней тонут остальные записи.
+    """
+    text = f"{type(exc).__name__}: {exc}"
+    if _LOGGED_ERRORS.get(key) == text:
+        logger.debug("%s (повтор): %s", message, text)
+        return
+    _LOGGED_ERRORS[key] = text
+    logger.error(message, exc_info=exc)
+
+
+def _clear_collector_error(key: str) -> None:
+    _LOGGED_ERRORS.pop(key, None)
+
+
+def _proc_hint(exc: Exception) -> str:
+    """Подсказка для известной причины: юнит со старой директивой ProcSubset."""
+    if "/proc/stat" in str(exc):
+        return (
+            " — проверьте юнит службы: старая директива ProcSubset прячет /proc/stat; "
+            "обновите установку или удалите эту строку и перезапустите службу"
+        )
+    return ""
+
+
 class Monitor:
     """Опрашивает все источники и возвращает один снимок.
 
@@ -67,17 +99,21 @@ class Monitor:
 
     async def _collect_metrics(self, warnings: list[str]) -> SystemMetrics | None:
         try:
-            return await asyncio.to_thread(self.system.collect)
+            result = await asyncio.to_thread(self.system.collect)
+            _clear_collector_error("metrics")
+            return result
         except Exception as exc:  # сбор не должен ронять весь отчёт
-            logger.exception("Не удалось снять системные метрики")
-            warnings.append(f"метрики системы недоступны: {exc}")
+            _log_collector_error("metrics", "Не удалось снять системные метрики", exc)
+            warnings.append(f"метрики системы недоступны: {exc}{_proc_hint(exc)}")
             return None
 
     async def _collect_services(self, warnings: list[str]) -> list[ServiceStatus]:
         try:
             return await self.services.collect()
         except Exception as exc:
-            logger.exception("Не удалось прочитать состояние сервисов")
+            _log_collector_error(
+                "services", "Не удалось прочитать состояние сервисов", exc
+            )
             warnings.append(f"состояние сервисов недоступно: {exc}")
             return []
 
@@ -85,7 +121,7 @@ class Monitor:
         try:
             return await self.panel.health()
         except Exception as exc:
-            logger.exception("Проверка панели упала")
+            _log_collector_error("panel", "Проверка панели упала", exc)
             warnings.append(f"проверка панели упала: {exc}")
             return PanelHealth(
                 reachable=False, status_code=None, latency_ms=None, error=str(exc)

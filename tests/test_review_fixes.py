@@ -581,3 +581,36 @@ def test_dirty_panel_values_are_normalized_on_read(tmp_path: Path) -> None:
     assert settings.panel_url == "https://panel.example.com:5580"
     assert settings.panel_base_path == "panel"
     assert settings.api_base == "https://panel.example.com:5580/panel/panel/api"
+
+
+# ------------------------------------- журнал сборщиков не забивается повторами
+
+
+def test_repeated_collector_errors_are_logged_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Пропавший /proc/stat раньше писал полный трейсбек каждую минуту."""
+    from xui_monitor_bot import monitor as monitor_module
+
+    monitor_module._LOGGED_ERRORS.clear()
+    error = FileNotFoundError("[Errno 2] No such file or directory: '/proc/stat'")
+
+    with caplog.at_level(logging.DEBUG, logger="xui_monitor_bot.monitor"):
+        for _ in range(3):
+            monitor_module._log_collector_error(
+                "metrics", "Не удалось снять системные метрики", error
+            )
+
+    errors = [item for item in caplog.records if item.levelno == logging.ERROR]
+    assert len(errors) == 1, [item.getMessage() for item in caplog.records]
+
+
+def test_proc_stat_error_gets_a_hint() -> None:
+    """Пользователь должен сразу понять, что дело в юните службы."""
+    from xui_monitor_bot.monitor import _proc_hint
+
+    hint = _proc_hint(
+        FileNotFoundError("[Errno 2] No such file or directory: '/proc/stat'")
+    )
+    assert "ProcSubset" in hint
+    assert _proc_hint(ValueError("другая ошибка")) == ""
