@@ -45,12 +45,31 @@ Trailing slashes and spaces in the address (`https://host:5580/`) are stripped b
 the installer itself; `webBasePath` is a path (`/panel`, no slashes), and if you
 paste an address into that field the installer notices and fixes it.
 
-The panel API token must have the `node-sync` scope, otherwise the bot will not
-see inbounds and subscriptions:
+The token is created **inside the 3X-UI panel** (not in Telegram and not in the
+bot):
+
+1. Open the panel → **Settings** → **API Tokens** (some builds call it “API
+   Settings”).
+2. Create a token with any name (e.g. `monitor-bot`) and the **`node-sync`**
+   scope: it exposes inbounds and subscriptions. `monitor` gives status only,
+   `admin` is not needed.
+3. Copy the value — that is `PANEL_API_TOKEN`.
+
+The quickest way is from the server terminal (the command prints the value):
 
 ```bash
 sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
 ```
+
+Verify the token works (the response must be `{"success":true,…}`):
+
+```bash
+curl -fsS -H "Authorization: Bearer <token>" \
+  https://panel.example.com:2053/panel/api/server/status
+```
+
+The installer performs the same check itself, and if you leave the field empty
+while the panel is running it issues a token automatically.
 
 Unattended mode (values from the environment):
 

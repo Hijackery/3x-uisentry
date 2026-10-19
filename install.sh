@@ -818,6 +818,8 @@ else
         warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
     fi
 
+    info "Токен панели лежит в самой панели: Настройки → API Tokens (scope node-sync)."
+    info "Не знаете токен? Нажмите Enter — выпущу его сам через x-ui (панель должна быть запущена)."
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
     if [ -z "$PANEL_TOKEN" ]; then
         if [ "$XUI_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
@@ -825,9 +827,11 @@ else
             warn "Внимание: если такой токен уже был, старый перестанет работать."
             PANEL_TOKEN="$(detect_panel_token || true)"
         fi
-        [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели. Создайте его в панели: Settings → API Tokens, либо выполните:
+        [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели. Возьмите его в панели:
+      панель → Настройки → API Tokens → создать токен со scope node-sync
+   или выпустите из терминала (и скопируйте вывод):
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
-и вставьте значение в PANEL_API_TOKEN."
+   и вставьте значение в PANEL_API_TOKEN."
     fi
 
     DETECTED_SERVICES="x-ui"

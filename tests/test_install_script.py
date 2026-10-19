@@ -303,3 +303,11 @@ def test_url_normalizers_strip_slashes_and_whitespace(tmp_path: Path) -> None:
     assert "2:panel" in result.stdout
     assert "3:[]" in result.stdout, "«/» должен означать «путь не задан»"
     assert "4:https://host:5580" in result.stdout
+
+
+def test_installer_explains_where_to_get_panel_token() -> None:
+    """Пользователь не должен гадать, где взять токен панели."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "Настройки → API Tokens" in text
+    assert "выпущу его сам через x-ui" in text
+    assert "node-sync" in text

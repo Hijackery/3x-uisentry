@@ -681,6 +681,7 @@ def render_help(is_admin: bool) -> str:
                 "",
                 "⚙️ <b>Настройки</b> — в терминале: <code>sudo xui-menu</code>",
                 "(токены, пороги, рестарт, журнал, обновление).",
+                "Токен панели: панель → Настройки → API Tokens (scope node-sync).",
             )
         )
     return "\n".join(lines_out)
