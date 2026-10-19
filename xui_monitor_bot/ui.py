@@ -88,53 +88,106 @@ def level(percent: float, warn: float, crit: float) -> Severity:
 # ------------------------------------------------------------------ отчёты
 
 
-def render_overview(snapshot: MonitorSnapshot, settings: Settings) -> str:
-    """Главный отчёт: сервер, сервисы, панель, трафик одной сводкой."""
-    lines: list[str] = ["🖥 <b>Состояние сервера</b>"]
+def render_overview(
+    snapshot: MonitorSnapshot, settings: Settings, *, age: float | None = None
+) -> str:
+    """Главный отчёт: вердикт в первой строке, дальше детали.
 
+    Уставшему админу нужен ответ «всё ок или нет» сразу, а не после чтения
+    двадцати строк, поэтому состояние вынесено в заголовок, а замечания — выше
+    подробностей.
+    """
     metrics = snapshot.system
+    problems = list(snapshot.warnings)
+    if snapshot.panel.reachable is False:
+        problems.append("панель недоступна")
     if metrics is None:
-        lines.append("Метрики системы недоступны")
-    else:
-        lines.append(render_system(metrics, settings))
+        # Без метрик вердикт «всё в норме» был бы враньём.
+        problems.append("метрики системы недоступны")
+    down = [item.name for item in snapshot.services if not item.active]
 
+    if down:
+        verdict = "сервисы не работают: " + ", ".join(down)
+    elif problems:
+        verdict = f"есть замечания: {len(problems)}"
+    else:
+        verdict = "всё в норме"
+
+    bits: list[str] = []
+    if metrics is not None:
+        bits.extend(
+            (
+                f"CPU {metrics.cpu_percent:.0f}%",
+                f"RAM {metrics.mem_percent:.0f}%",
+                f"Диск {metrics.disk_percent:.0f}%",
+            )
+        )
+    services_bit = " · ".join(
+        f"{item.name} {'🟢' if item.active else '🔴'}" for item in snapshot.services
+    )
+    if services_bit:
+        bits.append(services_bit)
+    if snapshot.panel.reachable:
+        bits.append("панель 🟢")
+    elif snapshot.panel.reachable is False:
+        bits.append("панель 🔴")
+
+    lines = [f"🖥 <b>Состояние сервера: {verdict}</b>"]
+    if bits:
+        lines.append(" · ".join(bits))
+
+    if problems:
+        lines.extend(("", "━━━ <b>Требует внимания</b>"))
+        lines.extend(f"• {esc(item)}" for item in problems)
+
+    lines.append("")
+    lines.append(
+        render_system(metrics, settings)
+        if metrics is not None
+        else "Метрики системы недоступны"
+    )
     lines.append(render_services(snapshot))
     lines.append(render_panel(snapshot))
     lines.append(render_traffic(snapshot))
 
-    if snapshot.warnings:
-        lines.append("\n⚠️ <b>Замечания</b>")
-        lines.extend(f"• {esc(item)}" for item in snapshot.warnings)
-
-    lines.append(f"\n<i>обновлено {time.strftime('%H:%M:%S')}</i>")
+    suffix = ""
+    if age is not None and age >= 1:
+        suffix = f" ({age:.0f} с назад)"
+    lines.append(f"\n<i>данные на {time.strftime('%H:%M:%S')}{suffix}</i>")
     return "\n".join(lines)
 
 
 def render_system(metrics: SystemMetrics, settings: Settings) -> str:
-    """Строки метрик с полосами загрузки и цветом порога."""
+    """Метрики одним выровненным блоком.
 
-    def row(label: str, percent: float, warn: float, crit: float) -> str:
+    Моноширинный шрифт держит колонки ровными при любых значениях — иначе
+    полосы и подписи «едут» и цифры приходится искать глазами.
+    """
+    tcp = metrics.tcp_connections if metrics.tcp_connections >= 0 else "н/д"
+    rows = (
+        ("CPU ", metrics.cpu_percent, settings.cpu_warn, settings.cpu_crit),
+        ("RAM ", metrics.mem_percent, settings.mem_warn, settings.mem_crit),
+        ("Диск", metrics.disk_percent, settings.disk_warn, settings.disk_crit),
+    )
+    lines: list[str] = []
+    for label, percent, warn, crit in rows:
         icon = severity_icon(level(percent, warn, crit))
-        return f"{label} {progress_bar(percent)} {icon} {percent:.1f}%"
+        lines.append(f"{label} {progress_bar(percent)} {percent:5.1f}% {icon}")
 
     used_mem = metrics.mem_total_bytes * metrics.mem_percent / 100
-    tcp = metrics.tcp_connections if metrics.tcp_connections >= 0 else "н/д"
-    cpu = row("CPU ", metrics.cpu_percent, settings.cpu_warn, settings.cpu_crit)
-    mem = row("RAM ", metrics.mem_percent, settings.mem_warn, settings.mem_crit)
-    disk = row("Диск", metrics.disk_percent, settings.disk_warn, settings.disk_crit)
-    sent = fmt_bytes(metrics.net_sent_bytes)
-    recv = fmt_bytes(metrics.net_recv_bytes)
-    return "\n".join(
-        (
-            cpu,
-            f"{mem} ({fmt_bytes(used_mem)} занято)",
-            f"{disk} · свободно {fmt_bytes(metrics.disk_free_bytes)}",
-            f"Swap {metrics.swap_percent:.1f}%",
-            f"Load {metrics.load1:.2f} · соединений TCP: {tcp}",
-            f"Сеть ↑ {sent} / ↓ {recv}",
-            f"Аптайм {fmt_uptime(metrics.uptime_seconds)}",
-        )
+    lines.append(
+        f"Память {fmt_bytes(used_mem)} занято из {fmt_bytes(metrics.mem_total_bytes)}"
     )
+    lines.append(f"Свободно на диске: {fmt_bytes(metrics.disk_free_bytes)}")
+    lines.append(
+        f"Swap {metrics.swap_percent:.1f}% · Load {metrics.load1:.2f} · TCP {tcp}"
+    )
+    lines.append(
+        f"Сеть ↑ {fmt_bytes(metrics.net_sent_bytes)} / "
+        f"↓ {fmt_bytes(metrics.net_recv_bytes)}"
+    )
+    lines.append(f"Аптайм {fmt_uptime(metrics.uptime_seconds)}")
+    return "<code>" + "\n".join(lines) + "</code>"
 
 
 def render_services(snapshot: MonitorSnapshot) -> str:
@@ -143,13 +196,13 @@ def render_services(snapshot: MonitorSnapshot) -> str:
     lines = ["", "⚙️ <b>Сервисы</b>"]
     for service in snapshot.services:
         icon = "🟢" if service.active else "🔴"
-        detail = (
-            f"MainPID {service.main_pid}" if service.active else service.active_state
+        state = "работает" if service.active else esc(service.active_state)
+        restarts = (
+            f" · перезапускался {service.restarts} раз" if service.restarts else ""
         )
-        restarts = f" · рестартов {service.restarts}" if service.restarts else ""
         lines.append(
-            f"{icon} <code>{esc(service.name)}</code> — {esc(service.sub_state)}"
-            f" · {esc(detail)} · RAM {fmt_bytes(service.memory_bytes)}"
+            f"{icon} <code>{esc(service.name)}</code> — {state}"
+            f" · RAM {fmt_bytes(service.memory_bytes)}"
             f" · CPU {service.cpu_percent:.1f}%{restarts}"
         )
     return "\n".join(lines)
@@ -164,9 +217,9 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
     api = "токен принят" if panel.api_authorized else "⚠️ токен не принят"
     return (
         "\n🌐 <b>Панель 3X-UI</b>\n"
-        f"🟢 отвечает (HTTP {panel.status_code}, {latency})\n"
-        f"Версия панели: {esc(panel.panel_version or '?')} · xray: "
-        f"{esc(panel.xray_version or '?')} [{esc(panel.xray_state or '?')}]\n"
+        f"🟢 отвечает за {latency}\n"
+        f"Панель {esc(panel.panel_version or '?')} · "
+        f"xray {esc(panel.xray_version or '?')} ({esc(panel.xray_state or '?')})\n"
         f"API: {api}"
     )
 
@@ -408,20 +461,20 @@ def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarku
     buttons: list[list[InlineKeyboardButton]] = []
     if is_admin:
         for unit in units:
+            # Рестарт и журнал одного юнита — в одной строке: в 3 часа ночи
+            # незачем ходить за журналом в отдельное меню.
             buttons.append(
                 [
                     InlineKeyboardButton(
-                        f"♻️ Рестарт {unit}", callback_data=f"ask:restart_service:{unit}"
-                    )
+                        f"♻️ {unit}", callback_data=f"ask:restart_service:{unit}"
+                    ),
+                    InlineKeyboardButton(
+                        f"📜 Журнал {unit}", callback_data=f"logs:{unit}"
+                    ),
                 ]
             )
         buttons.append(
-            [
-                InlineKeyboardButton(
-                    "♻️ Рестарт xray", callback_data="ask:restart_xray:"
-                ),
-                InlineKeyboardButton("📜 Журнал", callback_data="logs_menu"),
-            ]
+            [InlineKeyboardButton("♻️ Рестарт xray", callback_data="ask:restart_xray:")]
         )
     buttons.append(
         [
@@ -468,30 +521,76 @@ def maintenance_menu() -> InlineKeyboardMarkup:
                 ),
                 InlineKeyboardButton("📜 Журнал", callback_data="logs_menu"),
             ],
+            [
+                InlineKeyboardButton(
+                    "🔻 Перезагрузить сервер", callback_data="ask:reboot:"
+                )
+            ],
             [home_button()],
         ]
     )
 
 
-def result_menu() -> InlineKeyboardMarkup:
-    """Клавиатура после выполненного действия: не оставляем пользователя без выхода."""
-    return InlineKeyboardMarkup([[home_button()]])
+def result_menu(
+    extra: list[InlineKeyboardButton] | None = None,
+) -> InlineKeyboardMarkup:
+    """Клавиатура после действия: контекст + выход, а не только «домой»."""
+    rows = [extra] if extra else []
+    rows.append([home_button()])
+    return InlineKeyboardMarkup(rows)
+
+
+def alert_menu() -> InlineKeyboardMarkup:
+    """Кнопка под алертом: одна, но полезная — показать текущее состояние."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("📊 Текущее состояние", callback_data="refresh"),
+                InlineKeyboardButton("🏠 В меню", callback_data="home"),
+            ]
+        ]
+    )
 
 
 def confirm_menu(action: str, token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
+                # Отмена слева: опасное действие не должно стоять первым там,
+                # куда попадает палец при быстром нажатии.
+                InlineKeyboardButton("❌ Отмена", callback_data=f"no:{token}"),
                 InlineKeyboardButton(
                     "✅ Подтвердить", callback_data=f"do:{action}:{token}"
                 ),
-                InlineKeyboardButton("❌ Отмена", callback_data=f"no:{token}"),
             ]
         ]
     )
 
 
-def update_commands_help(commands: list[tuple[str, str]]) -> str:
-    lines = ["🤖 <b>Команды</b>", ""]
-    lines.extend(f"<code>{name}</code> — {desc}" for name, desc in commands)
+def render_help(is_admin: bool) -> str:
+    """Памятка: что смотреть, что делает бот и что делать при аварии."""
+    lines = [
+        "🤖 <b>Что умею</b>",
+        "",
+        "🔍 <b>Показываю</b>",
+        "<code>/status</code> — сводка: сервер, сервисы, панель, трафик",
+        "<code>/services</code> — состояние служб, рестарт, журнал",
+        "<code>/panel</code> — доступность панели и xray",
+        "<code>/subs</code> — подписки: сроки и трафик",
+        "<code>/history</code> — почасовые средние за сутки",
+    ]
+    if is_admin:
+        lines.extend(
+            (
+                "",
+                "🛠 <b>Делаю</b> (каждый раз спрашиваю подтверждение)",
+                "рестарт сервиса и xray · apt (full и phased) · проверка",
+                "релиза · перезагрузка сервера · команда из allowlist",
+                "",
+                "🚨 <b>Если что-то упало</b>",
+                "1. <code>/status</code> — что именно",
+                "2. <code>/services</code> → <code>♻️ имя</code> — перезапустить",
+                "3. <code>📜 Журнал</code> — почему упало",
+            )
+        )
     return "\n".join(lines)

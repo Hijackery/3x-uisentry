@@ -22,7 +22,7 @@ from xui_monitor_bot.actions import ActionError, ActionManager
 from xui_monitor_bot.app import _send_with_retry
 from xui_monitor_bot.collectors.panel import PanelClient
 from xui_monitor_bot.command import run_command
-from xui_monitor_bot.models import CommandResult
+from xui_monitor_bot.models import CommandResult, SystemMetrics
 from xui_monitor_bot.settings import ConfigError, Settings, load_settings
 from xui_monitor_bot.storage import Storage, StorageError
 
@@ -369,3 +369,66 @@ async def test_phased_upgrade_goes_through_privileged_wrapper(
 
     assert seen[0][0] == "/usr/local/bin/xui-ctl"
     assert seen[0][1] == "apt_upgrade_phased"
+
+
+# ------------------------------------------------------------ UX-инварианты
+
+
+def test_reboot_is_reachable_from_menu() -> None:
+    """Критично: reboot обрабатывался в коде, но кнопки в интерфейсе не было."""
+    data = [
+        button.callback_data
+        for row in ui.maintenance_menu().inline_keyboard
+        for button in row
+    ]
+    assert "ask:reboot:" in data
+
+
+def test_services_menu_has_journal_next_to_restart() -> None:
+    data = [
+        button.callback_data
+        for row in ui.services_menu(("x-ui",), is_admin=True).inline_keyboard
+        for button in row
+    ]
+    assert "ask:restart_service:x-ui" in data
+    assert "logs:x-ui" in data
+
+
+def test_confirm_menu_puts_cancel_first() -> None:
+    """Опасная кнопка не должна стоять первой там, куда попадает палец."""
+    first = ui.confirm_menu("reboot", "tok").inline_keyboard[0][0]
+    assert first.callback_data == "no:tok"
+
+
+def test_alert_has_actions() -> None:
+    data = [
+        button.callback_data
+        for row in ui.alert_menu().inline_keyboard
+        for button in row
+    ]
+    assert "refresh" in data
+    assert "home" in data
+
+
+def test_system_block_is_monospaced(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """Метрики в <code>: колонки не «едут» при разной длине значений."""
+    metrics = SystemMetrics(
+        cpu_percent=12.0,
+        mem_percent=41.0,
+        mem_total_bytes=8 * 1024**3,
+        swap_percent=0.0,
+        disk_percent=63.0,
+        disk_free_bytes=30 * 1024**3,
+        load1=0.5,
+        uptime_seconds=3600,
+        tcp_connections=10,
+        net_sent_bytes=1024,
+        net_recv_bytes=2048,
+    )
+
+    text = ui.render_system(metrics, make_settings())
+
+    assert text.startswith("<code>") and text.endswith("</code>")
+    assert "Диск" in text

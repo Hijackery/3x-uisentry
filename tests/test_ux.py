@@ -106,9 +106,10 @@ async def bot_app(make_settings: Callable[..., Settings]) -> AsyncIterator[Monit
         instance.storage.close()
 
 
-async def _press(
+async def _press_all(
     bot_app: MonitorBot, data: str
-) -> tuple[str, InlineKeyboardMarkup | None]:
+) -> list[tuple[str, InlineKeyboardMarkup | None]]:
+    """Все правки сообщения: видно и промежуточный «⏳», и финальный экран."""
     telegram_bot = AsyncMock()
     query = CallbackQuery(
         id="1",
@@ -119,8 +120,17 @@ async def _press(
     )
     query.set_bot(telegram_bot)
     await bot_app.on_callback(Update(update_id=1, callback_query=query), _Context())  # type: ignore[arg-type]
-    kwargs = telegram_bot.edit_message_text.await_args.kwargs
-    return kwargs["text"], kwargs.get("reply_markup")
+    return [
+        (call.kwargs["text"], call.kwargs.get("reply_markup"))
+        for call in telegram_bot.edit_message_text.await_args_list
+    ]
+
+
+async def _press(
+    bot_app: MonitorBot, data: str
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    calls = await _press_all(bot_app, data)
+    return calls[-1]
 
 
 @pytest.mark.parametrize(
@@ -153,6 +163,12 @@ async def test_button_press_never_strands_the_user(
     assert text
     assert "Неизвестная кнопка" not in text, text
     assert markup is not None, f"кнопка {data!r} оставила экран без навигации"
+
+
+async def test_button_press_shows_immediate_progress(bot_app: MonitorBot) -> None:
+    """Без промежуточного «⏳» медленная панель выглядит как зависший бот."""
+    calls = await _press_all(bot_app, "panel")
+    assert any("Собираю данные" in text for text, _ in calls)
 
 
 async def test_cancelled_action_returns_to_menu(bot_app: MonitorBot) -> None:

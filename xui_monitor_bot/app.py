@@ -12,7 +12,15 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any, Final
 
-from telegram import CallbackQuery, Chat, InlineKeyboardMarkup, Message, Update, User
+from telegram import (
+    CallbackQuery,
+    Chat,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    Update,
+    User,
+)
 from telegram.constants import ChatAction, ChatType, ParseMode
 from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import (
@@ -31,6 +39,7 @@ from . import ui
 from .actions import (
     ACTION_COMMAND,
     ACTION_DIST_UPGRADE,
+    ACTION_JOURNAL,
     ACTION_REBOOT,
     ACTION_RESTART_SERVICE,
     ACTION_RESTART_XRAY,
@@ -64,16 +73,18 @@ REBOOT_WATCH_STEP = 30
 HEAVY_COOLDOWN = 5.0
 REBOOT_WATCH_GRACE = 1200
 
-HELP_COMMANDS: list[tuple[str, str]] = [
-    ("/status", "сводка: сервер, сервисы, панель, трафик"),
-    ("/services", "состояние systemd-юнитов"),
-    ("/panel", "доступность и версии панели 3X-UI"),
-    ("/subs", "подписки: сроки, трафик, отключённые"),
-    ("/history", "почасовые средние CPU/RAM/диск"),
-    ("/logs", "журнал сервиса (админ)"),
-    ("/audit", "журнал действий бота (админ)"),
-    ("/maint", "меню обслуживания (админ)"),
-]
+#: Короткие заголовки для отчёта о выполненном действии (в чате, не в логе).
+ACTION_TITLES: dict[str, str] = {
+    ACTION_RESTART_SERVICE: "Сервис перезапущен",
+    ACTION_RESTART_XRAY: "xray перезапущен",
+    ACTION_UPGRADE: "Обновление системы поставлено в очередь",
+    ACTION_UPGRADE_PHASED: "Обновление (phased) поставлено в очередь",
+    ACTION_DIST_UPGRADE: "Проверка релиз-обновления выполнена",
+    ACTION_REBOOT: "Сервер перезагружается",
+    ACTION_COMMAND: "Команда выполнена",
+    ACTION_JOURNAL: "Журнал прочитан",
+}
+
 
 CONFIRM_DESCRIPTIONS: dict[str, str] = {
     ACTION_RESTART_SERVICE: "Перезапустить сервис",
@@ -212,7 +223,13 @@ class MonitorBot:
     def is_admin(self, user_id: int | None) -> bool:
         return self.settings.is_admin(user_id)
 
-    async def _notify(self, chat_id: int, text: str) -> bool:
+    async def _notify(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
         delivered = True
         for chunk in _split(text, 3500):
             try:
@@ -221,6 +238,7 @@ class MonitorBot:
                     chat_id=chat_id,
                     text=chunk,
                     parse_mode=ParseMode.HTML,
+                    reply_markup=markup,
                 )
             except TelegramError as exc:
                 logger.error("Не удалось отправить сообщение в %s: %s", chat_id, exc)
@@ -240,7 +258,11 @@ class MonitorBot:
         logger.error("Ошибка при обработке апдейта", exc_info=context.error)
         message = getattr(update, "effective_message", None)
         if isinstance(message, Message):
-            await message.reply_text("❌ Внутренняя ошибка, подробности в логах.")
+            await message.reply_text(
+                "😔 Внутренняя ошибка. Повторите команду; если повторяется — "
+                "журнал бота:\n<code>journalctl -u xui-monitor-bot -n 50</code>",
+                parse_mode=ParseMode.HTML,
+            )
 
     async def cmd_start(
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
@@ -273,7 +295,7 @@ class MonitorBot:
             return
         allowed = self.is_admin(_user_id(update))
         await message.reply_text(
-            ui.update_commands_help(HELP_COMMANDS),
+            ui.render_help(allowed),
             parse_mode=ParseMode.HTML,
             reply_markup=ui.main_menu(True) if allowed else None,
         )
@@ -285,8 +307,9 @@ class MonitorBot:
         if message is None or not await self._guard(message, update.effective_user):
             return
         await message.reply_chat_action(ChatAction.TYPING)
+        snapshot = await self.snapshot()
         await message.reply_text(
-            ui.render_overview(await self.snapshot(), self.settings),
+            ui.render_overview(snapshot, self.settings, age=self._snapshot_age()),
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=ui.main_menu(self.is_admin(_user_id(update))),
@@ -434,6 +457,12 @@ class MonitorBot:
         except sqlite3.Error as exc:  # журнал не должен ломать отказ
             logger.warning("Не удалось записать отказ в журнал: %s", exc)
 
+    def _snapshot_age(self) -> float:
+        """Сколько секунд назад собран текущий снимок (0 — только что)."""
+        if self._snapshot_at <= 0:
+            return 0.0
+        return max(0.0, time.monotonic() - self._snapshot_at)
+
     def _heavy_allowed(self, user_id: int) -> bool:
         """Мягкий лимит на команды, дергающие sudo/journalctl."""
         now = time.monotonic()
@@ -468,6 +497,19 @@ class MonitorBot:
             await self._edit(query, "⛔ Только для администраторов.")
             return
 
+        # Мгновенный отклик: сбор данных может занять секунды (медленная
+        # панель), и без этой строки кажется, что бот завис.
+        if data in {
+            "home",
+            "refresh",
+            "server",
+            "panel",
+            "traffic",
+            "subs",
+            "history",
+        } or data.startswith("subs:"):
+            await self._edit(query, "⏳ Собираю данные…")
+
         if data.startswith("ask:"):
             await self._ask_confirmation(query, data)
             return
@@ -489,13 +531,17 @@ class MonitorBot:
             self.invalidate()
             await self._edit(
                 query,
-                ui.render_overview(await self.snapshot(force=True), self.settings),
+                ui.render_overview(
+                    await self.snapshot(force=True), self.settings, age=0.0
+                ),
                 markup=ui.main_menu(self.is_admin(user_id)),
             )
         elif data == "server":
             await self._edit(
                 query,
-                ui.render_overview(await self.snapshot(), self.settings),
+                ui.render_overview(
+                    await self.snapshot(), self.settings, age=self._snapshot_age()
+                ),
                 markup=ui.main_menu(self.is_admin(user_id)),
             )
         elif data == "services":
@@ -682,13 +728,20 @@ class MonitorBot:
             return
 
         icon = "✅" if result.ok else "⚠️"
+        title = ACTION_TITLES.get(action, action)
         body = ui.esc(result.summary(1500))
+        extra: list[InlineKeyboardButton] = []
+        if action == ACTION_RESTART_SERVICE and args:
+            unit = args[0]
+            extra.append(
+                InlineKeyboardButton(f"📜 Журнал {unit}", callback_data=f"logs:{unit}")
+            )
+        tail = "" if result.ok else f"\nКод возврата: {result.returncode}"
         await _safe_edit(
             status,
-            f"{icon} <b>{ui.esc(result.action)}</b>"
-            f" — код возврата {result.returncode}\n"
-            f"<code>{ui.esc(result.command)}</code>\n\n<pre>{body}</pre>",
-            markup=ui.result_menu(),
+            f"{icon} <b>{ui.esc(title)}</b> за {result.duration:.1f} с\n"
+            f"<code>{ui.esc(result.command)}</code>\n\n<pre>{body}</pre>{tail}",
+            markup=ui.result_menu(extra),
         )
         await asyncio.to_thread(
             self.storage.audit,
@@ -738,7 +791,7 @@ class MonitorBot:
 
         icon = "✅" if result.ok else "⚠️"
         text = (
-            f"{icon} <b>{ui.esc(result.command)}</b>\n"
+            f"{icon} <b>{ui.esc(ACTION_TITLES.get(action, result.command))}</b>\n"
             f"код возврата {result.returncode},"
             f" длительность {result.duration:.0f} с\n\n"
             f"<pre>{ui.esc(result.summary(2500))}</pre>"
@@ -935,7 +988,10 @@ class MonitorBot:
         delivered = True
         for chat_id in await self._alert_targets():
             for chunk in chunks:
-                delivered = await self._notify(chat_id, chunk) and delivered
+                delivered = (
+                    await self._notify(chat_id, chunk, markup=ui.alert_menu())
+                    and delivered
+                )
 
         if delivered:
             await asyncio.to_thread(
@@ -1130,7 +1186,7 @@ def _split_alerts(findings: list[Finding]) -> list[str]:
         Severity.ok: 3,
     }
     ordered = sorted(findings, key=lambda item: order[item.severity])
-    header = "🔔 <b>Алерты мониторинга</b>"
+    header = f"🔔 <b>Требует внимания</b> · {time.strftime('%H:%M:%S')}"
     body = "\n\n".join(ui.render_finding(finding) for finding in ordered)
     return _split(header + "\n\n" + body)
 
