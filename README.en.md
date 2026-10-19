@@ -352,7 +352,8 @@ Process environment variables take precedence over the `.env` file.
 - The bot runs as the unprivileged `xui-monitor` user; code and venv belong to
   root, and `.env` is read-only for the service.
 - All privileged operations go through `/usr/local/bin/xui-ctl` and a narrow
-  sudoers allowlist; there is no arbitrary shell. `apt` runs as a separate
+  sudoers list of **exact commands** (no wildcards in arguments — required by both
+  classic sudo and `sudo-rs` on Ubuntu 26.04+); there is no arbitrary shell. `apt` runs as a separate
   systemd transient unit, because the service lives with `ProtectSystem=strict`.
 - Dangerous actions require confirmation, the token is bound to the requesting
   administrator, and everything is written to `audit_log`.
@@ -400,6 +401,9 @@ journalctl -u xui-monitor-bot -n 50 --no-pager
 
 - “Sudoers syntax is invalid” — the installer prints the `visudo` message; please
   report it: the rules are generated, so this is our bug, not yours.
+- Ubuntu 26.04+: `visudo` is the Rust rewrite (`sudo-rs`), which forbids wildcards
+  in command arguments and does not know some `Defaults`; the installer accounts
+  for that by listing exact commands, so no manual edits are needed.
 - “Token rejected” — check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN`
   (easier through `sudo xui-menu` → “Show settings” / “Change bot token”).
 - `inbounds/list unavailable` — the panel token lacks the `node-sync` scope.

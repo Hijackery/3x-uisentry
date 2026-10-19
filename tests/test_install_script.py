@@ -358,23 +358,29 @@ def test_installer_shows_visudo_reason_and_falls_back() -> None:
     assert "упрощённый вариант" in text
 
 
-def test_sudoers_template_has_only_portable_defaults() -> None:
-    """!requiretty и log_input не нужны и ломают разбор в части сборок sudo."""
+def test_sudoers_sample_has_no_defaults_line() -> None:
+    """Никаких Defaults: sudo-rs не знает даже log_output и роняет разбор."""
     text = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
     defaults = [line for line in text.splitlines() if line.startswith("Defaults")]
-    assert defaults == ["Defaults:XUI_MONITOR_USERS log_output"], defaults
+    assert defaults == [], defaults
 
 
-def test_installed_sudoers_has_no_comments() -> None:
-    """В /etc/sudoers.d уходит короткий ASCII-файл без комментариев.
+def test_generated_sudoers_has_no_wildcards_or_aliases() -> None:
+    """sudo-rs (Ubuntu 26.04+) запрещает «*» в аргументах команд.
 
-    Русские комментарии остаются в шаблоне репозитория: система получает только
-    рабочие строки, и разбор не зависит от сборки sudo.
+    Поэтому установщик перечисляет точные команды: юниты из SERVICES, ключи
+    команд из COMMAND_ALLOWLIST (пробел → «_»), без алиасов и без Defaults.
     """
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "grep -v '^#' > \"$SUDOERS_FILE\"" in text
-    assert '"${SUDOERS_FILE}.invalid"' in text
-    assert "visudo ответил" in text
+    assert "sudoers_rules() {" in text
+    assert "$WRAPPER_PATH $sub $unit" in text
+    assert "$WRAPPER_PATH run_command $key" in text
+    for forbidden in ("User_Alias", "Cmnd_Alias", "Defaults:"):
+        assert forbidden not in text, forbidden
+
+    sample = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
+    assert "*" not in sample
+    assert sample.count("NOPASSWD:") == 1
 
 
 def test_sudoers_template_still_valid_after_stripping_comments(tmp_path: Path) -> None:

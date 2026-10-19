@@ -22,12 +22,22 @@ from .settings import Settings
 ACTION_RESTART_SERVICE = "restart_service"
 ACTION_RESTART_XRAY = "restart_xray"
 ACTION_JOURNAL = "journal"
+ACTION_JOURNAL_MORE = "journal_more"
 ACTION_JOURNAL_ERRORS = "journal_errors"
 ACTION_UPGRADE = "apt_upgrade"
 ACTION_UPGRADE_PHASED = "apt_upgrade_phased"
 ACTION_DIST_UPGRADE = "dist_upgrade"
 ACTION_REBOOT = "reboot"
 ACTION_COMMAND = "run_command"
+
+
+def command_key(command: str) -> str:
+    """Ключ команды для sudoers: «free -h» → «free_-h».
+
+    Пробелы заменяем на «_», потому что sudo-rs не принимает шаблоны в
+    аргументах, а перечислять команды со пробелами в sudoers неудобно.
+    """
+    return command.replace(" ", "_")
 
 
 class ActionError(RuntimeError):
@@ -163,14 +173,17 @@ class ActionManager:
             raise ActionError(f"Сервис {unit} не входит в список наблюдаемых")
         # Отдельная подкоманда для «только ошибки»: бот не собирает
         # произвольные аргументы journalctl.
-        subcommand = ACTION_JOURNAL_ERRORS if errors else ACTION_JOURNAL
+        # Аргумент-число не передаём: в sudoers перечислены точные команды
+        # (sudo-rs запрещает шаблоны в аргументах), поэтому «больше строк» —
+        # отдельная подкоманда.
+        if errors:
+            subcommand = ACTION_JOURNAL_ERRORS
+        elif lines > 40:
+            subcommand = ACTION_JOURNAL_MORE
+        else:
+            subcommand = ACTION_JOURNAL
         result = await run_command(
-            [
-                self.settings.sudo_wrapper,
-                subcommand,
-                unit,
-                str(max(1, min(lines, 500))),
-            ],
+            [self.settings.sudo_wrapper, subcommand, unit],
             timeout=20.0,
             action=subcommand,
         )
@@ -219,8 +232,9 @@ class ActionManager:
             raise ActionError(f"Команда не разрешена. Разрешено только:\n{allowed}")
         # Команда передаётся одним аргументом: sudo-правило разрешает
         # ``xui-ctl run_command *``, а белый список проверяется уже в скрипте.
+        # В sudoers ключ (без пробелов) — там запрещены шаблоны в аргументах.
         return await self._privileged(
-            [ACTION_COMMAND, command],
+            [ACTION_COMMAND, command_key(command)],
             ACTION_COMMAND,
             timeout=float(self.settings.command_timeout),
         )

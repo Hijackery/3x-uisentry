@@ -138,7 +138,7 @@ async def test_allowlisted_command_is_one_argv_element(
 
     await actions.run_allowed_command("journalctl --disk-usage")
     assert calls == [
-        ["/usr/local/bin/xui-ctl", "run_command", "journalctl --disk-usage"]
+        ["/usr/local/bin/xui-ctl", "run_command", "journalctl_--disk-usage"]
     ]
 
 
@@ -176,7 +176,11 @@ async def test_journal_goes_through_privileged_wrapper(
     output = await actions.journal("x-ui", 20)
 
     assert calls[0][:3] == ["/usr/local/bin/xui-ctl", "journal", "x-ui"]
-    assert calls[0][3] == "20"
+    assert calls[0] == [
+        "/usr/local/bin/xui-ctl",
+        "journal",
+        "x-ui",
+    ]  # без аргумента-числа
     assert output == "ok"
 
 

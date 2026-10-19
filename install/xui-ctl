@@ -148,6 +148,15 @@ case "$cmd" in
         svc_log "$unit" "$lines" 1 || die "не удалось прочитать журнал $unit"
         ;;
 
+    journal_more)
+        # Журнал с запасом строк. Отдельная подкоманда, а не аргумент-число:
+        # sudo-rs (Ubuntu 26.04+) запрещает шаблоны в аргументах, поэтому в
+        # sudoers перечисляются точные команды.
+        require_no_extra_args 1 "$@"
+        unit="$(safe_unit "$2")"
+        svc_log "$unit" 200 0 || die "не удалось прочитать журнал $unit"
+        ;;
+
     journal)
         require_no_extra_args 2 "$@"
         unit="$(safe_unit "$2")"
@@ -294,13 +303,17 @@ case "$cmd" in
         # нет вообще, поэтому даже правка allowlist не даст инъекцию.
         require_no_extra_args 1 "$@"
         command="$2"
+        # Ключи (пробелы заменены на «_») — то, что перечисляет sudoers;
+        # строки команд поддержаны для обратной совместимости.
         case "$command" in
-            "journalctl --disk-usage")     set -- journalctl --disk-usage ;;
-            "systemctl list-timers --all") set -- systemctl list-timers --all ;;
-            "df -h")                       set -- df -h ;;
-            "free -h")                     set -- free -h ;;
+            "journalctl_--disk-usage" | "journalctl --disk-usage")
+                set -- journalctl --disk-usage ;;
+            "systemctl_list-timers_--all" | "systemctl list-timers --all")
+                set -- systemctl list-timers --all ;;
+            "df_-h" | "df -h")             set -- df -h ;;
+            "free_-h" | "free -h")         set -- free -h ;;
             "uptime")                      set -- uptime ;;
-            "x-ui status")                 set -- x-ui status ;;
+            "x-ui_status" | "x-ui status") set -- x-ui status ;;
             *) die "команда не разрешена: $command" ;;
         esac
         log "run allowed: $command"

@@ -1007,14 +1007,37 @@ if [ -z "$VISUDO" ]; then
 fi
 
 SUDOERS_FILE="$SUDOERS_PATH"
-# В /etc/sudoers.d кладём только рабочие строки: комментарии из шаблона (они
-# русские) остаются в репозитории, а система получает короткий ASCII-файл —
-# так его разберёт любая сборка sudo.
-sed -e "s/^User_Alias XUI_MONITOR_USERS = .*/User_Alias XUI_MONITOR_USERS = ${SERVICE_USER}/" \
-    -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
-    "$PREFIX/install/xui-monitor-sudoers" | grep -v '^#' > "$SUDOERS_FILE"
+# Правила перечисляем ТОЧНО, без шаблонов: классический sudo допускает `*` в
+# аргументах, а sudo-rs (Ubuntu 26.04+) отвечает «wildcards are not allowed in
+# command arguments». Юниты берём из SERVICES, ключи команд — из
+# COMMAND_ALLOWLIST (пробел → «_»), поэтому файл остаётся строгим и коротким.
+SUDO_UNITS="$(env_get SERVICES | tr ',' ' ')"
+SUDO_KEYS="$(env_get COMMAND_ALLOWLIST | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
+    | tr ' ' '_' | tr '\n' ' ')"
+[ -n "$SUDO_UNITS" ] || SUDO_UNITS="$SERVICE_NAME"
+
+sudoers_rules() {
+    local rules="" unit sub key
+    for unit in $SUDO_UNITS; do
+        for sub in is_active restart_service journal journal_more journal_errors; do
+            rules="$rules${rules:+, }$WRAPPER_PATH $sub $unit"
+        done
+    done
+    for sub in apt_upgrade apt_upgrade_phased dist_upgrade reboot; do
+        rules="$rules${rules:+, }$WRAPPER_PATH $sub"
+    done
+    for key in $SUDO_KEYS; do
+        rules="$rules${rules:+, }$WRAPPER_PATH run_command $key"
+    done
+    printf '%s' "$rules"
+}
+{
+    printf '# Сгенерировано установщиком бота мониторинга 3X-UI.\n'
+    printf '# Точные команды без шаблонов: совместимо с sudo и sudo-rs.\n'
+    printf '%s ALL=(root) NOPASSWD: %s\n' "$SERVICE_USER" "$(sudoers_rules)"
+} > "$SUDOERS_FILE"
 chown root:root "$SUDOERS_FILE"
-chmod 440 "$SUDOERS_FILE"
+chmod 0440 "$SUDOERS_FILE"
 
 if [ -z "$VISUDO" ]; then
     warn "visudo не найден — синтаксис sudoers не проверен (файл собран из шаблона)"

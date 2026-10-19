@@ -1,29 +1,25 @@
-# Правила sudo для бота мониторинга.
+# Пример правил, которые установщик кладёт в /etc/sudoers.d/xui-monitor-bot.
 #
-# Установка (заменив имя пользователя, если оно другое):
-#   sudo install -o root -g root -m 0440 xui-monitor-sudoers /etc/sudoers.d/xui-monitor
-#   sudo visudo -cf /etc/sudoers.d/xui-monitor
+# Почему именно так: sudo-rs (Ubuntu 26.04+) запрещает шаблоны в аргументах
+# команд («wildcards are not allowed in command arguments»), не знает алиасов
+# вида User_Alias/Cmnd_Alias и части настроек Defaults. Поэтому команды
+# перечисляются точно, одним правилом.
 #
-# Бот работает непривилегированным и умеет только то, что перечислено ниже.
-# Рестарт xray намеренно отсутствует: панель умеет делать это через API,
-# и sudo для этого не нужен.
+# Юниты установщик берёт из SERVICES, ключи команд — из COMMAND_ALLOWLIST
+# (пробел заменяется на «_»).
 
-User_Alias XUI_MONITOR_USERS = xui-monitor
-Cmnd_Alias XUI_MONITOR_CMNDS = \
-    /usr/local/bin/xui-ctl is_active *, \
-    /usr/local/bin/xui-ctl restart_service *, \
-    /usr/local/bin/xui-ctl journal * *, \
-    /usr/local/bin/xui-ctl journal_errors * *, \
+xui-monitor ALL=(root) NOPASSWD: /usr/local/bin/xui-ctl is_active x-ui, \
+    /usr/local/bin/xui-ctl restart_service x-ui, \
+    /usr/local/bin/xui-ctl journal x-ui, \
+    /usr/local/bin/xui-ctl journal_more x-ui, \
+    /usr/local/bin/xui-ctl journal_errors x-ui, \
     /usr/local/bin/xui-ctl apt_upgrade, \
     /usr/local/bin/xui-ctl apt_upgrade_phased, \
     /usr/local/bin/xui-ctl dist_upgrade, \
     /usr/local/bin/xui-ctl reboot, \
-    /usr/local/bin/xui-ctl run_command *
-
-XUI_MONITOR_USERS ALL=(root) NOPASSWD: XUI_MONITOR_CMNDS
-
-# Defaults
-# Только переносимые настройки: !requiretty на Linux не нужен (requiretty и
-# так выключен), log_input для бота без терминала бессмыслен, а на новых
-# сборках sudo лишние флаги ломают разбор — правила важнее.
-Defaults:XUI_MONITOR_USERS log_output
+    /usr/local/bin/xui-ctl run_command journalctl_--disk-usage, \
+    /usr/local/bin/xui-ctl run_command systemctl_list-timers_--all, \
+    /usr/local/bin/xui-ctl run_command df_-h, \
+    /usr/local/bin/xui-ctl run_command free_-h, \
+    /usr/local/bin/xui-ctl run_command uptime, \
+    /usr/local/bin/xui-ctl run_command x-ui_status
