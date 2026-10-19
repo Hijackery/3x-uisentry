@@ -25,7 +25,7 @@ Telegram-бот для сервера с панелью 3X-UI: следит за
 
 ```bash
 # стабильная версия (рекомендуется): тег фиксирован и отдаётся сразу, без кэша ветки
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.1/install.sh)
 
 # последняя версия из ветки main
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/inst
 
 GitHub кэширует ветку `main` на несколько минут: если репозиторий только что
 обновили, установщик может взять предыдущую версию. Для воспроизводимости
-укажите тег — `.../raw/v1.0.0/install.sh`.
+укажите тег — `.../raw/v1.0.1/install.sh`.
 
 API-токен панели нужен со scope `node-sync` — иначе бот не увидит inbound'ы и
 подписки:
@@ -73,11 +73,11 @@ sudo env \
 
 ```bash
 # 1) посчитать хеш архива нужной версии
-curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.0 | sha256sum
+curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.1 | sha256sum
 
 # 2) установить, сверив архив с этим хешем
 sudo env SOURCE_SHA256='<хеш из шага 1>' \
-  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.1/install.sh)
 ```
 
 ## Меню настроек (`xui-menu`)

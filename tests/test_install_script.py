@@ -240,3 +240,21 @@ def test_installer_never_asks_to_dump_env_to_terminal() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "grep -v '^#'" not in text
     assert "не пересылайте" in text
+
+
+def test_prefix_exists_before_env_is_written() -> None:
+    """Регрессия: мастер пишет .env до копирования кода.
+
+    На чистой машине каталога /opt/xui-monitor-bot ещё нет, поэтому установщик
+    обязан создать его до первого касания .env — иначе установка падает
+    на `touch: cannot touch .../.env: No such file or directory`.
+    """
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    first_mkdir = text.index('mkdir -p "$PREFIX"')
+    # Инвариант — про запись, а не про присваивание переменной: каталог обязан
+    # существовать до первого касания файла.
+    first_write = min(
+        text.index('cp "$SOURCE_DIR/.env.example" "$ENV_FILE"'),
+        text.index('touch "$ENV_FILE"'),
+    )
+    assert first_mkdir < first_write, "каталог установки создаётся после записи .env"

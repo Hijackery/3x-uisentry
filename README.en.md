@@ -25,7 +25,7 @@ after a button confirmation and only for the administrator.
 
 ```bash
 # stable version (recommended): the tag is pinned and served immediately, no branch cache
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.1/install.sh)
 
 # latest from the main branch
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
@@ -83,16 +83,16 @@ Verifiable install (pinned version plus archive checksum):
 
 ```bash
 # 1) compute the archive hash of the desired version
-curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.0 | sha256sum
+curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.1 | sha256sum
 
 # 2) install, verifying the archive against that hash
 sudo env SOURCE_SHA256='<hash from step 1>' \
-  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.1/install.sh)
 ```
 
 GitHub caches the `main` branch for a few minutes: if the repository was just
 updated, the installer may fetch the previous revision. Pin a tag for
-reproducibility — `.../raw/v1.0.0/install.sh`.
+reproducibility — `.../raw/v1.0.1/install.sh`.
 
 ### If the system has no systemd
 
