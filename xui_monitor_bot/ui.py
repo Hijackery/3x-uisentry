@@ -235,7 +235,8 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
         version = panel.panel_version or ""
         hint = (
             f"\n→ токен панели не принят. Где взять: {panel_token_hint(version)}"
-            "\n→ и проверьте PANEL_BASE_PATH (webBasePath панели): иначе API отвечает 404"
+            "\n→ и проверьте PANEL_BASE_PATH (webBasePath панели): "
+            "иначе API отвечает 404"
         )
     return (
         "\n🌐 <b>Панель 3X-UI</b>\n"
