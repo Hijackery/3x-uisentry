@@ -33,10 +33,10 @@ class SystemCollector:
             return 0.0
 
     def collect(self) -> SystemMetrics:
-        # psutil отдаёт проценты от одного ядра (на 4 ядрах может быть 400%),
-        # а пороги в конфиге рассчитаны на «загрузку в процентах от всех ядер».
-        raw_cpu = psutil.cpu_percent(interval=CPU_SAMPLE_SECONDS)
-        cpu_percent = min(100.0, raw_cpu / self._cores)
+        # cpu_percent(percpu=False) уже отдаёт загрузку всей системы в 0..100.
+        # Делить на число ядер нельзя: на 8 ядрах 100% превращались в 12.5%,
+        # и алерты CPU_WARN/CPU_CRIT не срабатывали никогда.
+        cpu_percent = min(100.0, psutil.cpu_percent(interval=CPU_SAMPLE_SECONDS))
         virtual = psutil.virtual_memory()
         swap = psutil.swap_memory()
         disk = psutil.disk_usage(self.disk_path)

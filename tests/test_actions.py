@@ -114,7 +114,9 @@ async def test_cooldown_blocks_repeated_action(
     with pytest.raises(ActionError, match="недавно"):
         await actions.restart_service("x-ui")
 
-    assert calls == [["/usr/local/bin/xui-ctl", "restart_service", "x-ui"]]
+    assert calls == [
+        ["sudo", "-n", "--", "/usr/local/bin/xui-ctl", "restart_service", "x-ui"]
+    ]
 
 
 async def test_wrapper_argv_and_custom_prefix(
@@ -124,7 +126,7 @@ async def test_wrapper_argv_and_custom_prefix(
     calls = fake_runner(monkeypatch)
     result = await actions.restart_service("x-ui")
 
-    assert calls == [["/opt/xui-ctl", "restart_service", "x-ui"]]
+    assert calls == [["sudo", "-n", "--", "/opt/xui-ctl", "restart_service", "x-ui"]]
     assert result.ok
 
 
@@ -138,7 +140,14 @@ async def test_allowlisted_command_is_one_argv_element(
 
     await actions.run_allowed_command("journalctl --disk-usage")
     assert calls == [
-        ["/usr/local/bin/xui-ctl", "run_command", "journalctl_--disk-usage"]
+        [
+            "sudo",
+            "-n",
+            "--",
+            "/usr/local/bin/xui-ctl",
+            "run_command",
+            "journalctl_--disk-usage",
+        ]
     ]
 
 
@@ -151,7 +160,7 @@ async def test_execute_dispatches_by_action(
 
     result = await actions.execute(pending)
     assert result.ok
-    assert calls[0][1] == "restart_service"
+    assert calls[0][4] == "restart_service"
 
 
 async def test_execute_rejects_unknown_action(
@@ -175,8 +184,17 @@ async def test_journal_goes_through_privileged_wrapper(
     calls = fake_runner(monkeypatch)
     output = await actions.journal("x-ui", 20)
 
-    assert calls[0][:3] == ["/usr/local/bin/xui-ctl", "journal", "x-ui"]
+    assert calls[0][:5] == [
+        "sudo",
+        "-n",
+        "--",
+        "/usr/local/bin/xui-ctl",
+        "journal",
+    ]
     assert calls[0] == [
+        "sudo",
+        "-n",
+        "--",
         "/usr/local/bin/xui-ctl",
         "journal",
         "x-ui",

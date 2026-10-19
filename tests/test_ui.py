@@ -167,7 +167,7 @@ def test_subscriptions_highlight_problems() -> None:
             inbound_remark="in",
             enabled=True,
             expiry_time_ms=now_ms + 30 * 86400_000,
-            total_gb=50,
+            total_bytes=50 * 1024**3,
             used_bytes=10 * 1024**3,
         ),
         Subscription(
@@ -175,7 +175,7 @@ def test_subscriptions_highlight_problems() -> None:
             inbound_remark="in",
             enabled=True,
             expiry_time_ms=now_ms - 86_400_000,
-            total_gb=50,
+            total_bytes=50 * 1024**3,
             used_bytes=50 * 1024**3,
         ),
     ]

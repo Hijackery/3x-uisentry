@@ -42,6 +42,19 @@ class SubscriptionCollector:
             if not isinstance(raw, dict):
                 continue
             summary, clients = parse_inbound(raw)
+            # Per-client трафик лежит не в settings.clients, а в clientStats.
+            # Без него у клиентов с лимитом всегда было бы used=0.
+            stats_used: dict[str, int] = {}
+            raw_stats = raw.get("clientStats")
+            if isinstance(raw_stats, list):
+                for stat in raw_stats:
+                    if not isinstance(stat, dict):
+                        continue
+                    stat_email = str(stat.get("email", ""))
+                    if stat_email:
+                        stats_used[stat_email] = stats_used.get(stat_email, 0) + (
+                            _as_int(stat.get("up")) + _as_int(stat.get("down"))
+                        )
             summaries.append(
                 InboundSummary(
                     remark=summary["remark"],
@@ -55,7 +68,10 @@ class SubscriptionCollector:
                 )
             )
             for client in clients:
-                subscriptions.append(_to_subscription(summary, client))
+                email = str(client.get("email", ""))
+                subscriptions.append(
+                    _to_subscription(summary, client, stats_used.get(email))
+                )
 
         return summaries, subscriptions
 
@@ -96,18 +112,28 @@ class SubscriptionCollector:
         return issues
 
 
-def _to_subscription(summary: dict[str, Any], client: dict[str, Any]) -> Subscription:
-    total_gb = _as_int(client.get("totalGB"))
-    used = _as_int(client.get("up")) + _as_int(client.get("down"))
-    if used == 0 and total_gb == 0:
-        # Некоторые версии панели хранят трафик только на уровне inbound.
-        used = _as_int(summary.get("up")) + _as_int(summary.get("down"))
+def _to_subscription(
+    summary: dict[str, Any],
+    client: dict[str, Any],
+    stats_used: int | None = None,
+) -> Subscription:
+    # В 3X-UI поле называется totalGB, но содержит БАЙТЫ (фронтенд делит на
+    # 1024**3 только для показа). Раньше бот умножал его ещё раз — лимит и
+    # «трафик исчерпан» становились недостижимыми.
+    total_bytes = _as_int(client.get("totalGB"))
+    if stats_used is not None:
+        used = stats_used
+    else:
+        used = _as_int(client.get("up")) + _as_int(client.get("down"))
+        if used == 0 and total_bytes == 0:
+            # Некоторые версии панели хранят трафик только на уровне inbound.
+            used = _as_int(summary.get("up")) + _as_int(summary.get("down"))
     return Subscription(
         email=str(client.get("email", "")),
         inbound_remark=summary["remark"],
         enabled=bool(client.get("enable", summary["enabled"])),
         expiry_time_ms=_as_int(client.get("expiryTime")),
-        total_gb=total_gb,
+        total_bytes=total_bytes,
         used_bytes=used,
         sub_id=str(client.get("subId", "")),
     )
@@ -116,5 +142,5 @@ def _to_subscription(summary: dict[str, Any], client: dict[str, Any]) -> Subscri
 def _as_int(value: Any) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0

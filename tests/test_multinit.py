@@ -127,7 +127,6 @@ def test_journal_falls_back_to_bot_log_file(tmp_path: Path) -> None:
     result = _run_wrapper(
         "journal",
         "x-ui",
-        "10",
         path=str(minimal),
         env={"LOG_PATH": str(log_file)},
     )
@@ -154,7 +153,6 @@ def test_journal_errors_filters_bot_log(tmp_path: Path) -> None:
     result = _run_wrapper(
         "journal_errors",
         "x-ui",
-        "10",
         path=str(minimal),
         env={"LOG_PATH": str(log_file)},
     )

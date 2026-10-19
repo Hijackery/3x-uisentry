@@ -369,8 +369,9 @@ async def test_phased_upgrade_goes_through_privileged_wrapper(
 
     await actions.apt_upgrade_phased()
 
-    assert seen[0][0] == "/usr/local/bin/xui-ctl"
-    assert seen[0][1] == "apt_upgrade_phased"
+    assert seen[0][0] == "sudo"
+    assert seen[0][3] == "/usr/local/bin/xui-ctl"
+    assert seen[0][4] == "apt_upgrade_phased"
 
 
 # ------------------------------------------------------------ UX-инварианты

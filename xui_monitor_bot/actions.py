@@ -183,7 +183,7 @@ class ActionManager:
         else:
             subcommand = ACTION_JOURNAL
         result = await run_command(
-            [self.settings.sudo_wrapper, subcommand, unit],
+            ["sudo", "-n", "--", self.settings.sudo_wrapper, subcommand, unit],
             timeout=20.0,
             action=subcommand,
         )
@@ -253,7 +253,11 @@ class ActionManager:
         *,
         timeout: float = 60.0,
     ) -> CommandResult:
-        argv = [self.settings.sudo_wrapper, *args]
+        # Бот работает под непривилегированным пользователем, поэтому обёртка
+        # запускается через sudo -n (без пароля). Правило в sudoers разрешает
+        # только точные подкоманды xui-ctl. Без sudo привилегированные действия
+        # молча уходили бы в «Access denied» / polkit.
+        argv = ["sudo", "-n", "--", self.settings.sudo_wrapper, *args]
         # Проверка и отметка внутри блокировки: иначе два одновременных нажатия
         # успевали пройти кулдаун и выполнялись оба.
         async with self._lock:

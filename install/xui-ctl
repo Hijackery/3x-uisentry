@@ -185,13 +185,9 @@ case "$cmd" in
 
     journal_errors)
         # Только ошибки: разбирать инцидент ночью удобнее по -p err.
-        require_no_extra_args 2 "$@"
+        require_no_extra_args 1 "$@"
         unit="$(safe_unit "$2")"
-        lines="$(safe_int "$3")"
-        if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
-            die "lines вне 1..500"
-        fi
-        svc_log "$unit" "$lines" 1 || die "не удалось прочитать журнал $unit"
+        svc_log "$unit" 100 1 || die "не удалось прочитать журнал $unit"
         ;;
 
     journal_more)
@@ -204,13 +200,9 @@ case "$cmd" in
         ;;
 
     journal)
-        require_no_extra_args 2 "$@"
+        require_no_extra_args 1 "$@"
         unit="$(safe_unit "$2")"
-        lines="$(safe_int "$3")"
-        if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
-            die "lines вне 1..500"
-        fi
-        svc_log "$unit" "$lines" 0 || die "не удалось прочитать журнал $unit"
+        svc_log "$unit" 40 0 || die "не удалось прочитать журнал $unit"
         ;;
 
     apt_upgrade)

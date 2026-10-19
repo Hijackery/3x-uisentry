@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -99,8 +100,8 @@ def env_positive_float(name: str, default: float) -> float:
         value = float(raw)
     except ValueError as exc:
         raise ConfigError(f"{name}={raw!r}: ожидается число") from exc
-    if value <= 0:
-        raise ConfigError(f"{name}={value}: ожидается число больше нуля")
+    if not math.isfinite(value) or value <= 0:
+        raise ConfigError(f"{name}={value}: ожидается конечное число больше нуля")
     return value
 
 

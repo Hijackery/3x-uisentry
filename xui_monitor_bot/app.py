@@ -205,7 +205,11 @@ class MonitorBot:
             self._job_reboot_watch,
             timedelta(seconds=REBOOT_WATCH_STEP),
             name="reboot-watch-after-start",
-            data={"chat_id": int(reboot["telegram_id"] or 0), "attempt": 0},
+            data={
+                "chat_id": int(reboot["telegram_id"] or 0),
+                "attempt": 0,
+                "verify": True,
+            },
         )
 
     # -------------------------------------------------------- снапшоты

@@ -63,7 +63,7 @@ def make_sub(**overrides: object) -> Subscription:
         "inbound_remark": "inbound",
         "enabled": True,
         "expiry_time_ms": now_ms + 10 * 86400_000,
-        "total_gb": 100,
+        "total_bytes": 100 * 1024**3,
         "used_bytes": 10 * 1024**3,
     }
     base.update(overrides)
@@ -75,9 +75,11 @@ def test_subscription_expiry_and_traffic_flags() -> None:
     assert make_sub(expiry_time_ms=now_ms - 1000).is_expired
     assert not make_sub(expiry_time_ms=now_ms + 86_400_000).is_expired
     assert make_sub(expiry_time_ms=0).expires_in_days is None
-    assert make_sub(total_gb=10, used_bytes=10 * 1024**3).is_depleted
-    assert make_sub(total_gb=0).used_percent == 0.0
-    assert make_sub(total_gb=10, used_bytes=5 * 1024**3).used_percent == 50.0
+    assert make_sub(total_bytes=10 * 1024**3, used_bytes=10 * 1024**3).is_depleted
+    assert make_sub(total_bytes=0).used_percent == 0.0
+    assert (
+        make_sub(total_bytes=10 * 1024**3, used_bytes=5 * 1024**3).used_percent == 50.0
+    )
 
 
 def test_problems_lists_what_needs_attention() -> None:
@@ -93,7 +95,9 @@ def test_problems_lists_what_needs_attention() -> None:
             email="soon@example.com",
             expiry_time_ms=int(time.time() * 1000) + 86_400_000,
         ),
-        make_sub(email="depleted@example.com", total_gb=1, used_bytes=1024**3),
+        make_sub(
+            email="depleted@example.com", total_bytes=1024**3, used_bytes=2 * 1024**3
+        ),
     ]
     issues = SubscriptionCollector.problems(inbounds, subs, expiring_soon_days=3)
     joined = "\n".join(issues)
@@ -126,10 +130,11 @@ def test_collect_turns_inbound_into_subscriptions() -> None:
             "up": 10,
             "down": 20,
             "total": 0,
+            "clientStats": [{"email": "a@example.com", "up": 1, "down": 2}],
             "settings": json.dumps(
                 {
                     "clients": [
-                        {"email": "a@example.com", "totalGB": 10, "up": 1, "down": 2},
+                        {"email": "a@example.com", "totalGB": 10},
                         {"email": "b@example.com", "totalGB": 0, "up": 0, "down": 0},
                     ]
                 }

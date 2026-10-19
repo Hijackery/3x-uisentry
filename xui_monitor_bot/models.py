@@ -64,7 +64,8 @@ class Subscription:
     inbound_remark: str
     enabled: bool
     expiry_time_ms: int
-    total_gb: int
+    # 3X-UI называет поле totalGB, но хранит и отдаёт БАЙТЫ.
+    total_bytes: int
     used_bytes: int
     sub_id: str = ""
 
@@ -82,13 +83,13 @@ class Subscription:
 
     @property
     def is_depleted(self) -> bool:
-        return self.total_gb > 0 and self.used_bytes >= self.total_gb * 1024**3
+        return self.total_bytes > 0 and self.used_bytes >= self.total_bytes
 
     @property
     def used_percent(self) -> float:
-        if self.total_gb <= 0:
+        if self.total_bytes <= 0:
             return 0.0
-        return min(100.0, self.used_bytes / (self.total_gb * 1024**3) * 100)
+        return min(100.0, self.used_bytes / self.total_bytes * 100)
 
 
 @dataclass(frozen=True, slots=True)

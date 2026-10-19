@@ -373,8 +373,8 @@ def _render_subscription(item: Subscription) -> str:
         flags.append(f"⌛ {item.expires_in_days:.1f} дн.")
 
     traffic = fmt_bytes(item.used_bytes)
-    if item.total_gb:
-        traffic += f" из {item.total_gb} ГБ ({item.used_percent:.0f}%)"
+    if item.total_bytes:
+        traffic += f" из {fmt_bytes(item.total_bytes)} ({item.used_percent:.0f}%)"
 
     suffix = f" · {' · '.join(flags)}" if flags else ""
     return (
