@@ -467,3 +467,44 @@ def test_installer_does_not_promise_cli_token_on_v3() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "в v3 эта команда больше не создаёт токены" in text
     assert "apiTokens/create" in text
+
+
+def test_installer_auto_corrects_web_base_path(tmp_path: Path) -> None:
+    """Путь /panel из адресной строки — не webBasePath: установщик это ловит.
+
+    Пробуем путь как есть, потом без него; «правильный» путь в 3X-UI отвечает
+    401 (без токена), неверный — 404. Здесь curl подменён, чтобы проверить
+    именно логику выбора.
+    """
+    script = INSTALL_SH.read_text(encoding="utf-8")
+
+    def spell(name: str) -> str:
+        start = script.index(f"{name}() {{")
+        return script[start : script.index("\n}\n", start) + 3]
+
+    helpers = (
+        spell("collapse_slashes")
+        + spell("panel_api_code")
+        + spell("resolve_panel_base")
+    )
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"{helpers}\n"
+        'curl() { local url="${@: -1}"; '
+        'case " $FAKE_OK " in *" $url "*) printf 401 ;; *) printf 404 ;; esac; }\n'
+        'FAKE_OK="https://h:1/panel/api/server/status"\n'
+        'printf "1:[%s]\\n" "$(resolve_panel_base https://h:1 panel)"\n'
+        'FAKE_OK="https://h:1/secret/panel/api/server/status"\n'
+        'printf "2:[%s]\\n" "$(resolve_panel_base https://h:1 secret)"\n'
+        'printf "3:[%s]\\n" "$(resolve_panel_base https://h:1 "")"\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "1:[]" in result.stdout
+    assert "2:[secret]" in result.stdout
+    assert "3:[]" in result.stdout

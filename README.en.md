@@ -98,8 +98,13 @@ defaults), so there is no need to edit the file by hand. The questions are read 
 so the dialogue works both with a pipe and with process substitution.
 
 Trailing slashes and spaces in the address (`https://host:5580/`) are stripped by
-the installer itself; `webBasePath` is a path (`/panel`, no slashes), and if you
-paste an address into that field the installer notices and fixes it.
+the installer itself. The `webBasePath` field is the separate **“Panel URL”**
+setting in 3X-UI (usually `/`, so leave the field empty). Do not enter the
+`/panel` path from the browser: the 3X-UI UI always lives at `.../panel`, and
+putting that into `webBasePath` adds a duplicate segment
+(`.../panel/panel/api`). The installer verifies the path before asking for the
+token and silently corrects it when it does not check out; pasting a full
+address into that field is handled too.
 
 The token is created **inside the 3X-UI panel** (not in Telegram and not in the
 bot):

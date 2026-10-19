@@ -28,6 +28,13 @@
 
 ### Исправлено
 
+- `webBasePath`: путь `/panel` из адресной строки — не webBasePath (в 3X-UI
+  интерфейс всегда на `.../panel`, а «URL панели» задаётся отдельно, обычно `/`).
+  Установщик теперь проверяет путь до запроса токена (правильный отвечает 401,
+  неверный — 404) и молча исправляет лишний сегмент `.../panel/panel/api`.
+- При неверном токене панель отдаёт пустой 401, поэтому установщик и
+  самопроверка писали «панель не ответила». Теперь различаются 401/403 (токен и
+  его scope), 404 (адрес API) и недоступность, а в самопроверке виден HTTP-код.
 - Юнит больше не использует `ProcSubset=pid`: он оставлял в `/proc` только
   процессы и прятал `/proc/stat`, `/proc/meminfo`, `/proc/net` — из-за этого
   psutil не мог собрать метрики и бот писал «Системные метрики недоступны».
@@ -98,6 +105,11 @@ tags are published — the current version is always the `main` branch; update v
   written; an incomplete `.env` after an aborted run is completed by the wizard.
 - Panel address handling: spaces/trailing slashes stripped, a path pasted with the
   address is moved into `webBasePath`, double slashes are impossible.
+- `webBasePath` is now verified before the token is requested (a valid API path
+  answers 401, a wrong one 404): the `/panel` browser path — which is not
+  `webBasePath` — no longer produces a doubled `.../panel/panel/api` segment.
+  A bad token (empty 401) is no longer reported as “panel did not respond”;
+  401/403, 404 and unreachable are told apart in the wizard and the self-check.
 - `asyncio.TimeoutError` on Python 3.10 (command timeouts did not fire); orphan
   processes on cancellation; `RetryAfter` no longer drops messages; cooldown
   checked under lock; confirmation tokens not consumed by a foreign tap.

@@ -734,6 +734,29 @@ print(port, base)
 '
 }
 
+panel_api_code() {
+    # HTTP-код API панели без токена. В 3X-UI правильный путь отвечает 401
+    # (нужен токен), неверный — 404. Так webBasePath проверяется до токена.
+    curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+        -H 'X-Requested-With: XMLHttpRequest' \
+        "$1/panel/api/server/status" 2>/dev/null || echo 000
+}
+
+resolve_panel_base() {
+    # $1 — адрес панели без пути, $2 — предполагаемый webBasePath.
+    # Печатает подтверждённый webBasePath (пусто, если путь не нужен).
+    # В 3X-UI адрес в браузере всегда оканчивается на /panel — это не
+    # webBasePath, и «/panel» в поле настроек даёт лишний сегмент (404).
+    local url="$1" guess="$2" code
+    if [ -n "$guess" ]; then
+        code="$(panel_api_code "$(collapse_slashes "$url/$guess")")"
+        case "$code" in 200|301|302|401|403) printf '%s\n' "$guess"; return 0 ;; esac
+    fi
+    code="$(panel_api_code "$url")"
+    case "$code" in 200|301|302|401|403) printf '\n'; return 0 ;; esac
+    printf '%s\n' "$guess"
+}
+
 detect_panel_token() {
     # x-ui сам создаёт токен и печатает его. Новое имя токена заменяет старое,
     # поэтому вызываем функцию только осознанно.
@@ -843,7 +866,7 @@ else
            warn "Некорректный адрес, беру автоопределённый: $PANEL_URL_VALUE" ;;
     esac
 
-    question PANEL_BASE "webBasePath панели (путь, например /panel; без слэшей, пусто — если не задан)" \
+    question PANEL_BASE "webBasePath — поле «URL панели» в настройках 3X-UI (обычно /, тогда просто Enter). Это НЕ путь /panel из адресной строки" \
         "${PANEL_BASE_PATH:-${URL_PATH_SUGGEST:-${DETECTED_BASE}}}"
     PANEL_BASE="$(normalize_path "$PANEL_BASE")"
     # Если путь был в адресе, а поле оставили пустым — берём его оттуда.
@@ -864,6 +887,18 @@ else
     [ -n "$PANEL_BASE" ] && PROBE_URL="$PANEL_URL_VALUE/$PANEL_BASE"
     PROBE_URL="$(collapse_slashes "$PROBE_URL")"
     PANEL_URL_VALUE="$(collapse_slashes "$PANEL_URL_VALUE")"
+
+    # Проверяем webBasePath и при необходимости исправляем, не дожидаясь токена.
+    _entered_base="$PANEL_BASE"
+    PANEL_BASE="$(resolve_panel_base "$PANEL_URL_VALUE" "$PANEL_BASE")"
+    if [ "$PANEL_BASE" != "$_entered_base" ]; then
+        warn "webBasePath «${_entered_base:-/}» не подтвердился — беру «${PANEL_BASE:-/}»"
+        info "В 3X-UI интерфейс всегда на .../panel, а webBasePath задаётся отдельным"
+        info "полем «URL панели» (обычно /). Путь /panel в webBasePath даёт лишний сегмент."
+    fi
+    PROBE_URL="$PANEL_URL_VALUE"
+    [ -n "$PANEL_BASE" ] && PROBE_URL="$PANEL_URL_VALUE/$PANEL_BASE"
+    PROBE_URL="$(collapse_slashes "$PROBE_URL")"
     if curl -sS --max-time 5 -o /dev/null "$PROBE_URL/" 2>/dev/null; then
         ok "Панель отвечает: $PROBE_URL"
     else
@@ -894,26 +929,31 @@ else
     # Сразу проверяем токен: без этого в .env попадал мусор (например, название
     # области доступа), и бот потом ругался «токен не принят».
     if [ -n "$PANEL_TOKEN" ] && [ -n "$PROBE_URL" ]; then
-        _token_reply="$(curl -sS --max-time 5 -H "Authorization: Bearer $PANEL_TOKEN" \
-            "${PROBE_URL}/panel/api/server/status" 2>/dev/null || true)"
+        _token_http="$(curl -sS --max-time 5 -o /tmp/.xui-mon-bot-tok -w '%{http_code}' \
+            -H "Authorization: Bearer $PANEL_TOKEN" \
+            "${PROBE_URL}/panel/api/server/status" 2>/dev/null || echo 000)"
+        _token_reply="$(cat /tmp/.xui-mon-bot-tok 2>/dev/null || true)"
+        rm -f /tmp/.xui-mon-bot-tok
         if printf '%s' "$_token_reply" | grep -q '"success":true'; then
             ok "Токен панели принят"
-        elif printf '%s' "$_token_reply" | grep -q '"success":false'; then
+        elif printf '%s' "$_token_reply" | grep -q '"success":false' || [ "$_token_http" = "401" ] || [ "$_token_http" = "403" ]; then
             if [ "$ASSUME_YES" -eq 1 ]; then
-                fail "Панель отклонила API-токен.
+                fail "Панель отклонила API-токен (HTTP ${_token_http}).
       3X-UI v3: «Настройки панели → Учётная запись → API-токен» — создайте токен со
       scope node-sync (или admin) и вставьте значение; посмотреть его позже панель
       не даст, копируйте сразу.
       3X-UI 2.x: «Настройки → API Tokens» либо
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
             fi
-            warn "Панель отклонила токен — проверьте значение и его область (нужен node-sync или admin)."
+            warn "Панель отклонила токен (HTTP ${_token_http}) — проверьте значение и его область (нужен node-sync или admin)."
             info "3X-UI v3: Настройки панели → Учётная запись → API-токен (создать, скопировать сразу);"
             info "то же по API: POST /panel/api/setting/apiTokens/create с scope node-sync (нужен admin-токен)."
             info "3X-UI 2.x: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
             info "В PANEL_API_TOKEN вставляется значение токена, а не название области — например update-all-geofiles."
+        elif [ "$_token_http" = "404" ]; then
+            warn "Панель ответила 404 — похоже, адрес API неверен (PANEL_URL/webBasePath)"
         else
-            warn "Проверить токен не удалось (панель не ответила) — это заметит самопроверка"
+            warn "Проверить токен не удалось (HTTP ${_token_http}, панель не ответила) — это заметит самопроверка"
         fi
     fi
 
@@ -1252,23 +1292,44 @@ if [ "$CFG_OK" -eq 1 ]; then
     )"
     PANEL_TOKEN_VALUE="$(env_get PANEL_API_TOKEN)"
     if [ -n "$PANEL_API" ] && [ -n "$PANEL_TOKEN_VALUE" ]; then
-        PANEL_RESULT="$(curl -fsS --max-time 15 -H "Authorization: Bearer ${PANEL_TOKEN_VALUE}" \
-            "${PANEL_API}/server/status" 2>/dev/null || true)"
-        if printf '%s' "$PANEL_RESULT" | grep -q '"success":true'; then
-            check_ok "API панели принимает токен ($PANEL_API/server/status)"
-        elif printf '%s' "$PANEL_RESULT" | grep -q '"success":false'; then
-            check_fail "Панель отклонила токен: $(printf '%s' "$PANEL_RESULT" | head -c 160) — если версия 3X-UI старая (без API-токенов), обновите панель"
+        # Без -f: HTTP-код нужен, чтобы отличить «токен не принят» (401/403)
+        # от «путь не тот» (404) и «панель недоступна» (000/сеть).
+        PANEL_HTTP_DIR="$(mktemp -d)"
+        panel_http() {
+            curl -sS --max-time 15 -o "$PANEL_HTTP_DIR/body" -w '%{http_code}' \
+                -H "Authorization: Bearer ${PANEL_TOKEN_VALUE}" \
+                "${PANEL_API}/$1" 2>/dev/null || echo 000
+        }
+        STATUS_CODE="$(panel_http server/status)"
+        PANEL_VER="$(sed -n 's/.*"panelVersion":"\([^"]*\)".*/\1/p' "$PANEL_HTTP_DIR/body" | head -1)"
+        if [ "$STATUS_CODE" = "200" ] && grep -q '"success":true' "$PANEL_HTTP_DIR/body"; then
+            if [ -n "$PANEL_VER" ]; then
+                check_ok "API панели принимает токен (3X-UI v$PANEL_VER, $PANEL_API/server/status)"
+            else
+                check_ok "API панели принимает токен ($PANEL_API/server/status)"
+            fi
         else
-            check_fail "Панель не ответила на $PANEL_API/server/status (проверьте PANEL_URL/PANEL_BASE_PATH)"
+            case "$STATUS_CODE" in
+                401|403)
+                    check_fail "Панель отклонила токен (HTTP $STATUS_CODE) — значение неверное или у токена нет нужного scope. Создайте токен со scope node-sync (или admin): 3X-UI v3 — «Настройки панели → Учётная запись → API-токен» (значение видно один раз, копируйте сразу); 3X-UI 2.x — «Настройки → API Tokens»." ;;
+                404)
+                    check_fail "Панель ответила 404 на $PANEL_API/server/status — проверьте PANEL_URL и PANEL_BASE_PATH. Помните: PANEL_BASE_PATH — это webBasePath панели, он входит в адрес как префикс перед /panel/api." ;;
+                000)
+                    check_fail "Панель недоступна по $PANEL_API — проверьте PANEL_URL, порт и что служба панели запущена" ;;
+                *)
+                    check_fail "Панель вернула HTTP $STATUS_CODE на $PANEL_API/server/status: $(head -c 160 "$PANEL_HTTP_DIR/body")" ;;
+            esac
         fi
 
-        INBOUND_RESULT="$(curl -fsS --max-time 15 -H "Authorization: Bearer ${PANEL_TOKEN_VALUE}" \
-            "${PANEL_API}/inbounds/list" 2>/dev/null || true)"
-        if printf '%s' "$INBOUND_RESULT" | grep -q '"success":true'; then
-            check_ok "Список inbound'ов и подписок доступен"
-        else
-            check_fail "inbounds/list недоступен — нужен scope node-sync: x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
+        if [ "$STATUS_CODE" = "200" ]; then
+            INBOUND_CODE="$(panel_http inbounds/list)"
+            if [ "$INBOUND_CODE" = "200" ] && grep -q '"success":true' "$PANEL_HTTP_DIR/body"; then
+                check_ok "Список inbound'ов и подписок доступен"
+            else
+                check_fail "inbounds/list недоступен (HTTP $INBOUND_CODE) — токену нужен scope node-sync или admin"
+            fi
         fi
+        rm -rf "$PANEL_HTTP_DIR"
     else
         check_fail "Не удалось вычислить адрес API панели"
     fi
