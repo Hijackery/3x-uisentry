@@ -63,7 +63,7 @@ def test_expired_confirmation_is_rejected(
 ) -> None:
     actions = manager(make_settings, confirm_ttl=10)
     pending = actions.request(ACTION_REBOOT, "перезагрузка")
-    actions._pending[pending.token] = dataclasses.replace(  # noqa: SLF001
+    actions._pending[pending.token] = dataclasses.replace(
         pending, created_at=time.time() - 30
     )
 
@@ -202,9 +202,9 @@ def test_cooldown_remaining_time_is_reported(
     make_settings: Callable[..., Settings],
 ) -> None:
     actions = manager(make_settings, action_cooldown=60)
-    actions._last_run[ACTION_REBOOT] = time.time() - 10  # noqa: SLF001
+    actions._last_run[ACTION_REBOOT] = time.time() - 10
     with pytest.raises(ActionError, match="подождите"):
-        actions._check_cooldown(ACTION_REBOOT)  # noqa: SLF001
+        actions._check_cooldown(ACTION_REBOOT)
 
 
 async def test_restart_xray_goes_through_panel_api(

@@ -286,7 +286,7 @@ def test_panel_uses_custom_ca_bundle(
     bundle.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
     captured = _capture_httpx_kwargs(monkeypatch)
 
-    PanelClient(make_settings(panel_ca_bundle=str(bundle)))._session()  # noqa: SLF001
+    PanelClient(make_settings(panel_ca_bundle=str(bundle)))._session()
 
     assert captured["verify"] == str(bundle)
 
@@ -296,7 +296,7 @@ def test_panel_verifies_tls_by_default(
 ) -> None:
     captured = _capture_httpx_kwargs(monkeypatch)
 
-    PanelClient(make_settings())._session()  # noqa: SLF001
+    PanelClient(make_settings())._session()
 
     assert captured["verify"] is True
 

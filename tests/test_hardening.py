@@ -92,7 +92,7 @@ async def test_panel_client_does_not_follow_redirects(
     """Редирект увёл бы Bearer-токен панели на сторонний хост."""
     settings = make_settings()
     client = PanelClient(settings)
-    session = client._session()  # noqa: SLF001
+    session = client._session()
     try:
         assert session.follow_redirects is False
     finally:
@@ -107,7 +107,7 @@ async def test_panel_client_reports_redirect_as_error(
 
     settings = make_settings()
     client = PanelClient(settings)
-    client._client = httpx.AsyncClient(  # noqa: SLF001
+    client._client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
         headers={"Authorization": f"Bearer {settings.panel_api_token}"},
         follow_redirects=False,

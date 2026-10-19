@@ -25,7 +25,7 @@ def client_with(
     """Клиент с подменённым транспортом: сеть не трогаем, ответы задаём сами."""
     settings: Settings = make_settings(**overrides)
     client = PanelClient(settings)
-    client._client = httpx.AsyncClient(  # noqa: SLF001
+    client._client = httpx.AsyncClient(
         transport=handler,
         headers={
             "Authorization": f"Bearer {settings.panel_api_token}",

@@ -90,7 +90,7 @@ def test_storage_is_thread_safe(storage: Storage) -> None:
                 )
                 storage.set_alert_state(f"thread:{index}", "ok")
                 storage.mark_alert_sent(f"thread:{index}")
-        except BaseException as exc:  # noqa: BLE001 - тест должен показать текст
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
