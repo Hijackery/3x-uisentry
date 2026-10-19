@@ -33,6 +33,10 @@
 
 ### Исправлено
 
+- Удаление бота: отчёт теперь короткий — одна строка «Бот удалён.» вместо
+  списка того, что и где стёрто (`--keep-state` по-прежнему предупреждает об
+  оставшихся базе и пользователе). `xui-menu` после удаления завершается, а не
+  открывает меню заново — возвращаться уже некуда.
 - Раздел «Обслуживание» больше не «зависает»: при таймауте команды в
   `run_command` переменные вывода не были инициализированы и задача падала с
   `UnboundLocalError` без отчёта. Теперь вывод заводится заранее, а при
@@ -139,6 +143,9 @@ tags are published — the current version is always the `main` branch; update v
 - `asyncio.TimeoutError` on Python 3.10 (command timeouts did not fire); orphan
   processes on cancellation; `RetryAfter` no longer drops messages; cooldown
   checked under lock; confirmation tokens not consumed by a foreign tap.
+- Uninstall now prints a one-line “Bot removed.” report instead of listing what
+  and where was deleted (`--keep-state` still warns about the leftover database
+  and user); `xui-menu` exits after removal instead of re-opening the menu.
 - The Maintenance section no longer “hangs”: on a command timeout `run_command`
   left its output variables unset and the job died with `UnboundLocalError` and
   no report. Output is now pre-initialised, and on timeout the whole process

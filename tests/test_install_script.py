@@ -459,7 +459,18 @@ def test_uninstall_removes_state_by_default() -> None:
     assert 'rm -rf "$STATE_DIR"' in text
     assert "--keep-state" in text
     assert "Остался каталог состояния" not in text
-    assert "Удалено всё: служба" in text
+    assert "Бот удалён." in text
+    # Отчёт короткий: пошаговых «что и где удалено» больше нет.
+    assert "Удалено всё: служба" not in text
+    assert "Каталог с кодом удалён" not in text
+
+
+def test_menu_does_not_reopen_after_uninstall() -> None:
+    """После удаления xui-menu завершается: бота и самого меню уже нет."""
+    text = (BASE_DIR / "install" / "xui-menu").read_text(encoding="utf-8")
+    marker = "Бот и само меню удалены — возвращаться некуда."
+    assert marker in text
+    assert "exit 0" in text[text.index(marker) :]
 
 
 def test_installer_does_not_promise_cli_token_on_v3() -> None:

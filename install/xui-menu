@@ -533,7 +533,11 @@ menu() {
                 local confirm=""
                 read -r confirm <&$READ_FD || confirm=""
                 case "$confirm" in
-                    yes|YES|да) cmd_uninstall ;;
+                    yes|YES|да)
+                        cmd_uninstall
+                        # Бот и само меню удалены — возвращаться некуда.
+                        exit 0
+                        ;;
                     *) info "Отменено" ;;
                 esac
                 ;;

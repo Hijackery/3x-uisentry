@@ -335,23 +335,17 @@ uninstall() {
         if command -v chkconfig >/dev/null 2>&1; then
             chkconfig --del "$SERVICE_NAME" >/dev/null 2>&1 || true
         fi
-        ok "Init-скрипт удалён"
     fi
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
         systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
     fi
-    ok "Служба и автозапуск удалены"
 
     rm -f "$SUDOERS_PATH" "$WRAPPER_PATH" "$MENU_PATH"
-    ok "sudo-правила и обёртка удалены (привилегии отозваны)"
-
     rm -rf "$PREFIX"
-    ok "Каталог с кодом удалён: $PREFIX"
 
     if [ "$KEEP_STATE" -eq 1 ]; then
-        warn "Оставлено по просьбе (--keep-state): $STATE_DIR и пользователь $SERVICE_USER"
-        info "Стереть позже: sudo rm -rf $STATE_DIR && sudo userdel $SERVICE_USER"
+        warn "По --keep-state оставлены база и пользователь: $STATE_DIR, $SERVICE_USER"
     else
         # По умолчанию вычищаем под ноль: база и логи больше не нужны.
         rm -rf "$STATE_DIR"
@@ -359,14 +353,9 @@ uninstall() {
             userdel "$SERVICE_USER" >/dev/null 2>&1 \
                 || warn "Пользователя $SERVICE_USER удалить не удалось"
         fi
-        ok "Состояние и системный пользователь удалены"
     fi
 
     printf '\n%s%sБот удалён.%s\n' "$BOLD" "$GREEN" "$RESET"
-    if [ "$KEEP_STATE" -eq 0 ]; then
-        info "Удалено всё: служба, автозапуск, sudoers, обёртка, меню, код,"
-        info "$STATE_DIR и пользователь $SERVICE_USER."
-    fi
 }
 
 interactive_menu() {
