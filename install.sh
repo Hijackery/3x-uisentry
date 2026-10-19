@@ -870,10 +870,10 @@ else
         warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
     fi
 
-    info "Токен создаётся в панели: 3X-UI v3 — «Настройки панели → Учётная запись →"
-    info "API-токен» (scope node-sync или admin); 3X-UI 2.x — «Настройки → API Tokens»."
-    info "Панель показывает значение только при создании — скопируйте сразу."
-    info "Не знаете токен? Нажмите Enter — выпущу его сам через x-ui (панель должна быть запущена)."
+    info "3X-UI v3: «Настройки панели → Учётная запись → API-токен» (scope node-sync"
+    info "или admin) — значение показывается один раз, копируйте сразу."
+    info "3X-UI 2.x: «Настройки → API Tokens» либо sudo x-ui setting -getApiToken true"
+    info "-tokenName monitor-bot -tokenScope node-sync (в v3 эта команда больше не создаёт токены)."
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
     if [ -z "$PANEL_TOKEN" ]; then
         if [ "$XUI_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
@@ -883,7 +883,9 @@ else
         fi
         [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели:
       3X-UI v3: «Настройки панели → Учётная запись → API-токен» → создать со scope
-      node-sync (или admin) и скопировать значение сразу;
+      node-sync (или admin) и скопировать значение сразу — панель показывает его
+      только один раз. То же доступно по API: POST /panel/api/setting/apiTokens/create
+      (name, scope, expiresAt; нужен уже существующий admin-токен).
       3X-UI 2.x: «Настройки → API Tokens», либо из терминала:
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
    Полученное значение впишите в PANEL_API_TOKEN."
@@ -906,7 +908,8 @@ else
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
             fi
             warn "Панель отклонила токен — проверьте значение и его область (нужен node-sync или admin)."
-            info "3X-UI v3: Настройки панели → Учётная запись → API-токен (создать, скопировать сразу)."
+            info "3X-UI v3: Настройки панели → Учётная запись → API-токен (создать, скопировать сразу);"
+            info "то же по API: POST /panel/api/setting/apiTokens/create с scope node-sync (нужен admin-токен)."
             info "3X-UI 2.x: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
             info "В PANEL_API_TOKEN вставляется значение токена, а не название области — например update-all-geofiles."
         else

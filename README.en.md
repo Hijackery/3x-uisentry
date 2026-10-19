@@ -112,9 +112,10 @@ bot):
 3. **Copy the value immediately**: v3 shows a token only once, afterwards just
    “set”. That value is `PANEL_API_TOKEN`.
 
-On v3 the `sudo x-ui setting -getApiToken` command no longer creates admin
-tokens — it rotates the service `cli-fallback` one, so creating the token in the
-UI is simpler.
+On v3 the `sudo x-ui setting -getApiToken` command no longer creates admin tokens
+— it rotates the service `cli-fallback` one. Create the token in the UI or via
+`POST /panel/api/setting/apiTokens/create` with `name`, `scope` (`node-sync` or
+`admin`) and `expiresAt`; the value is returned only once.
 
 The quickest way is from the server terminal (the command prints the value):
 

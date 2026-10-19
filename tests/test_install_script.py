@@ -458,3 +458,10 @@ def test_uninstall_removes_state_by_default() -> None:
     assert "--keep-state" in text
     assert "Остался каталог состояния" not in text
     assert "Удалено всё: служба" in text
+
+
+def test_installer_does_not_promise_cli_token_on_v3() -> None:
+    """В 3X-UI v3 CLI-команда не создаёт токены: подсказка не должна обещать."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "в v3 эта команда больше не создаёт токены" in text
+    assert "apiTokens/create" in text
