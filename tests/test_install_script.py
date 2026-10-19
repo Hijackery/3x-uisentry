@@ -165,6 +165,54 @@ def test_github_tarball_download_is_cache_busted() -> None:
     assert "*codeload.github.com/*)" in text
 
 
+def test_installer_supports_archive_checksum() -> None:
+    """Установщик исполняется от root: должна быть возможность привязки к версии."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "SOURCE_SHA256" in text
+    assert "--sha256" in text
+    assert "verify_archive" in text
+
+
+def _verify_archive_probe(
+    tmp_path: Path, expected: str
+) -> subprocess.CompletedProcess[str]:
+    """Вытаскиваем функцию verify_archive из установщика и запускаем её отдельно."""
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("verify_archive() {")
+    end = script.index("\n}\n", start) + 3
+    payload = tmp_path / "src.tar.gz"
+    payload.write_bytes(b"payload")
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        'fail() { echo "FAIL: $1" >&2; exit 9; }\n'
+        'warn() { echo "WARN: $1" >&2; }\n'
+        'ok() { echo "OK: $1"; }\n'
+        f"{script[start:end]}\n"
+        f"SOURCE_SHA256={expected}\n"
+        f'verify_archive "{payload}"\n',
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+
+
+def test_checksum_accepts_matching_archive(tmp_path: Path) -> None:
+    import hashlib
+
+    digest = hashlib.sha256(b"payload").hexdigest()
+    result = _verify_archive_probe(tmp_path, digest)
+    assert result.returncode == 0, result.stderr
+    assert "совпала" in result.stdout
+
+
+def test_checksum_rejects_tampered_archive(tmp_path: Path) -> None:
+    result = _verify_archive_probe(tmp_path, "0" * 64)
+    assert result.returncode == 1
+    assert "не совпала" in result.stderr
+
+
 @pytest.mark.skipif(
     shutil.which("shellcheck") is None, reason="shellcheck не установлен"
 )

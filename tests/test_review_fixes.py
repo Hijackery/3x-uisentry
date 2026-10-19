@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import timedelta
@@ -246,6 +247,33 @@ def test_broken_audit_rows_do_not_crash_render() -> None:
     assert "reboot" in text
     assert "—" in text
     conn.close()
+
+
+# ------------------------------------------------------- нестандартный API
+
+
+def test_nonstandard_bot_api_is_warned(
+    make_settings: Callable[..., Settings], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Подменённый TELEGRAM_API_URL уводит токен бота — это должно быть видно."""
+    from xui_monitor_bot.app import _warn_on_unusual_api
+
+    settings = make_settings(telegram_api_url="http://127.0.0.1:8081")
+    with caplog.at_level(logging.WARNING, logger="xui_monitor_bot.app"):
+        _warn_on_unusual_api(settings)
+
+    assert "неофициальный Bot API" in caplog.text
+
+
+def test_official_bot_api_is_not_warned(
+    make_settings: Callable[..., Settings], caplog: pytest.LogCaptureFixture
+) -> None:
+    from xui_monitor_bot.app import _warn_on_unusual_api
+
+    with caplog.at_level(logging.WARNING, logger="xui_monitor_bot.app"):
+        _warn_on_unusual_api(make_settings())
+
+    assert "неофициальный" not in caplog.text
 
 
 # ------------------------------------------------- обновление с phased

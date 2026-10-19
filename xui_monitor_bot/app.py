@@ -12,8 +12,8 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any, Final
 
-from telegram import CallbackQuery, InlineKeyboardMarkup, Message, Update, User
-from telegram.constants import ChatAction, ParseMode
+from telegram import CallbackQuery, Chat, InlineKeyboardMarkup, Message, Update, User
+from telegram.constants import ChatAction, ChatType, ParseMode
 from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
@@ -60,6 +60,8 @@ SNAPSHOT_MAX_AGE = 30.0
 SAMPLE_RETENTION_DAYS = 7
 REBOOT_WATCH_ATTEMPTS = 20
 REBOOT_WATCH_STEP = 30
+#: Не чаще раза в 5 секунд на администратора: журнал читается через sudo.
+HEAVY_COOLDOWN = 5.0
 REBOOT_WATCH_GRACE = 1200
 
 HELP_COMMANDS: list[tuple[str, str]] = [
@@ -94,6 +96,8 @@ class MonitorBot:
         self.actions = ActionManager(settings)
         self._snapshot: MonitorSnapshot | None = None
         self._snapshot_at: float = 0.0
+        #: Последнее обращение к «тяжёлым» командам (журнал через sudo).
+        self._heavy_seen: dict[int, float] = {}
         self.app: BotApplication = self._build()
 
     # ------------------------------------------------------------ сборка
@@ -396,11 +400,46 @@ class MonitorBot:
         )
 
     async def _guard(self, message: Message, user: User | None) -> bool:
-        """Пропускает только администратора; отвечает отказом и возвращает False."""
+        """Пропускает администратора в личном чате; отказ пишет в журнал."""
+        if not self._chat_allowed(message.chat):
+            await message.reply_text(
+                "⛔ Команды принимаю только в личном чате администратора."
+            )
+            return False
         if self.is_admin(user.id if user else None):
             return True
+        await self._audit_denied(user, message.text or "")
         await message.reply_text("⛔ Только для администраторов")
         return False
+
+    def _chat_allowed(self, chat: Chat) -> bool:
+        """Ответы сервера не должны попадать в группы и каналы.
+
+        Проверка по ID админа пропускает его же команды из группы, поэтому
+        тип чата приходится проверять отдельно: иначе /status выложит в чат
+        адреса, подписки и трафик.
+        """
+        return chat.type == ChatType.PRIVATE or chat.id == self.settings.alert_chat_id
+
+    async def _audit_denied(self, user: User | None, text: str) -> None:
+        """Попытка доступа не-администратора: след в журнале для разбора."""
+        try:
+            await asyncio.to_thread(
+                self.storage.audit,
+                "denied",
+                telegram_id=user.id if user else None,
+                ok=False,
+                result=f"команда {text[:40]!r} от не-администратора",
+            )
+        except sqlite3.Error as exc:  # журнал не должен ломать отказ
+            logger.warning("Не удалось записать отказ в журнал: %s", exc)
+
+    def _heavy_allowed(self, user_id: int) -> bool:
+        """Мягкий лимит на команды, дергающие sudo/journalctl."""
+        now = time.monotonic()
+        last = self._heavy_seen.get(user_id, 0.0)
+        self._heavy_seen[user_id] = now
+        return now - last >= HEAVY_COOLDOWN
 
     # ---------------------------------------------------------- callbacks
 
@@ -413,6 +452,14 @@ class MonitorBot:
         await query.answer()
         data = query.data
         user_id = query.from_user.id
+
+        # Команды и кнопки — только в личном чате (см. _chat_allowed).
+        message = query.message
+        if isinstance(message, Message) and not self._chat_allowed(message.chat):
+            await query.answer(
+                "⛔ Кнопки работают только в личном чате", show_alert=True
+            )
+            return
 
         # Гейт стоит до разбора callback_data: иначе гость, угадав токен
         # подтверждения, мог отменить действие администратора.
@@ -817,6 +864,8 @@ class MonitorBot:
         if message is None or user is None:
             return
         user_data = context.user_data or {}
+        if not self._chat_allowed(message.chat):
+            return
         if not self.is_admin(user.id) or not user_data.pop("awaiting_command", False):
             return
         command = " ".join((message.text or "").split())
@@ -905,6 +954,9 @@ class MonitorBot:
     async def _show_logs(self, callback: CallbackQuery, unit: str) -> None:
         if not self.is_admin(callback.from_user.id):
             await self._edit(callback, "⛔ Только для администраторов.")
+            return
+        if not self._heavy_allowed(callback.from_user.id):
+            await callback.answer("⏳ Слишком часто, подождите пару секунд")
             return
         await self._edit(
             callback,
@@ -1097,6 +1149,7 @@ def main() -> None:
         print(f"Ошибка конфигурации:\n{exc}", file=sys.stderr)
         raise SystemExit(2) from exc
     _setup_logging(settings)
+    _warn_on_unusual_api(settings)
     if not settings.panel_verify_tls:
         logger.warning(
             "PANEL_VERIFY_TLS=false: TLS-сертификат панели не проверяется — "
@@ -1108,6 +1161,19 @@ def main() -> None:
         logger.error("%s", exc)
         raise SystemExit(2) from exc
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+def _warn_on_unusual_api(settings: Settings) -> None:
+    """Нестандартный Bot API — повод для предупреждения.
+
+    В `TELEGRAM_API_URL` можно подменить адрес, и тогда токен бота уйдёт на
+    чужой сервер. Официальный адрес молчит, любой другой — заметен в логе.
+    """
+    if settings.telegram_api_url.rstrip("/") != "https://api.telegram.org":
+        logger.warning(
+            "Используется неофициальный Bot API: %s — токен уходит туда",
+            settings.telegram_api_url,
+        )
 
 
 def _setup_logging(settings: Settings) -> None:

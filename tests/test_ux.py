@@ -208,6 +208,62 @@ async def test_start_keyboard_matches_rights(
         instance.storage.close()
 
 
+def _message_update(
+    telegram_bot: AsyncMock, *, chat_type: ChatType, user_id: int, text: str = "/status"
+) -> Update:
+    message = Message(
+        message_id=1,
+        date=datetime.now(tz=timezone.utc),
+        chat=Chat(id=-100 if chat_type != ChatType.PRIVATE else 1, type=chat_type),
+        from_user=User(id=user_id, first_name="u", is_bot=False),
+        text=text,
+    )
+    message.set_bot(telegram_bot)
+    return Update(update_id=1, message=message)
+
+
+async def test_commands_in_group_chat_are_refused(bot_app: MonitorBot) -> None:
+    """Иначе /status выложит адреса, подписки и трафик прямо в групповой чат."""
+    telegram_bot = AsyncMock()
+    update = _message_update(telegram_bot, chat_type=ChatType.GROUP, user_id=ADMIN_ID)
+
+    await bot_app.cmd_status(update, _Context())  # type: ignore[arg-type]
+
+    text = telegram_bot.send_message.await_args.kwargs["text"]
+    assert "личном чате" in text
+    assert "Состояние сервера" not in text
+
+
+async def test_commands_in_private_chat_work(bot_app: MonitorBot) -> None:
+    telegram_bot = AsyncMock()
+    update = _message_update(telegram_bot, chat_type=ChatType.PRIVATE, user_id=ADMIN_ID)
+
+    await bot_app.cmd_status(update, _Context())  # type: ignore[arg-type]
+
+    text = telegram_bot.send_message.await_args.kwargs["text"]
+    assert "Состояние сервера" in text
+
+
+async def test_guest_denial_is_written_to_audit(bot_app: MonitorBot) -> None:
+    """Попытки доступа не-администратора должны оставаться в журнале."""
+    telegram_bot = AsyncMock()
+    update = _message_update(
+        telegram_bot, chat_type=ChatType.PRIVATE, user_id=999, text="/status"
+    )
+
+    await bot_app.cmd_status(update, _Context())  # type: ignore[arg-type]
+
+    rows = bot_app.storage.recent_audit(1)
+    assert rows[0]["action"] == "denied"
+    assert rows[0]["telegram_id"] == 999
+
+
+def test_heavy_commands_are_rate_limited(bot_app: MonitorBot) -> None:
+    """Журнал читается через sudo — не даём запускать его подряд."""
+    assert bot_app._heavy_allowed(ADMIN_ID) is True
+    assert bot_app._heavy_allowed(ADMIN_ID) is False
+
+
 # ---------------------------------------------------------- нарезка HTML
 
 

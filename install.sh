@@ -46,6 +46,7 @@ REPO_NAME="${REPO_NAME:-xui-monitor-bot}"
 REPO_REF="${REPO_REF:-main}"
 REPO_URL="${REPO_URL:-}"
 TARBALL_URL="${TARBALL_URL:-}"
+SOURCE_SHA256="${SOURCE_SHA256:-}"
 REPO_SLUG="${REPO:-}"
 
 # Приводит адрес репозитория к согласованному виду (owner/name, REPO_URL,
@@ -94,6 +95,21 @@ source_candidates() {
 
 repo_is_placeholder() {
     [ "$REPO_OWNER" = "OWNER" ] || [ "$REPO_NAME" = "REPO" ]
+}
+
+# Проверка целостности архива: с SOURCE_SHA256 установка привязана к конкретной
+# версии, и подмена архива (прокси, форк, скомпрометированный CDN) не пройдёт.
+verify_archive() {
+    [ -n "${SOURCE_SHA256:-}" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 \
+        || fail "Задан SOURCE_SHA256, но утилита sha256sum не найдена (пакет coreutils)."
+    _actual="$(sha256sum "$1" | awk '{print $1}')"
+    if [ "$_actual" != "$SOURCE_SHA256" ]; then
+        warn "Контрольная сумма не совпала: ожидалось $SOURCE_SHA256, получено $_actual"
+        return 1
+    fi
+    ok "Контрольная сумма архива совпала"
+    return 0
 }
 
 
@@ -176,6 +192,7 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   --repo OWNER/NAME  репозиторий на GitHub (краткая форма вместо REPO_OWNER/REPO_NAME)
   --ref BRANCH     ветка или тег репозитория (по умолчанию main)
   --print-source   показать, откуда будут взяты исходники, и выйти
+  --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
   --menu           меню: установить/обновить, удалить, справка
   --uninstall      удалить бота: служба, sudoers, обёртка, код
   --purge          вместе с --uninstall удалить состояние и пользователя
@@ -186,8 +203,8 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
 
 Переменные окружения (для --yes и unattended-установки):
   REPO, REPO_OWNER, REPO_NAME, REPO_REF, REPO_URL, TARBALL_URL, GIT_URL,
-  TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_IDS, TELEGRAM_API_URL, PANEL_URL,
-  PANEL_BASE_PATH, PANEL_API_TOKEN, SERVICES
+  SOURCE_SHA256, TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_IDS, TELEGRAM_API_URL,
+  PANEL_URL, PANEL_BASE_PATH, PANEL_API_TOKEN, SERVICES
 EOF
 }
 
@@ -199,6 +216,7 @@ while [ $# -gt 0 ]; do
         --repo)         REPO_SLUG="${2:?--repo требует owner/name}"; shift 2 ;;
         --ref)          REPO_REF="${2:?--ref требует ветку или тег}"; shift 2 ;;
         --print-source) PRINT_SOURCE=1; shift ;;
+        --sha256)       SOURCE_SHA256="${2:?--sha256 требует хеш}"; shift 2 ;;
         --menu|-m)      MENU=1; shift ;;
         --uninstall)    UNINSTALL=1; shift ;;
         --purge)        UNINSTALL=1; PURGE=1; shift ;;
@@ -456,6 +474,7 @@ if [ -z "$SOURCE_DIR" ]; then
             esac
             info "Скачиваю исходники: $_candidate"
             if curl -fsSL --max-time 120 "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
+                && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
                 SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name xui_monitor_bot \
                     -type d -exec dirname {} \; | head -1)"
