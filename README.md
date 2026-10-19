@@ -1,5 +1,7 @@
 # xui-monitor-bot
 
+[![CI](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml)
+
 Telegram-бот для сервера с панелью 3X-UI: следит за железом, systemd-сервисами
 и панелью, присылает алерты, показывает подписки и трафик. Опасные действия
 (рестарт сервиса, xray, обновление системы, перезагрузка) выполняются только
@@ -164,6 +166,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m mypy .
 .venv/bin/python -m pytest
 ```
+
+Те же проверки (плюс shellcheck и `visudo -cf`) гоняются в GitHub Actions на
+каждый push — см. `.github/workflows/ci.yml`.
 
 ## Лицензия
 
