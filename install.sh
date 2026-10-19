@@ -315,8 +315,10 @@ uninstall() {
     fi
     rm -f "$UNIT_PATH" \
         "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service" \
+        "/etc/systemd/system/xui-monitor-apt-update.service" \
         "/etc/systemd/system/xui-monitor-apt-upgrade.service" \
-        "/etc/systemd/system/xui-monitor-apt-phased.service"
+        "/etc/systemd/system/xui-monitor-apt-phased.service" \
+        "/etc/systemd/system/xui-monitor-release-upgrade.service"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
@@ -1107,8 +1109,12 @@ sudoers_rules() {
             rules="$rules${rules:+, }$WRAPPER_PATH $sub $unit"
         done
     done
-    for sub in apt_upgrade apt_upgrade_phased dist_upgrade reboot; do
+    for sub in \
+        apt_update apt_upgrade apt_upgrade_phased dist_upgrade release_upgrade reboot; do
         rules="$rules${rules:+, }$WRAPPER_PATH $sub"
+    done
+    for kind in update upgrade phased release; do
+        rules="$rules${rules:+, }$WRAPPER_PATH apt_status $kind"
     done
     for key in $SUDO_KEYS; do
         rules="$rules${rules:+, }$WRAPPER_PATH run_command $key"
@@ -1169,7 +1175,11 @@ if [ "$INIT" = systemd ]; then
     # новых systemd (Ubuntu 26.04) уходит в polkit и отбивается «требуется
     # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
     # юнит с User=root запускается через systemctl и работает.
-    for _pair in "xui-monitor-apt-upgrade:_apt_worker" "xui-monitor-apt-phased:_apt_worker_phased"; do
+    for _pair in \
+        "xui-monitor-apt-update:_apt_update_worker" \
+        "xui-monitor-apt-upgrade:_apt_worker" \
+        "xui-monitor-apt-phased:_apt_worker_phased" \
+        "xui-monitor-release-upgrade:_release_upgrade_worker"; do
         _apt_unit="${_pair%%:*}"
         _apt_worker="${_pair#*:}"
         cat > "/etc/systemd/system/${_apt_unit}.service" <<EOF

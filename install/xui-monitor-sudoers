@@ -13,9 +13,15 @@ xui-monitor ALL=(root) NOPASSWD: /usr/local/bin/xui-ctl is_active x-ui, \
     /usr/local/bin/xui-ctl journal x-ui, \
     /usr/local/bin/xui-ctl journal_more x-ui, \
     /usr/local/bin/xui-ctl journal_errors x-ui, \
+    /usr/local/bin/xui-ctl apt_update, \
     /usr/local/bin/xui-ctl apt_upgrade, \
     /usr/local/bin/xui-ctl apt_upgrade_phased, \
     /usr/local/bin/xui-ctl dist_upgrade, \
+    /usr/local/bin/xui-ctl release_upgrade, \
+    /usr/local/bin/xui-ctl apt_status update, \
+    /usr/local/bin/xui-ctl apt_status upgrade, \
+    /usr/local/bin/xui-ctl apt_status phased, \
+    /usr/local/bin/xui-ctl apt_status release, \
     /usr/local/bin/xui-ctl reboot, \
     /usr/local/bin/xui-ctl run_command journalctl_--disk-usage, \
     /usr/local/bin/xui-ctl run_command systemctl_list-timers_--all, \

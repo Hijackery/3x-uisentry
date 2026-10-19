@@ -26,9 +26,20 @@ ACTION_JOURNAL_MORE = "journal_more"
 ACTION_JOURNAL_ERRORS = "journal_errors"
 ACTION_UPGRADE = "apt_upgrade"
 ACTION_UPGRADE_PHASED = "apt_upgrade_phased"
+ACTION_APT_UPDATE = "apt_update"
 ACTION_DIST_UPGRADE = "dist_upgrade"
+ACTION_RELEASE_UPGRADE = "release_upgrade"
 ACTION_REBOOT = "reboot"
 ACTION_COMMAND = "run_command"
+
+
+#: Какие действия идут в отдельном systemd-юните и требуют наблюдения.
+APT_KINDS: dict[str, str] = {
+    ACTION_APT_UPDATE: "update",
+    ACTION_UPGRADE: "upgrade",
+    ACTION_UPGRADE_PHASED: "phased",
+    ACTION_RELEASE_UPGRADE: "release",
+}
 
 
 def command_key(command: str) -> str:
@@ -223,6 +234,29 @@ class ActionManager:
             [ACTION_DIST_UPGRADE],
             ACTION_DIST_UPGRADE,
             timeout=min(float(self.settings.command_timeout), 120.0),
+        )
+
+    async def apt_update(self) -> CommandResult:
+        """Обновляет только индексы пакетов (apt update)."""
+        return await self._privileged(
+            [ACTION_APT_UPDATE], ACTION_APT_UPDATE, timeout=60.0
+        )
+
+    async def release_upgrade(self) -> CommandResult:
+        """Ставит do-release-upgrade в очередь отдельным systemd-юнитом."""
+        return await self._privileged(
+            [ACTION_RELEASE_UPGRADE], ACTION_RELEASE_UPGRADE, timeout=60.0
+        )
+
+    async def apt_status(self, action: str) -> CommandResult:
+        """Состояние фонового apt-юнита + хвост журнала (без кулдауна)."""
+        kind = APT_KINDS.get(action)
+        if kind is None:
+            raise ActionError(f"Нет фонового статуса для {action}")
+        return await run_command(
+            ["sudo", "-n", "--", self.settings.sudo_wrapper, "apt_status", kind],
+            timeout=20.0,
+            action="apt_status",
         )
 
     async def reboot(self) -> CommandResult:

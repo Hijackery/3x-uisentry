@@ -125,3 +125,102 @@ class _Context:
     def __init__(self) -> None:
         self.job_queue = None
         self.user_data: dict[str, object] | None = None
+
+
+async def test_apt_watcher_reports_finished_job(
+    bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отчёт об apt приходит в чат сам — без journalctl и лишних команд."""
+    from xui_monitor_bot.models import CommandResult
+
+    job_id = bot_app.storage.add_pending_job(
+        "apt_upgrade", "upgrade", chat_id=1, user_id=ADMIN_ID
+    )
+
+    async def fake_status(_action: str) -> CommandResult:
+        return CommandResult(
+            action="apt_status",
+            command="apt_status upgrade",
+            returncode=0,
+            stdout=(
+                "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"
+                "Setting up x-ui...\nDone"
+            ),
+            stderr="",
+            duration=0.1,
+        )
+
+    notified: list[tuple[int, str]] = []
+
+    async def fake_notify(chat_id: int, text: str, **_kwargs: object) -> bool:
+        notified.append((chat_id, text))
+        return True
+
+    monkeypatch.setattr(bot_app.actions, "apt_status", fake_status)
+    monkeypatch.setattr(bot_app, "_notify", fake_notify)
+
+    class Job:
+        data = {
+            "job_id": job_id,
+            "action": "apt_upgrade",
+            "chat_id": 1,
+            "user_id": ADMIN_ID,
+            "created_at": 0.0,
+            "attempts": 0,
+            "errors": 0,
+        }
+
+    class Ctx:
+        job = Job()
+
+    await bot_app._job_watch_apt(Ctx())  # type: ignore[arg-type]
+
+    assert notified
+    assert "Обновление системы завершено" in notified[0][1]
+    assert "Setting up x-ui" in notified[0][1]
+    assert bot_app.storage.list_pending_jobs() == []
+
+
+async def test_apt_watcher_keeps_polling_while_active(
+    bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xui_monitor_bot.models import CommandResult
+
+    job_id = bot_app.storage.add_pending_job(
+        "apt_upgrade", "upgrade", chat_id=1, user_id=ADMIN_ID
+    )
+
+    async def fake_status(_action: str) -> CommandResult:
+        return CommandResult(
+            action="apt_status",
+            command="apt_status upgrade",
+            returncode=0,
+            stdout="STATE=active\nRESULT=unknown\nEXIT=unknown\nLOAD=loaded\n",
+            stderr="",
+            duration=0.1,
+        )
+
+    scheduled: list[int] = []
+    monkeypatch.setattr(bot_app.actions, "apt_status", fake_status)
+    monkeypatch.setattr(
+        bot_app, "_schedule_apt_watch", lambda jid, *_a, **_k: scheduled.append(jid)
+    )
+
+    class Job:
+        data = {
+            "job_id": job_id,
+            "action": "apt_upgrade",
+            "chat_id": 1,
+            "user_id": ADMIN_ID,
+            "created_at": __import__("time").time(),
+            "attempts": 0,
+            "errors": 0,
+        }
+
+    class Ctx:
+        job = Job()
+
+    await bot_app._job_watch_apt(Ctx())  # type: ignore[arg-type]
+
+    assert scheduled == [job_id]
+    assert len(bot_app.storage.list_pending_jobs()) == 1

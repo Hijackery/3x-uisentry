@@ -221,7 +221,12 @@ check_value() {
             printf '%s' "$value" | grep -qE '^[0-9]+([.][0-9]+)?$' \
                 || die "$key — это процент, например 85"
             ;;
-        ALERT_COOLDOWN|EXPIRING_SOON_DAYS|CHECK_INTERVAL|ACTION_COOLDOWN|CONFIRM_TTL|COMMAND_TIMEOUT|ALERT_CHAT_ID)
+        ALERT_CHAT_ID)
+            # У групп и каналов ID отрицательный; пусто — алерты в личку.
+            [ -z "$value" ] || printf '%s' "$value" | grep -qE '^-?[0-9]+$' \
+                || die "ALERT_CHAT_ID — целое число (у групп отрицательное)"
+            ;;
+        ALERT_COOLDOWN|EXPIRING_SOON_DAYS|CHECK_INTERVAL|ACTION_COOLDOWN|CONFIRM_TTL|COMMAND_TIMEOUT)
             printf '%s' "$value" | grep -qE '^[0-9]+$' || die "$key — целое число"
             ;;
         PANEL_VERIFY_TLS)
@@ -360,7 +365,10 @@ cmd_update() {
     need_root "update"
     # Сначала пробуем свежий установщик из main: локальная копия в PREFIX — это
     # версия, которая ставила бота, и она сама себя не обновит.
-    local installer="" slug=""
+    # Переменная глобальная: trap EXIT срабатывает уже после выхода из функции,
+    # и local там был бы unbound (set -u).
+    local slug=""
+    installer=""
     if command -v curl >/dev/null 2>&1; then
         slug="$(printf '%s' "$REPO_URL" | sed -E 's#.*github\.com/##; s#\.git$##')"
         info "Скачиваю установщик: $slug@$REPO_REF"
@@ -368,7 +376,7 @@ cmd_update() {
         if curl -fsSL --max-time 60 \
             "https://raw.githubusercontent.com/${slug}/${REPO_REF}/install.sh" \
             -o "$installer"; then
-            trap 'rm -f "$installer"' EXIT
+            trap 'rm -f "${installer:-}"' EXIT
         else
             warn "не удалось скачать установщик, беру локальную копию"
             rm -f "$installer"
@@ -454,6 +462,31 @@ menu_pick() {
         return 0
     fi
     menu_edit_key "${keys[$(( pick - 1 ))]}"
+}
+
+cmd_apt_logs() {
+    need_root "apt-logs"
+    local lines="${1:-80}"
+    case "$lines" in (*[!0-9]*) die "apt-logs: число строк" ;; esac
+    if ! command -v journalctl >/dev/null 2>&1; then
+        local log
+        for log in "${STATE_DIR:-/var/lib/xui-monitor}"/apt-*.log; do
+            [ -f "$log" ] || continue
+            printf '\n== %s ==\n' "$(basename "$log")"
+            tail -n "$lines" "$log" 2>/dev/null || true
+        done
+        return 0
+    fi
+    local unit
+    for unit in \
+        xui-monitor-apt-update \
+        xui-monitor-apt-upgrade \
+        xui-monitor-apt-phased \
+        xui-monitor-release-upgrade; do
+        printf '\n== %s ==\n' "$unit"
+        journalctl -u "$unit" -n "$lines" --no-pager 2>/dev/null \
+            || printf '  (журнала нет)\n'
+    done
 }
 
 cmd_restart_xray() {
@@ -563,6 +596,7 @@ ${BOLD}xui-menu${RESET} — панель управления ботом мон�
   sudo xui-menu set KEY VALUE       изменить настройку и подсказать рестарт
   sudo xui-menu restart             перезапустить бота
   sudo xui-menu restart-xray        перезапустить xray в панели (через API)
+  sudo xui-menu apt-logs [N]        журнал фоновых apt-обновлений
   sudo xui-menu logs [N]            журнал бота (по умолчанию 50 строк)
   sudo xui-menu update              обновить бота с GitHub
   sudo xui-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
@@ -578,6 +612,7 @@ ${BOLD}English${RESET}
   sudo xui-menu set KEY VALUE       change a setting, then restart
   sudo xui-menu restart | logs [N]  restart the bot / show the log
   sudo xui-menu restart-xray        restart xray via the panel API
+  sudo xui-menu apt-logs [N]        log of background apt upgrades
   sudo xui-menu update              update the bot from GitHub
   sudo xui-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
@@ -593,6 +628,7 @@ case "${1:-}" in
     set) cmd_set "${2:-}" "${3:-}" ;;
     restart) cmd_restart ;;
     restart-xray) cmd_restart_xray ;;
+    apt-logs) cmd_apt_logs "${2:-80}" ;;
     logs) cmd_logs "${2:-50}" ;;
     update) cmd_update ;;
     uninstall|remove) cmd_uninstall "${2:-}" ;;

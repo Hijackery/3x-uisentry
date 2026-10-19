@@ -48,7 +48,10 @@ apt_enqueue() {
     # systemd-run недоступен — например, sudo-rs/polkit требует интерактивную
     # аутентификацию — падаем в фоновый запуск отдельной сессией. Иначе кнопка
     # «Обновить систему» молча не работала.
-    local unit="$1" worker="$2" description="$3" log_name="$4"
+    local unit="$1" worker="$2" description="$3" log_name="$4" kind="$5"
+    local apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
+    mkdir -p "$apt_dir" 2>/dev/null || true
+    rm -f "$apt_dir/apt-${kind}.status" 2>/dev/null || true
     # 1) Постоянный юнит (ставится установщиком). Это надёжнее transient-юнита:
     #    systemd-run в daemon-контексте проходит polkit и без терминала падает.
     local service="${unit}.service"
@@ -56,8 +59,7 @@ apt_enqueue() {
     if command -v systemctl >/dev/null 2>&1 \
         && [ -f "${unit_dir}/${service}" ]; then
         if systemctl start --no-block "$service" 2>/dev/null; then
-            echo "Обновление поставлено в очередь systemd."
-            echo "Следить за ходом: journalctl -u $unit -f"
+            echo "Задача запущена (юнит $service)."
             return 0
         fi
         log "systemctl start $service не сработал — пробую systemd-run"
@@ -71,20 +73,24 @@ apt_enqueue() {
             --property=TimeoutStartSec=3600 \
             "$0" "$worker" 2>"$srun_err"; then
             rm -f "$srun_err"
-            echo "Обновление поставлено в очередь systemd."
-            echo "Следить за ходом: journalctl -u $unit -f"
+            echo "Задача запущена (юнит $unit)."
             return 0
         fi
         log "systemd-run не сработал ($(tr -d '\n' <"$srun_err" 2>/dev/null)) — фон"
         rm -f "$srun_err"
     fi
-    local apt_dir="${STATE_DIR:-/var/lib/xui-monitor}"
     local apt_log="$apt_dir/$log_name"
-    mkdir -p "$apt_dir" 2>/dev/null || true
     env -u SUDO_USER setsid nohup "$0" "$worker" >>"$apt_log" 2>&1 &
-    echo "Обновление запущено в фоне."
-    echo "Лог: $apt_log"
+    echo "Задача запущена в фоне."
     return 0
+}
+
+apt_status_write() {
+    # $1 — вид обновления, $2 — код возврата. Нужен для систем без systemd,
+    # где нельзя спросить состояние юнита у systemctl.
+    local dir="${STATE_DIR:-/var/lib/xui-monitor}"
+    mkdir -p "$dir" 2>/dev/null || true
+    printf 'EXIT=%s\n' "$2" >"$dir/apt-$1.status" 2>/dev/null || true
 }
 
 #: Менеджер служб выбирается по факту наличия: одна и та же обёртка работает в
@@ -221,23 +227,32 @@ case "$cmd" in
         fi
 
         apt_enqueue "$unit" _apt_worker \
-            "apt full-upgrade по команде бота" "apt-upgrade.log"
+            "apt full-upgrade по команде бота" "apt-upgrade.log" upgrade
         ;;
 
     _apt_worker)
-        # Внутренняя подкоманда для transient-юнита. Через sudo она недостижима
+        # Внутренняя подкоманда для юнита. Через sudo она недостижима
         # (в sudoers её нет), а проверка SUDO_USER закрывает путь даже при
         # попытке вызвать напрямую из-под сервисного пользователя.
         [ "$(id -u)" -eq 0 ] || die "_apt_worker требует root"
         [ -z "${SUDO_USER:-}" ] || die "_apt_worker недоступен через sudo"
         require_no_extra_args 0 "$@"
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get -y -o Dpkg::Options::=--force-confdef \
-            -o Dpkg::Options::=--force-confold full-upgrade
-        apt-get -y autoremove
-        apt-get clean
-        echo "full-upgrade завершён"
+        rc=0
+        apt-get update || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            apt-get -y -o Dpkg::Options::=--force-confdef \
+                -o Dpkg::Options::=--force-confold full-upgrade || rc=$?
+        fi
+        if [ "$rc" -eq 0 ]; then
+            apt-get -y autoremove || rc=$?
+        fi
+        if [ "$rc" -eq 0 ]; then
+            apt-get clean || rc=$?
+        fi
+        apt_status_write upgrade "$rc"
+        echo "full-upgrade завершён (код $rc)"
+        exit "$rc"
         ;;
 
     apt_upgrade_phased)
@@ -256,20 +271,56 @@ case "$cmd" in
         fi
 
         apt_enqueue "$unit" _apt_worker_phased \
-            "apt upgrade с phased-обновлениями по команде бота" "apt-phased.log"
+            "apt upgrade с phased-обновлениями по команде бота" "apt-phased.log" phased
+        ;;
+
+    apt_update)
+        # Только обновление индексов пакетов: быстро и безопасно.
+        require_no_extra_args 0 "$@"
+        unit="xui-monitor-apt-update"
+        log "apt update requested"
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "$unit" 2>/dev/null; then
+            echo "Обновление индексов уже выполняется."
+            exit 3
+        fi
+        apt_enqueue "$unit" _apt_update_worker \
+            "apt update по команде бота" "apt-update.log" update
+        ;;
+
+    _apt_update_worker)
+        [ "$(id -u)" -eq 0 ] || die "_apt_update_worker требует root"
+        [ -z "${SUDO_USER:-}" ] || die "_apt_update_worker недоступен через sudo"
+        require_no_extra_args 0 "$@"
+        export DEBIAN_FRONTEND=noninteractive
+        rc=0
+        apt-get update || rc=$?
+        apt_status_write update "$rc"
+        echo "apt update завершён (код $rc)"
+        exit "$rc"
         ;;
 
     _apt_worker_phased)
-        # Внутренняя подкоманда для transient-юнита (см. _apt_worker).
+        # Внутренняя подкоманда для юнита (см. _apt_worker).
         [ "$(id -u)" -eq 0 ] || die "_apt_worker_phased требует root"
         [ -z "${SUDO_USER:-}" ] || die "_apt_worker_phased недоступен через sudo"
         require_no_extra_args 0 "$@"
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get -y -o APT::Get::Always-Include-Phased-Updates=true upgrade
-        apt-get -y autoremove
-        apt-get clean
-        echo "upgrade (phased) завершён"
+        rc=0
+        apt-get update || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            apt-get -y -o APT::Get::Always-Include-Phased-Updates=true upgrade \
+                || rc=$?
+        fi
+        if [ "$rc" -eq 0 ]; then
+            apt-get -y autoremove || rc=$?
+        fi
+        if [ "$rc" -eq 0 ]; then
+            apt-get clean || rc=$?
+        fi
+        apt_status_write phased "$rc"
+        echo "upgrade (phased) завершён (код $rc)"
+        exit "$rc"
         ;;
 
     dist_upgrade)
@@ -299,6 +350,80 @@ case "$cmd" in
             exit 0
         fi
         echo "Релиз-обновлений нет"
+        ;;
+
+    release_upgrade)
+        # Отдельное действие: запуск самого do-release-upgrade, а не проверки.
+        require_no_extra_args 0 "$@"
+        unit="xui-monitor-release-upgrade"
+        log "do-release-upgrade requested"
+        if ! command -v do-release-upgrade >/dev/null 2>&1; then
+            echo "do-release-upgrade не установлен (это не Ubuntu либо нет update-manager)"
+            exit 0
+        fi
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "$unit" 2>/dev/null; then
+            echo "Релиз-обновление уже выполняется."
+            exit 3
+        fi
+        apt_enqueue "$unit" _release_upgrade_worker \
+            "do-release-upgrade по команде бота" "release-upgrade.log" release
+        ;;
+
+    _release_upgrade_worker)
+        [ "$(id -u)" -eq 0 ] || die "_release_upgrade_worker требует root"
+        [ -z "${SUDO_USER:-}" ] || die "_release_upgrade_worker недоступен через sudo"
+        require_no_extra_args 0 "$@"
+        export DEBIAN_FRONTEND=noninteractive
+        _dr_home="${STATE_DIR:-/var/lib/xui-monitor}/release-upgrade"
+        mkdir -p "$_dr_home/cache" 2>/dev/null || true
+        export HOME="$_dr_home"
+        export XDG_CACHE_HOME="$_dr_home/cache"
+        # unattended-upgrades может держать блокировку apt.
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl stop unattended-upgrades >/dev/null 2>&1 || true
+        fi
+        rc=0
+        do-release-upgrade -f DistUpgradeViewNonInteractive || rc=$?
+        apt_status_write release "$rc"
+        echo "do-release-upgrade завершён (код $rc)"
+        exit "$rc"
+        ;;
+
+    apt_status)
+        # Состояние фонового юнита + хвост журнала. Только фиксированные виды:
+        # произвольное имя юнита сюда передать нельзя.
+        require_no_extra_args 1 "$@"
+        case "$2" in
+            update)  unit="xui-monitor-apt-update" ;;
+            upgrade) unit="xui-monitor-apt-upgrade" ;;
+            phased)  unit="xui-monitor-apt-phased" ;;
+            release) unit="xui-monitor-release-upgrade" ;;
+            *) die "неизвестный вид обновления: $2" ;;
+        esac
+        state="unknown"; result="unknown"; code="unknown"; load="unknown"
+        if command -v systemctl >/dev/null 2>&1; then
+            state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            result="$(systemctl show -p Result --value "$unit" 2>/dev/null || true)"
+            code="$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)"
+            load="$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"
+        fi
+        # Фолбэк без systemd: воркер пишет файл со своим кодом возврата.
+        _status_file="${STATE_DIR:-/var/lib/xui-monitor}/apt-$2.status"
+        if [ -f "$_status_file" ]; then
+            _rc="$(sed -n 's/^EXIT=//p' "$_status_file" | head -1)"
+            if [ -n "$_rc" ]; then
+                state="inactive"; code="$_rc"
+                if [ "$_rc" = "0" ]; then result="success"; else result="failed"; fi
+            fi
+        fi
+        printf 'STATE=%s\nRESULT=%s\nEXIT=%s\nLOAD=%s\n' \
+            "${state:-unknown}" "${result:-unknown}" "${code:-unknown}" "${load:-unknown}"
+        if command -v journalctl >/dev/null 2>&1; then
+            journalctl -u "$unit" -n 40 --no-pager -o cat 2>/dev/null || true
+        elif [ -f "${STATE_DIR:-/var/lib/xui-monitor}/apt-$2.log" ]; then
+            tail -n 40 "${STATE_DIR:-/var/lib/xui-monitor}/apt-$2.log" 2>/dev/null || true
+        fi
         ;;
 
     reboot)

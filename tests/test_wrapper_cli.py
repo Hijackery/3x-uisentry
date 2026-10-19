@@ -281,7 +281,7 @@ def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "в очередь systemd" in result.stdout
+    assert "Задача запущена" in result.stdout
     log = run_log.read_text(encoding="utf-8")
     assert "start" in log.splitlines()
     assert "xui-monitor-apt-upgrade.service" in log

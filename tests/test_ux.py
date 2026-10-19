@@ -11,6 +11,7 @@ import re
 from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -356,9 +357,123 @@ def test_help_manual_explains_metrics() -> None:
     for marker in ("Сервисы", "Панель", "Подписки", "Что значат цифры", "xui-menu"):
         assert marker in text, marker
     assert "/services" in text
-    assert len(text) < 2000, "помощь должна читаться с телефона за минуту"
+    assert len(text) < 4000, "помощь должна укладываться в одно сообщение Telegram"
 
 
 def test_help_button_is_in_main_menu() -> None:
     data = [b.callback_data for row in ui.main_menu(True).inline_keyboard for b in row]
     assert "help" in data
+
+
+def test_maintenance_has_separate_apt_update_and_release() -> None:
+    """apt update, проверка релиза и запуск do-release-upgrade — разные кнопки."""
+    data = {
+        button.callback_data
+        for row in ui.maintenance_menu().inline_keyboard
+        for button in row
+    }
+    assert "ask:apt_update:" in data
+    assert "ask:apt_upgrade:" in data
+    assert "ask:apt_upgrade_phased:" in data
+    assert "ask:dist_upgrade:" in data
+    assert "ask:release_upgrade:" in data
+
+
+def test_help_is_a_full_presentational_manual() -> None:
+    text = ui.render_help(True)
+    for marker in (
+        "С чего начать",
+        "Разделы",
+        "Обслуживание",
+        "apt update",
+        "do-release-upgrade",
+        "Команда на сервер",
+        "Что значат цифры",
+        "Безопасность",
+        "Настройки",
+        "Если что-то не работает",
+    ):
+        assert marker in text, marker
+    assert 2000 < len(text) < 4000
+
+
+def test_apt_status_header_is_parsed() -> None:
+    from xui_monitor_bot.app import _parse_apt_status
+
+    fields, tail = _parse_apt_status(
+        "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"
+        "Reading package lists...\nDone"
+    )
+    assert fields == {
+        "STATE": "inactive",
+        "RESULT": "success",
+        "EXIT": "0",
+        "LOAD": "loaded",
+    }
+    assert tail == "Reading package lists...\nDone"
+
+
+async def test_run_command_works_from_any_screen(bot_app: MonitorBot) -> None:
+    """Команду из allowlist можно прислать в любом разделе — без /maint."""
+    telegram_bot = AsyncMock()
+    update = _message_update(
+        telegram_bot, chat_type=ChatType.PRIVATE, user_id=ADMIN_ID, text="/run free -h"
+    )
+    context = _Context()
+    context.user_data = {}
+
+    await bot_app.cmd_run(update, context)  # type: ignore[arg-type]
+
+    sent = telegram_bot.send_message.await_args
+    assert "Выполнить команду" in sent.kwargs["text"]
+    markup = sent.kwargs["reply_markup"]
+    assert markup is not None
+    assert any(
+        "free -h" not in (b.callback_data or "") and "do:" in (b.callback_data or "")
+        for row in markup.inline_keyboard
+        for b in row
+    )
+
+
+async def test_run_rejects_command_outside_allowlist(bot_app: MonitorBot) -> None:
+    telegram_bot = AsyncMock()
+    update = _message_update(
+        telegram_bot, chat_type=ChatType.PRIVATE, user_id=ADMIN_ID, text="/run rm -rf /"
+    )
+    context = _Context()
+    context.user_data = {}
+
+    await bot_app.cmd_run(update, context)  # type: ignore[arg-type]
+
+    text = telegram_bot.send_message.await_args.kwargs["text"]
+    assert "не в белом списке" in text
+
+
+async def test_previous_screen_is_deleted(bot_app: MonitorBot) -> None:
+    """Переход между меню заменяет прошлый экран, а не копит вереницу."""
+    bot = AsyncMock()
+
+    class FakeMessage:
+        chat_id = 7
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_bot(self) -> AsyncMock:
+            return bot
+
+        async def reply_text(self, **_kwargs: object) -> object:
+            self.calls += 1
+            return SimpleNamespace(message_id=100 + self.calls)
+
+    message = FakeMessage()
+    bot_app._last_screen[7] = 50
+
+    first = await bot_app._reply_screen(message, "первый")  # type: ignore[arg-type]
+    second = await bot_app._reply_screen(message, "второй")  # type: ignore[arg-type]
+
+    assert first is not None and first.message_id == 101
+    assert second is not None and second.message_id == 102
+    # Каждый новый экран убирает предыдущий: 50 → 101, затем 101 → 102.
+    assert [c.args for c in bot.delete_message.await_args_list] == [(7, 50), (7, 101)]
+    assert bot_app._last_screen[7] == 102

@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+
+CREATE TABLE IF NOT EXISTS pending_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    chat_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_created ON pending_jobs(created_at);
 """
 
 
@@ -208,6 +219,36 @@ class Storage:
                 row["key"]
                 for row in self.conn.execute("SELECT key FROM alert_state").fetchall()
             ]
+
+    # --------------------------------------------------------- pending jobs
+
+    def add_pending_job(
+        self, action: str, kind: str, chat_id: int, user_id: int
+    ) -> int:
+        """Запоминает фоновое обновление: после рестарта бот допишет отчёт."""
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO pending_jobs (action, kind, chat_id, user_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (action, kind, chat_id, user_id, time.time()),
+            )
+            return int(cur.lastrowid or 0)
+
+    def list_pending_jobs(self) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(
+                "SELECT * FROM pending_jobs ORDER BY created_at"
+            ).fetchall()
+
+    def remove_pending_job(self, job_id: int) -> None:
+        with self._lock:
+            self.conn.execute("DELETE FROM pending_jobs WHERE id = ?", (job_id,))
+
+    def prune_pending_jobs(self, older_than: float) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM pending_jobs WHERE created_at < ?", (older_than,)
+            )
 
     # ----------------------------------------------------------------- audit
 

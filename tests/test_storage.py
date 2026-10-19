@@ -112,3 +112,16 @@ def test_audit_records_every_action(storage: Storage) -> None:
     assert rows[0]["action"] == "reboot"
     assert rows[0]["ok"] == 0
     assert rows[1]["params"] == '{"args": ["x-ui"]}'
+
+
+def test_pending_jobs_survive_restart(storage: Storage) -> None:
+    """Фоновое обновление должно дождаться отчёта даже после рестарта бота."""
+    job_id = storage.add_pending_job("apt_upgrade", "upgrade", chat_id=1, user_id=42)
+    rows = storage.list_pending_jobs()
+    assert len(rows) == 1
+    assert rows[0]["action"] == "apt_upgrade"
+    assert rows[0]["kind"] == "upgrade"
+    assert rows[0]["chat_id"] == 1
+
+    storage.remove_pending_job(job_id)
+    assert storage.list_pending_jobs() == []

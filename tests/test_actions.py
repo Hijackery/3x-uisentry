@@ -255,3 +255,33 @@ async def test_restart_xray_goes_through_panel_api(
     assert called
     assert result.ok
     assert "restartXrayService" in result.command
+
+
+async def test_apt_status_uses_exact_kind(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Статус запрашивается точной подкомандой: в sudoers нет шаблонов."""
+    from xui_monitor_bot.actions import ACTION_UPGRADE
+
+    actions = manager(make_settings)
+    calls = fake_runner(monkeypatch)
+    await actions.apt_status(ACTION_UPGRADE)
+
+    assert calls == [
+        [
+            "sudo",
+            "-n",
+            "--",
+            "/usr/local/bin/xui-ctl",
+            "apt_status",
+            "upgrade",
+        ]
+    ]
+
+
+async def test_apt_status_rejects_unknown_action(
+    make_settings: Callable[..., Settings],
+) -> None:
+    actions = manager(make_settings)
+    with pytest.raises(ActionError):
+        await actions.apt_status("restart_service")

@@ -11,7 +11,7 @@ import sys
 import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 
 from telegram import (
     CallbackQuery,
@@ -38,14 +38,17 @@ from telegram.ext import (
 
 from . import ui
 from .actions import (
+    ACTION_APT_UPDATE,
     ACTION_COMMAND,
     ACTION_DIST_UPGRADE,
     ACTION_JOURNAL,
     ACTION_REBOOT,
+    ACTION_RELEASE_UPGRADE,
     ACTION_RESTART_SERVICE,
     ACTION_RESTART_XRAY,
     ACTION_UPGRADE,
     ACTION_UPGRADE_PHASED,
+    APT_KINDS,
     ActionError,
     ActionManager,
 )
@@ -77,14 +80,28 @@ REFRESH_COOLDOWN = 2.0
 #: «Знаю, до утра»: глушим алерт на 8 часов.
 MUTE_HOURS = 8
 REBOOT_WATCH_GRACE = 1200
+#: Как часто и как долго следим за фоновым apt-юнитом.
+APT_WATCH_STEP = 10
+APT_WATCH_MAX = 2 * 3600
+APT_WATCH_ERROR_LIMIT = 6
+
+#: Действия, которые ставят задачу в systemd и требуют отчёта в чат.
+QUEUED_ACTIONS = (
+    ACTION_APT_UPDATE,
+    ACTION_UPGRADE,
+    ACTION_UPGRADE_PHASED,
+    ACTION_RELEASE_UPGRADE,
+)
 
 #: Короткие заголовки для отчёта о выполненном действии (в чате, не в логе).
 ACTION_TITLES: dict[str, str] = {
     ACTION_RESTART_SERVICE: "Сервис перезапущен",
     ACTION_RESTART_XRAY: "xray перезапущен",
-    ACTION_UPGRADE: "Обновление системы поставлено в очередь",
-    ACTION_UPGRADE_PHASED: "Обновление (phased) поставлено в очередь",
+    ACTION_APT_UPDATE: "Список пакетов обновлён",
+    ACTION_UPGRADE: "Обновление системы завершено",
+    ACTION_UPGRADE_PHASED: "Обновление (phased) завершено",
     ACTION_DIST_UPGRADE: "Проверка релиз-обновления выполнена",
+    ACTION_RELEASE_UPGRADE: "Релиз-обновление завершено",
     ACTION_REBOOT: "Сервер перезагружается",
     ACTION_COMMAND: "Команда выполнена",
     ACTION_JOURNAL: "Журнал прочитан",
@@ -94,9 +111,13 @@ ACTION_TITLES: dict[str, str] = {
 CONFIRM_DESCRIPTIONS: dict[str, str] = {
     ACTION_RESTART_SERVICE: "Перезапустить сервис",
     ACTION_RESTART_XRAY: "Перезапустить xray через API панели",
+    ACTION_APT_UPDATE: "Обновить список пакетов (apt update)",
     ACTION_UPGRADE: "Поставить apt update + full-upgrade в очередь systemd",
     ACTION_UPGRADE_PHASED: "Поставить apt update + upgrade (phased) в очередь systemd",
     ACTION_DIST_UPGRADE: "Проверить доступность релиз-обновления ОС",
+    ACTION_RELEASE_UPGRADE: (
+        "Запустить do-release-upgrade (обновление версии ОС; надолго)"
+    ),
     ACTION_REBOOT: "Перезагрузить сервер",
 }
 
@@ -115,6 +136,9 @@ class MonitorBot:
         #: Последнее обращение к «тяжёлым» командам (журнал через sudo).
         #: Троттлинг по «ведрам»: {"journal": {user_id: время}, "refresh": {...}}
         self._throttle_seen: dict[str, dict[int, float]] = {}
+        #: Последний «экран» в чате: при переходе к новому меню старый удаляем,
+        #: чтобы не плодить вереницу сообщений. Алерты и отчёты не трогаем.
+        self._last_screen: dict[int, int] = {}
         self.app: BotApplication = self._build()
 
     # ------------------------------------------------------------ сборка
@@ -146,6 +170,8 @@ class MonitorBot:
             ("audit", self.cmd_audit),
             ("logs", self.cmd_logs),
             ("maint", self.cmd_maintenance),
+            ("traffic", self.cmd_traffic),
+            ("run", self.cmd_run),
         ):
             app.add_handler(CommandHandler(name, handler))
         app.add_handler(CallbackQueryHandler(self.on_callback))
@@ -179,6 +205,7 @@ class MonitorBot:
             len(self.settings.admin_ids),
         )
         await self._verify_after_reboot()
+        await self._resume_apt_watches()
 
     async def _post_shutdown(self, _app: BotApplication) -> None:
         await self.monitor.close()
@@ -286,19 +313,19 @@ class MonitorBot:
             return
         user = update.effective_user
         allowed = self.is_admin(user.id if user else None)
-        await message.reply_text(
+        # Гостю кнопки не показываем вовсе: каждая из них всё равно ответила бы
+        # отказом — это только вводит в заблуждение.
+        await self._reply_screen(
+            message,
             "🛰 Бот мониторинга сервера и панели 3X-UI.\n\n"
             + (
                 "Показывает состояние системы, сервисов, панели, подписок и "
                 "трафика, а также позволяет перезапускать сервисы и обновлять "
-                "систему."
+                "систему.\n\nНачните с /status или выберите раздел кнопками."
                 if allowed
                 else "⛔ Этот бот доступен только администратору сервера."
             ),
-            parse_mode=ParseMode.HTML,
-            # Гостю кнопки не показываем вовсе: каждая из них всё равно
-            # ответила бы отказом — это только вводит в заблуждение.
-            reply_markup=ui.main_menu(True) if allowed else None,
+            markup=ui.main_menu(True) if allowed else None,
         )
 
     async def cmd_help(
@@ -308,10 +335,10 @@ class MonitorBot:
         if message is None:
             return
         allowed = self.is_admin(_user_id(update))
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             ui.render_help(allowed),
-            parse_mode=ParseMode.HTML,
-            reply_markup=ui.main_menu(True) if allowed else None,
+            markup=ui.main_menu(True) if allowed else None,
         )
 
     async def cmd_status(
@@ -322,11 +349,10 @@ class MonitorBot:
             return
         await message.reply_chat_action(ChatAction.TYPING)
         snapshot = await self.snapshot()
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             ui.render_overview(snapshot, self.settings, age=self._snapshot_age()),
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=ui.main_menu(self.is_admin(_user_id(update))),
+            markup=ui.main_menu(self.is_admin(_user_id(update))),
         )
 
     async def cmd_services(
@@ -335,11 +361,10 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             ui.render_services(await self.snapshot()),
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=ui.services_menu(
+            markup=ui.services_menu(
                 self.settings.services, self.is_admin(_user_id(update))
             ),
         )
@@ -359,7 +384,9 @@ class MonitorBot:
         if update_info:
             latest = update_info.get("tagName") or update_info.get("version") or "?"
             text += f"\nПоследний релиз панели: {ui.esc(latest)}"
-        await message.reply_text(text, parse_mode=ParseMode.HTML)
+        await self._reply_screen(
+            message, text, markup=ui.main_menu(self.is_admin(_user_id(update)))
+        )
 
     async def cmd_subs(
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
@@ -368,12 +395,7 @@ class MonitorBot:
         if message is None or not await self._guard(message, update.effective_user):
             return
         text, markup = await self._subs_view(0)
-        await message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-            reply_markup=markup,
-        )
+        await self._reply_screen(message, text, markup=markup)
 
     async def _subs_view(self, offset: int) -> tuple[str, InlineKeyboardMarkup]:
         """Страница подписок и клавиатура к ней (общая для /subs и кнопок)."""
@@ -397,9 +419,10 @@ class MonitorBot:
         rows = await asyncio.to_thread(
             self.storage.get_series, time.time() - 24 * 3600, 24
         )
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             ui.render_history(rows, title="Последние 24 часа"),
-            parse_mode=ParseMode.HTML,
+            markup=ui.main_menu(self.is_admin(_user_id(update))),
         )
 
     async def cmd_audit(
@@ -409,11 +432,7 @@ class MonitorBot:
         if message is None or not await self._guard(message, update.effective_user):
             return
         rows = await asyncio.to_thread(self.storage.recent_audit, 15)
-        await message.reply_text(
-            ui.render_audit(rows),
-            parse_mode=ParseMode.HTML,
-            reply_markup=ui.audit_menu(),
-        )
+        await self._reply_screen(message, ui.render_audit(rows), markup=ui.audit_menu())
 
     async def cmd_logs(
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
@@ -421,10 +440,10 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             "📜 <b>Журналы сервисов</b>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=ui.logs_menu(self.settings.services),
+            markup=ui.logs_menu(self.settings.services),
         )
 
     async def cmd_maintenance(
@@ -433,12 +452,108 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
-        await message.reply_text(
+        await self._reply_screen(
+            message,
             "🛠 <b>Обслуживание</b>\n\n"
             "Все действия требуют подтверждения и пишутся в журнал.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=ui.maintenance_menu(),
+            markup=ui.maintenance_menu(),
         )
+
+    async def cmd_traffic(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await self._reply_screen(
+            message,
+            ui.render_traffic(await self.snapshot()),
+            markup=ui.main_menu(self.is_admin(_user_id(update))),
+        )
+
+    async def cmd_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """`/run <команда>` — команда из белого списка из любого раздела."""
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        text = " ".join((message.text or "").split())
+        arg = text.partition(" ")[2].strip()
+        if not arg:
+            allowed = (
+                "\n".join(
+                    f"• <code>{ui.esc(item)}</code>"
+                    for item in self.settings.command_allowlist
+                )
+                or "—"
+            )
+            await self._reply_screen(
+                message,
+                "💻 <b>Команда на сервер</b>\n\n"
+                "Пришлите команду следующим сообщением в любом разделе или "
+                "<code>/run &lt;команда&gt;</code>.\n\n"
+                f"Разрешено:\n{allowed}",
+                markup=ui.main_menu(True),
+            )
+            return
+        if context.user_data is not None:
+            context.user_data["awaiting_command"] = True
+        await self._request_command(message, _user_id(update) or 0, arg)
+
+    async def _request_command(
+        self, message: Message, user_id: int, command: str
+    ) -> None:
+        if command not in self.settings.command_allowlist:
+            allowed = ", ".join(self.settings.command_allowlist) or "пусто"
+            await self._reply_screen(
+                message,
+                "⛔ Команда не в белом списке.\n"
+                f"Разрешено: <code>{ui.esc(allowed)}</code>",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
+            return
+        pending = self.actions.request(
+            ACTION_COMMAND, command, command, owner_id=user_id
+        )
+        await self._reply_screen(
+            message,
+            f"⚠️ Выполнить команду?\n<code>{ui.esc(command)}</code>",
+            markup=ui.confirm_menu(ACTION_COMMAND, pending.token),
+        )
+
+    async def _reply_screen(
+        self,
+        message: Message,
+        text: str,
+        *,
+        markup: InlineKeyboardMarkup | None = None,
+    ) -> Message | None:
+        """Показывает новый экран и убирает предыдущий, чтобы меню не копились."""
+        chat_id = message.chat_id
+        try:
+            sent = await _send_with_retry(
+                message.reply_text,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+        except TelegramError as exc:
+            logger.warning("Не удалось отправить экран: %s", exc)
+            return None
+        if sent is None:
+            return None
+        mid = getattr(sent, "message_id", None)
+        if not isinstance(mid, int):
+            # Тесты и нестандартные транспорты могут не вернуть Message.
+            return sent
+        previous = self._last_screen.get(chat_id)
+        self._last_screen[chat_id] = mid
+        if previous and previous != mid:
+            try:
+                await message.get_bot().delete_message(chat_id, previous)
+            except TelegramError as exc:
+                logger.debug("Не удалось удалить прошлый экран: %s", exc)
+        return sent
 
     async def _guard(self, message: Message, user: User | None) -> bool:
         """Пропускает администратора в личном чате; отказ пишет в журнал."""
@@ -460,7 +575,9 @@ class MonitorBot:
         тип чата приходится проверять отдельно: иначе /status выложит в чат
         адреса, подписки и трафик.
         """
-        return chat.type == ChatType.PRIVATE or chat.id == self.settings.alert_chat_id
+        # Только личка. alert_chat_id разрешает исходящие алерты в группу, но
+        # не управление: иначе /status и подписки увидели бы все участники.
+        return chat.type == ChatType.PRIVATE
 
     async def _audit_denied(self, user: User | None, text: str) -> None:
         """Попытка доступа не-администратора: след в журнале для разбора."""
@@ -744,7 +861,9 @@ class MonitorBot:
             return
         if pending is None:
             await self._edit(
-                callback, "⏳ Подтверждение не найдено или уже использовано."
+                callback,
+                "⏳ Подтверждение не найдено или уже использовано.",
+                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
             )
             return
         if pending.action != action:
@@ -765,15 +884,18 @@ class MonitorBot:
         user_id: int,
     ) -> None:
         chat_id = _chat_id(query)
-        status = await _message_of(query).reply_text("⏳ Выполняю…")
-        await _clear_markup(query)
+        # Переиспользуем сообщение с подтверждением, а не плодим ещё одно.
+        status = _message_of(query)
+        await _safe_edit(status, "⏳ Выполняю…", markup=None)
+        if chat_id:
+            self._last_screen[chat_id] = status.message_id
         self.invalidate()
 
         try:
             if action == ACTION_REBOOT:
                 await self._do_reboot(status, user_id)
                 return
-            if action in (ACTION_UPGRADE, ACTION_UPGRADE_PHASED, ACTION_DIST_UPGRADE):
+            if action in QUEUED_ACTIONS or action == ACTION_DIST_UPGRADE:
                 self._schedule_long_action(action, chat_id, user_id)
                 await _safe_edit(
                     status,
@@ -786,8 +908,10 @@ class MonitorBot:
             elif action == ACTION_RESTART_SERVICE:
                 result = await self.actions.restart_service(args[0])
                 self.monitor.services.forget(args[0])
-            else:
+            elif action == ACTION_RESTART_XRAY:
                 result = await self.actions.restart_xray()
+            else:
+                raise ActionError(f"Неизвестное действие: {action}")
         except Exception as exc:  # noqa: BLE001 — сбой возвращаем в чат, не «зависаем»
             logger.error("Действие %s не удалось: %s", action, exc, exc_info=True)
             await asyncio.to_thread(
@@ -849,10 +973,14 @@ class MonitorBot:
         user_id = int(data.get("user_id", 0) or 0)
 
         try:
-            if action == ACTION_UPGRADE:
+            if action == ACTION_APT_UPDATE:
+                result = await self.actions.apt_update()
+            elif action == ACTION_UPGRADE:
                 result = await self.actions.apt_upgrade()
             elif action == ACTION_UPGRADE_PHASED:
                 result = await self.actions.apt_upgrade_phased()
+            elif action == ACTION_RELEASE_UPGRADE:
+                result = await self.actions.release_upgrade()
             else:
                 result = await self.actions.dist_upgrade()
         except Exception as exc:  # noqa: BLE001 — фон не должен молча «зависать»
@@ -866,6 +994,25 @@ class MonitorBot:
                 telegram_id=user_id,
                 ok=False,
                 result=str(exc) or exc.__class__.__name__,
+            )
+            return
+
+        # Задача в systemd поставлена. Дальше следим за юнитом сами и пришлём
+        # отчёт в чат — пользователю не нужно ничего вводить.
+        if action in QUEUED_ACTIONS and result.ok:
+            kind = APT_KINDS[action]
+            job_id = await asyncio.to_thread(
+                self.storage.add_pending_job, action, kind, chat_id, user_id
+            )
+            self._schedule_apt_watch(
+                job_id, action, chat_id, user_id, created_at=time.time()
+            )
+            await self._notify(
+                chat_id,
+                "⏳ <b>" + ui.esc(ACTION_TITLES.get(action, action)) + " запущено</b>\n"
+                "Задача выполняется в фоне. Пришлю отчёт сюда, когда закончится — "
+                "ничего вводить не нужно.",
+                markup=ui.result_menu(),
             )
             return
 
@@ -889,6 +1036,174 @@ class MonitorBot:
             params={"background": True},
             ok=result.ok,
             result=result.summary(500),
+        )
+        self.invalidate()
+        if not delivered:
+            logger.warning("Отчёт по %s не доставлен", action)
+
+    # ------------------------------------------------------- apt watcher
+
+    def _schedule_apt_watch(
+        self,
+        job_id: int,
+        action: str,
+        chat_id: int,
+        user_id: int,
+        *,
+        created_at: float,
+        attempts: int = 0,
+        errors: int = 0,
+    ) -> None:
+        job_queue = self.app.job_queue
+        if job_queue is None:  # pragma: no cover
+            return
+        job_queue.run_once(
+            self._job_watch_apt,
+            timedelta(seconds=APT_WATCH_STEP),
+            name=f"apt-watch-{job_id}",
+            data={
+                "job_id": job_id,
+                "action": action,
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "created_at": created_at,
+                "attempts": attempts,
+                "errors": errors,
+            },
+        )
+
+    async def _resume_apt_watches(self) -> None:
+        rows = await asyncio.to_thread(self.storage.list_pending_jobs)
+        for row in rows:
+            created_at = float(row["created_at"])
+            if time.time() - created_at > APT_WATCH_MAX:
+                await asyncio.to_thread(self.storage.remove_pending_job, int(row["id"]))
+                continue
+            self._schedule_apt_watch(
+                int(row["id"]),
+                str(row["action"]),
+                int(row["chat_id"]),
+                int(row["user_id"]),
+                created_at=created_at,
+            )
+
+    async def _job_watch_apt(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        data = dict(getattr(context.job, "data", None) or {})
+        job_id = int(data.get("job_id", 0) or 0)
+        action = str(data.get("action", ""))
+        chat_id = int(data.get("chat_id", 0) or 0)
+        user_id = int(data.get("user_id", 0) or 0)
+        created_at = float(data.get("created_at", time.time()))
+        attempts = int(data.get("attempts", 0) or 0)
+        errors = int(data.get("errors", 0) or 0)
+
+        try:
+            status = await self.actions.apt_status(action)
+            fields, tail = _parse_apt_status(status.stdout)
+        except Exception as exc:  # noqa: BLE001 — сеть/права/юнит
+            errors += 1
+            logger.warning("Не удалось узнать статус %s: %s", action, exc)
+            if (
+                errors < APT_WATCH_ERROR_LIMIT
+                and time.time() - created_at < APT_WATCH_MAX
+            ):
+                self._schedule_apt_watch(
+                    job_id,
+                    action,
+                    chat_id,
+                    user_id,
+                    created_at=created_at,
+                    attempts=attempts,
+                    errors=errors,
+                )
+            else:
+                await self._finish_apt_watch(
+                    job_id,
+                    action,
+                    chat_id,
+                    user_id,
+                    ok=False,
+                    text="⚠️ Не удалось получить отчёт об обновлении. "
+                    f"Проверьте: <code>sudo xui-menu apt-logs</code>\n"
+                    f"<pre>{ui.esc(str(exc))}</pre>",
+                )
+            return
+
+        state = fields.get("STATE", "unknown")
+        if state in {"active", "activating", "reloading", "deactivating"}:
+            if time.time() - created_at > APT_WATCH_MAX:
+                await self._finish_apt_watch(
+                    job_id,
+                    action,
+                    chat_id,
+                    user_id,
+                    ok=False,
+                    text="⚠️ Обновление идёт слишком долго (больше 2 часов). "
+                    "Проверьте: <code>sudo xui-menu apt-logs</code>",
+                )
+            else:
+                self._schedule_apt_watch(
+                    job_id,
+                    action,
+                    chat_id,
+                    user_id,
+                    created_at=created_at,
+                    attempts=attempts + 1,
+                    errors=errors,
+                )
+            return
+
+        # Юнит ещё не успел появиться (например, только что скомандовали start).
+        if (
+            state in {"unknown", ""}
+            and fields.get("LOAD") == "not-found"
+            and attempts < 3
+        ):
+            self._schedule_apt_watch(
+                job_id,
+                action,
+                chat_id,
+                user_id,
+                created_at=created_at,
+                attempts=attempts + 1,
+                errors=errors,
+            )
+            return
+
+        ok = fields.get("RESULT") == "success" and fields.get("EXIT") == "0"
+        icon = "✅" if ok else "⚠️"
+        body = tail[-2500:] if tail else "(вывод пуст)"
+        text = (
+            f"{icon} <b>{ui.esc(ACTION_TITLES.get(action, action))}</b>\n"
+            f"код возврата {ui.esc(fields.get('EXIT', 'unknown'))}\n\n"
+            f"<pre>{ui.esc(body)}</pre>"
+        )
+        if ok and _needs_reboot():
+            text += (
+                "\n\n🔁 <b>Требуется перезагрузка</b> для применения ядра/пакетов. "
+                "Кнопка «Перезагрузить» в разделе Обслуживание."
+            )
+        await self._finish_apt_watch(job_id, action, chat_id, user_id, ok=ok, text=text)
+
+    async def _finish_apt_watch(
+        self,
+        job_id: int,
+        action: str,
+        chat_id: int,
+        user_id: int,
+        *,
+        ok: bool,
+        text: str,
+    ) -> None:
+        await asyncio.to_thread(self.storage.remove_pending_job, job_id)
+        delivered = await self._notify(chat_id, text, markup=ui.result_menu())
+        await asyncio.to_thread(
+            self.storage.audit,
+            action,
+            telegram_id=user_id,
+            params={"background": True},
+            ok=ok,
+            result="watcher",
         )
         self.invalidate()
         if not delivered:
@@ -992,28 +1307,29 @@ class MonitorBot:
     # ------------------------------------------------------------- текст
 
     async def on_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Команду сервера можно прислать в любом разделе, без /maint."""
         message = update.effective_message
         user = update.effective_user
         if message is None or user is None:
             return
-        user_data = context.user_data or {}
-        if not self._chat_allowed(message.chat):
-            return
-        if not self.is_admin(user.id) or not user_data.pop("awaiting_command", False):
+        if not self._chat_allowed(message.chat) or not self.is_admin(user.id):
             return
         command = " ".join((message.text or "").split())
         if not command:
             return
-        pending = self.actions.request(
-            ACTION_COMMAND, command, command, owner_id=user.id
-        )
-        allowed = ", ".join(self.settings.command_allowlist) or "пусто"
-        await message.reply_text(
-            f"⚠️ Выполнить команду?\n<code>{ui.esc(command)}</code>\n\n"
-            f"Список разрешённых: <code>{ui.esc(allowed)}</code>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=ui.confirm_menu(ACTION_COMMAND, pending.token),
-        )
+        user_data = context.user_data or {}
+        awaiting = bool(user_data.pop("awaiting_command", False))
+        allowed = self.settings.command_allowlist
+        if command in allowed:
+            await self._request_command(message, user.id, command)
+        elif awaiting:
+            listed = ", ".join(allowed) or "пусто"
+            await self._reply_screen(
+                message,
+                "⛔ Команда не в белом списке.\n"
+                f"Разрешено: <code>{ui.esc(listed)}</code>",
+                markup=ui.main_menu(True),
+            )
 
     async def _prompt_command(
         self,
@@ -1136,6 +1452,11 @@ class MonitorBot:
         markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         try:
+            screen = _message_of(callback)
+            self._last_screen[screen.chat_id] = screen.message_id
+        except RuntimeError:
+            pass
+        try:
             await _send_with_retry(
                 callback.edit_message_text,
                 text=text,
@@ -1167,6 +1488,22 @@ class MonitorBot:
 
 
 # --------------------------------------------------------------- утилиты
+
+
+def _parse_apt_status(stdout: str) -> tuple[dict[str, str], str]:
+    """Разбирает вывод `xui-ctl apt_status`: шапку STATE/RESULT/EXIT/LOAD и лог."""
+    fields: dict[str, str] = {}
+    tail: list[str] = []
+    header = True
+    for line in stdout.splitlines():
+        if header:
+            key, sep, value = line.partition("=")
+            if sep and key in {"STATE", "RESULT", "EXIT", "LOAD"}:
+                fields[key] = value.strip()
+                continue
+            header = False
+        tail.append(line)
+    return fields, "\n".join(tail).strip()
 
 
 def _message_of(query: CallbackQuery) -> Message:
@@ -1241,10 +1578,13 @@ MAX_FLOOD_WAIT: Final = 30.0
 FLOOD_ATTEMPTS: Final = 3
 
 
+_T = TypeVar("_T")
+
+
 async def _send_with_retry(
-    func: Callable[..., Awaitable[object]],
+    func: Callable[..., Awaitable[_T]],
     **kwargs: object,
-) -> None:
+) -> _T | None:
     """Отправка с уважением к flood control Telegram.
 
     Без этого `RetryAfter` просто логировался, и сообщение (например, результат
@@ -1253,8 +1593,7 @@ async def _send_with_retry(
     """
     for attempt in range(FLOOD_ATTEMPTS):
         try:
-            await func(**kwargs)
-            return
+            return await func(**kwargs)
         except RetryAfter as exc:
             raw_delay = exc.retry_after
             delay = (
@@ -1267,6 +1606,7 @@ async def _send_with_retry(
                 raise
             logger.warning("Flood control: пауза %.0f c, повтор отправки", delay)
             await asyncio.sleep(delay)
+    return None
 
 
 def _split(text: str, limit: int = 3500) -> list[str]:

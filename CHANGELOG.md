@@ -18,6 +18,23 @@
 
 ### Возможности
 
+- Обновления в боте разделены и отчитываются в чат: `apt update`, `full-upgrade`,
+  `phased`, проверка релиза (`do-release-upgrade --check`) и запуск
+  `do-release-upgrade` — отдельные пункты. Бот сам следит за systemd-юнитом и
+  присылает код возврата и хвост журнала; состояние задачи переживает рестарт
+  бота (SQLite).
+- Команду сервера можно прислать в любом разделе (или `/run <команда>`): бот
+  проверяет её по белому списку, просит подтверждение и возвращает вывод.
+- Новый экран `/traffic` (раньше была только кнопка).
+- Меню больше не копятся: при переходе предыдущий экран заменяется (кроме
+  «Подробнее»/«Свернуть», которые разворачивают тот же экран).
+- `/help` — полноценная инструкция: разделы, обновления, команды, метрики,
+  безопасность, диагностика и настройки.
+- `xui-menu apt-logs [N]` — журнал фоновых обновлений; README описывает каждый
+  пункт меню: что вписать и пример значения.
+- Обновление через `xui-menu` переустанавливает код, обёртку, меню, юниты и
+  sudoers, поэтому новые фичи применяются и при будущих обновлениях.
+
 - Telegram-бот мониторинга: система, systemd-службы, панель 3X-UI, xray,
   inbound'ы, подписки и трафик; алерты с гистерезисом, кулдауном и мьютом
   «знаю, до утра» (хранится в SQLite).
@@ -119,6 +136,22 @@ tags are published — the current version is always the `main` branch; update v
 `sudo xui-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- Separate, self-reporting updates: `apt update`, `full-upgrade`, `phased`,
+  release check (`do-release-upgrade --check`) and the actual
+  `do-release-upgrade`. The bot watches the systemd unit and sends the exit code
+  and log tail; pending jobs survive a bot restart (SQLite).
+- A server command can be sent from any screen (or `/run <command>`): validated
+  against the allowlist, confirmed, output returned.
+- New `/traffic` command (previously only a button).
+- Menus no longer pile up: moving to a new screen replaces the previous one
+  (Details and Collapse expand the same screen).
+- `/help` is now a full manual: sections, updates, commands, metrics, security,
+  troubleshooting and settings.
+- `xui-menu apt-logs [N]` and a README section explaining every menu item, what to
+  enter and an example value.
+- Updating through `xui-menu` reinstalls code, wrapper, menu, units and sudoers,
+  so new features apply on future updates too.
 
 - Monitoring bot: system metrics, systemd services, 3X-UI panel, xray, inbounds,
   subscriptions and traffic; alerts with hysteresis, cooldown and an “I know,

@@ -259,6 +259,7 @@ Telegram  ⇄  bot (unprivileged user xui-monitor)
 | Command | What it shows |
 |---|---|
 | `/status` | a one-line verdict, issues, metrics, services and panel |
+| `/traffic` | inbounds, clients and consumed traffic |
 | `/services` | service state; restart and log next to each |
 | `/panel` | panel and xray availability, versions, updates |
 | `/subs` | subscriptions: expiry, traffic, depleted and disabled |
@@ -266,15 +267,31 @@ Telegram  ⇄  bot (unprivileged user xui-monitor)
 | `/logs` | selected service log with an “errors only” filter |
 | `/audit` | bot action log with “denied / actions” filters |
 | `/maint` | maintenance: `apt`, release upgrade, reboot, allowlisted command |
+| `/run <command>` | run a diagnostic command from the allowlist |
 | `/help` | plain-language help: what to press and what the numbers mean |
 
 Buttons duplicate the commands; every screen has “🏠 Menu”, so you cannot get
-stuck. Guests do not see the buttons.
+stuck. Guests do not see the buttons. Moving between menus replaces the previous
+screen, so no chain of messages piles up (Details and Collapse are the exception:
+they expand the same screen).
+
+**A server command can be sent from any section** — just send it as a message (or
+`/run <command>`). The bot asks for confirmation and returns the output. Only safe
+diagnostic commands from `COMMAND_ALLOWLIST` are allowed; `/run` without arguments
+lists them. There is no arbitrary shell.
 
 **Commands and buttons work only in the administrator's private chat.** In a group
 the bot refuses: addresses, subscriptions and traffic must not leak into a shared
 chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only — management there
 is unavailable.
+
+**Maintenance actions are separate and report to the chat.** `apt update` refreshes
+indexes only; `full-upgrade` installs everything; `phased` allows Ubuntu phased
+updates; “check release” runs `do-release-upgrade --check`; “run release” runs
+`do-release-upgrade` itself. These are different things: `apt update` does not
+check for a new OS version. The bot watches the background systemd unit and sends
+the exit code plus the log tail when it finishes — no `journalctl` needed. To look
+manually: `sudo xui-menu apt-logs`.
 
 `/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
 are aligned in a monospace block, and time is labelled “server time”. Alerts carry
@@ -293,6 +310,7 @@ xui-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
 sudo xui-menu set PANEL_TIMEOUT 20
 sudo xui-menu restart       # apply
 sudo xui-menu restart-xray  # restart xray via the panel API
+sudo xui-menu apt-logs 100  # log of background apt upgrades
 sudo xui-menu logs 100
 ```
 
@@ -318,23 +336,53 @@ service state is shown on top:
 ╚════════════════════════════════════════════════════════╝
 ```
 
-| Item | Action |
-|---|---|
-| 1 | service state and recent warnings |
-| 2 | show settings; tokens masked |
-| 3 | bot log (50 lines) |
-| 4–6 | bot token, admin IDs, alert chat |
-| 7–9 | panel address, `webBasePath`, API token |
-| 10 | TLS (`PANEL_VERIFY_TLS`) and CA bundle (`PANEL_CA_BUNDLE`) |
-| 11–13 | CPU / memory / disk thresholds (warning and critical) |
-| 14 | alert hysteresis and cooldown |
-| 15 | how many days before a subscription expiry to warn |
-| 16–17 | monitored services, log level |
-| 18 | edit any allow-listed key by name |
-| 19 | restart the bot and verify |
-| 20 | restart xray via the API (with confirmation) |
-| 21 | update from the `main` branch |
-| 22 | remove (asks for `yes`) and exit |
+### What each item does and what to enter
+
+| Item | What it does | What to enter | Example |
+|---|---|---|---|
+| 1 | service state and recent errors | — | — |
+| 2 | shows settings, secrets masked | — | — |
+| 3 | bot log, 50 lines | — | — |
+| 4 | Telegram bot token | the value from @BotFather | `123456789:AAH...` |
+| 5 | administrator IDs | numbers separated by commas | `11111111,22222222` |
+| 6 | alert chat | chat ID; group IDs are negative; empty — private | `-1001234567890` |
+| 7 | panel address (`PANEL_URL`) | scheme, host and port, **no path** | `https://panel.example.com:5580` |
+| 8 | `webBasePath` (`PANEL_BASE_PATH`) | the “Panel URL” value from 3X-UI; usually empty. **Not** `/panel` | empty or `mypanel` |
+| 9 | panel API token | the token value (`node-sync`/`admin` scope) | `AbCdEf...` |
+| 10 | TLS and CA (submenu) | `PANEL_VERIFY_TLS`: `true`/`false`; `PANEL_CA_BUNDLE`: PEM path | `true`, `/etc/ssl/panel-ca.pem` |
+| 11 | CPU thresholds (submenu) | `CPU_WARN` and `CPU_CRIT`, % | `80`, `95` |
+| 12 | memory thresholds (submenu) | `MEM_WARN` and `MEM_CRIT`, % | `85`, `95` |
+| 13 | disk thresholds (submenu) | `DISK_WARN` and `DISK_CRIT`, % | `85`, `93` |
+| 14 | hysteresis and cooldown (submenu) | `ALERT_HYSTERESIS` in %, `ALERT_COOLDOWN` in s | `5`, `1800` |
+| 15 | days before a subscription expiry warning | a whole number of days | `3` |
+| 16 | monitored services | service names separated by commas | `x-ui,fail2ban` |
+| 17 | log level | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
+| 18 | any allow-listed key | the key name first, then the value | `DISK_PATH` → `/` |
+| 19 | restart the bot and verify | — | — |
+| 20 | restart xray via the API | `y` to confirm | `y` |
+| 21 | update from `main` | — | — |
+| 22 | removal | `yes` to confirm | `yes` |
+
+An empty value clears a setting: `sudo xui-menu set PANEL_BASE_PATH ""`.
+For items 4–17 you can skip the menu and use
+`sudo xui-menu set KEY VALUE` directly (same as item 18, one command).
+
+```bash
+# value examples
+sudo xui-menu set PANEL_URL https://panel.example.com:5580
+sudo xui-menu set PANEL_BASE_PATH ""          # “Panel URL” = /
+sudo xui-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
+sudo xui-menu set ALERT_CHAT_ID -1001234567890
+sudo xui-menu set SERVICES x-ui,fail2ban
+sudo xui-menu set CPU_WARN 80
+sudo xui-menu set LOG_LEVEL INFO
+
+# validate a value without changing anything
+xui-menu check CPU_WARN 80
+
+# log of background updates (apt update / upgrade / phased / release)
+sudo xui-menu apt-logs 100
+```
 
 Worth knowing:
 
