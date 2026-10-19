@@ -11,7 +11,7 @@ from typing import Any
 
 from telegram import CallbackQuery, InlineKeyboardMarkup, Message, Update, User
 from telegram.constants import ChatAction, ParseMode
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -248,7 +248,9 @@ class MonitorBot:
                 else "⛔ Этот бот доступен только администратору сервера."
             ),
             parse_mode=ParseMode.HTML,
-            reply_markup=ui.main_menu(allowed),
+            # Гостю кнопки не показываем вовсе: каждая из них всё равно
+            # ответила бы отказом — это только вводит в заблуждение.
+            reply_markup=ui.main_menu(True) if allowed else None,
         )
 
     async def cmd_help(
@@ -257,8 +259,11 @@ class MonitorBot:
         message = update.effective_message
         if message is None:
             return
+        allowed = self.is_admin(_user_id(update))
         await message.reply_text(
-            ui.update_commands_help(HELP_COMMANDS), parse_mode=ParseMode.HTML
+            ui.update_commands_help(HELP_COMMANDS),
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.main_menu(True) if allowed else None,
         )
 
     async def cmd_status(
@@ -272,7 +277,7 @@ class MonitorBot:
             ui.render_overview(await self.snapshot(), self.settings),
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
-            reply_markup=ui.server_menu(),
+            reply_markup=ui.main_menu(self.is_admin(_user_id(update))),
         )
 
     async def cmd_services(
@@ -313,13 +318,25 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
+        text, markup = await self._subs_view(0)
         await message.reply_text(
-            ui.render_subscriptions(
-                (await self.snapshot()).subscriptions,
-                soon_days=self.settings.expiring_soon_days,
-            ),
+            text,
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+
+    async def _subs_view(self, offset: int) -> tuple[str, InlineKeyboardMarkup]:
+        """Страница подписок и клавиатура к ней (общая для /subs и кнопок)."""
+        subs = (await self.snapshot()).subscriptions
+        soon = self.settings.expiring_soon_days
+        ordered = ui.ordered_subscriptions(subs, soon)
+        if offset < 0 or offset >= len(ordered):
+            offset = 0
+        has_more = offset + ui.SUBSCRIPTIONS_PAGE < len(ordered)
+        return (
+            ui.render_subscriptions(subs, soon_days=soon, offset=offset),
+            ui.subscriptions_menu(offset, has_more=has_more),
         )
 
     async def cmd_history(
@@ -392,11 +409,8 @@ class MonitorBot:
         # Гейт стоит до разбора callback_data: иначе гость, угадав токен
         # подтверждения, мог отменить действие администратора.
         if not self.is_admin(user_id):
-            await self._edit(
-                query,
-                "⛔ Только для администраторов.",
-                markup=ui.main_menu(False),
-            )
+            await query.answer("⛔ Только для администраторов", show_alert=False)
+            await self._edit(query, "⛔ Только для администраторов.")
             return
 
         if data.startswith("ask:"):
@@ -407,21 +421,25 @@ class MonitorBot:
             return
         if data.startswith("no:"):
             self.actions.cancel(data[3:])
-            await self._edit(query, "❌ Отменено.")
+            await self._edit(
+                query,
+                "❌ Отменено — действие не выполнено.",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
             return
 
-        if data == "refresh":
+        if data == "home" or data == "refresh":
             self.invalidate()
             await self._edit(
                 query,
                 ui.render_overview(await self.snapshot(force=True), self.settings),
-                markup=ui.server_menu(),
+                markup=ui.main_menu(self.is_admin(user_id)),
             )
         elif data == "server":
             await self._edit(
                 query,
                 ui.render_overview(await self.snapshot(), self.settings),
-                markup=ui.server_menu(),
+                markup=ui.main_menu(self.is_admin(user_id)),
             )
         elif data == "services":
             await self._edit(
@@ -430,32 +448,53 @@ class MonitorBot:
                 markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
             )
         elif data == "panel":
-            await self._edit(query, ui.render_panel(await self.snapshot()))
-        elif data == "traffic":
-            await self._edit(query, ui.render_traffic(await self.snapshot()))
-        elif data == "subs":
             await self._edit(
                 query,
-                ui.render_subscriptions(
-                    (await self.snapshot()).subscriptions,
-                    soon_days=self.settings.expiring_soon_days,
-                ),
+                ui.render_panel(await self.snapshot()),
+                markup=ui.main_menu(self.is_admin(user_id)),
             )
+        elif data == "traffic":
+            await self._edit(
+                query,
+                ui.render_traffic(await self.snapshot()),
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
+        elif data == "subs" or data.startswith("subs:"):
+            offset = (
+                int(data[5:]) if data.startswith("subs:") and data[5:].isdigit() else 0
+            )
+            text, markup = await self._subs_view(offset)
+            await self._edit(query, text, markup=markup)
         elif data == "history":
             rows = await asyncio.to_thread(
                 self.storage.get_series, time.time() - 24 * 3600, 24
             )
-            await self._edit(query, ui.render_history(rows, title="Последние 24 часа"))
+            await self._edit(
+                query,
+                ui.render_history(rows, title="Последние 24 часа"),
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
         elif data == "logs_menu":
             await self._edit(
                 query, "📜 Выберите сервис", markup=ui.logs_menu(self.settings.services)
+            )
+        elif data == "maintenance":
+            await self._edit(
+                query,
+                "🛠 <b>Обслуживание</b>\n\n"
+                "Все действия требуют подтверждения и пишутся в журнал.",
+                markup=ui.maintenance_menu(),
             )
         elif data.startswith("logs:"):
             await self._show_logs(query, data[5:])
         elif data == "command_prompt":
             await self._prompt_command(query, context)
         else:
-            await self._edit(query, "Неизвестная кнопка.")
+            await self._edit(
+                query,
+                "Неизвестная кнопка. Возможно, клавиатура устарела.",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
 
     # ------------------------------------------------------- подтверждения
 
@@ -467,7 +506,11 @@ class MonitorBot:
         _, action, arg = data.split(":", 2)
         base = CONFIRM_DESCRIPTIONS.get(action)
         if base is None:
-            await self._edit(callback, "Неизвестное действие.")
+            await self._edit(
+                callback,
+                "Неизвестное действие. Возможно, клавиатура устарела.",
+                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+            )
             return
 
         description = (
@@ -501,7 +544,11 @@ class MonitorBot:
         try:
             pending = self.actions.consume(token, user_id)
         except ActionError as exc:
-            await self._edit(callback, f"⏳ {ui.esc(str(exc))}")
+            await self._edit(
+                callback,
+                f"⏳ {ui.esc(str(exc))}",
+                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+            )
             return
         if pending is None:
             await self._edit(
@@ -509,7 +556,11 @@ class MonitorBot:
             )
             return
         if pending.action != action:
-            await self._edit(callback, "⛔ Действие не совпадает с подтверждением.")
+            await self._edit(
+                callback,
+                "⛔ Действие не совпадает с подтверждением.",
+                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+            )
             return
 
         await self._dispatch(callback, pending.action, pending.args, user_id)
@@ -533,7 +584,9 @@ class MonitorBot:
             if action in (ACTION_UPGRADE, ACTION_DIST_UPGRADE):
                 self._schedule_long_action(action, chat_id, user_id)
                 await _safe_edit(
-                    status, "⏳ Запущено в фоне, отчёт придёт по завершении…"
+                    status,
+                    "⏳ Запущено в фоне — отчёт придёт по завершении.",
+                    markup=ui.result_menu(),
                 )
                 return
             if action == ACTION_COMMAND:
@@ -552,7 +605,7 @@ class MonitorBot:
                 ok=False,
                 result=str(exc),
             )
-            await _safe_edit(status, f"❌ {ui.esc(str(exc))}")
+            await _safe_edit(status, f"❌ {ui.esc(str(exc))}", markup=ui.result_menu())
             return
 
         icon = "✅" if result.ok else "⚠️"
@@ -562,6 +615,7 @@ class MonitorBot:
             f"{icon} <b>{ui.esc(result.action)}</b>"
             f" — код возврата {result.returncode}\n"
             f"<code>{ui.esc(result.command)}</code>\n\n<pre>{body}</pre>",
+            markup=ui.result_menu(),
         )
         await asyncio.to_thread(
             self.storage.audit,
@@ -648,7 +702,7 @@ class MonitorBot:
                 ok=False,
                 result=str(exc),
             )
-            await _safe_edit(status, f"❌ {ui.esc(str(exc))}")
+            await _safe_edit(status, f"❌ {ui.esc(str(exc))}", markup=ui.result_menu())
             return
 
         await asyncio.to_thread(
@@ -660,7 +714,9 @@ class MonitorBot:
         )
         if not result.ok:
             await _safe_edit(
-                status, f"⚠️ Reboot не выполнен: {ui.esc(result.summary(300))}"
+                status,
+                f"⚠️ Reboot не выполнен: {ui.esc(result.summary(300))}",
+                markup=ui.result_menu(),
             )
             return
 
@@ -763,8 +819,9 @@ class MonitorBot:
         allowed = ", ".join(self.settings.command_allowlist) or "—"
         await self._edit(
             callback,
-            "💻 Пришлите команду списком сообщением.\n"
+            "💻 Пришлите команду следующим сообщением. Отмена — кнопка в меню.\n"
             f"Разрешено: <code>{ui.esc(allowed)}</code>",
+            markup=ui.main_menu(True),
         )
 
     # ---------------------------------------------------------- фоновые
@@ -815,11 +872,19 @@ class MonitorBot:
         if not self.is_admin(callback.from_user.id):
             await self._edit(callback, "⛔ Только для администраторов.")
             return
-        await self._edit(callback, f"📜 Журнал <code>{ui.esc(unit)}</code>…")
+        await self._edit(
+            callback,
+            f"📜 Журнал <code>{ui.esc(unit)}</code>…",
+            markup=ui.logs_menu(self.settings.services),
+        )
         try:
             output = await self.actions.journal(unit, 40)
         except ActionError as exc:
-            await self._edit(callback, f"❌ {ui.esc(str(exc))}")
+            await self._edit(
+                callback,
+                f"❌ {ui.esc(str(exc))}",
+                markup=ui.logs_menu(self.settings.services),
+            )
             return
         await self._edit(
             callback,
@@ -841,13 +906,19 @@ class MonitorBot:
                 disable_web_page_preview=True,
                 reply_markup=markup,
             )
+            return
+        except BadRequest as exc:
+            # Повторное нажатие «Обновить» с теми же данными: содержимое не
+            # изменилось — это норма, а не ошибка. Иначе мы бы продублировали
+            # сообщение ответом ниже.
+            if "not modified" in str(exc).lower():
+                logger.debug("Сообщение не изменилось, обновление пропущено")
+                return
+            logger.warning("Не удалось обновить сообщение: %s", exc)
         except TelegramError as exc:
             logger.warning("Не удалось обновить сообщение: %s", exc)
-            message = _message_of(callback)
-            if message is not None:
-                await message.reply_text(
-                    text, parse_mode=ParseMode.HTML, reply_markup=markup
-                )
+        message = _message_of(callback)
+        await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
 
 
 # --------------------------------------------------------------- утилиты
@@ -874,9 +945,11 @@ async def _clear_markup(query: CallbackQuery) -> None:
         logger.debug("Не удалось убрать кнопки: %s", exc)
 
 
-async def _safe_edit(status: Message, text: str) -> None:
+async def _safe_edit(
+    status: Message, text: str, *, markup: InlineKeyboardMarkup | None = None
+) -> None:
     try:
-        await status.edit_text(text, parse_mode=ParseMode.HTML)
+        await status.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
     except TelegramError as exc:
         logger.warning("Не удалось обновить статус: %s", exc)
 
@@ -886,9 +959,33 @@ def _needs_reboot() -> bool:
 
 
 def _split(text: str, limit: int = 3500) -> list[str]:
+    """Режет длинный HTML на части, не разрывая теги.
+
+    Прямое деление по символам рвёт разметку Telegram («can't parse entities»),
+    поэтому режем по переводам строк, а уже отдельную чрезмерно длинную строку —
+    вынужденно жёстко.
+    """
     if len(text) <= limit:
         return [text]
-    return [text[i : i + limit] for i in range(0, len(text), limit)]
+    chunks: list[str] = []
+    current = ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(line[:limit])
+            line = line[limit:]
+        if not current:
+            current = line
+        elif len(current) + len(line) + 1 <= limit:
+            current = f"{current}\n{line}"
+        else:
+            chunks.append(current)
+            current = line
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _split_alerts(findings: list[Finding]) -> list[str]:

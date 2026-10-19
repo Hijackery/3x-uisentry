@@ -49,8 +49,15 @@ case "$cmd" in
         require_no_extra_args 1 "$@"
         unit="$(safe_unit "$2")"
         log "restart $unit"
-        systemctl restart "$unit"
-        systemctl is-active --quiet "$unit"
+        if ! systemctl restart "$unit"; then
+            echo "Не удалось перезапустить $unit. Последние строки журнала:" >&2
+            journalctl -u "$unit" -n 10 --no-pager >&2 || true
+            exit 1
+        fi
+        if ! systemctl is-active --quiet "$unit"; then
+            echo "Юнит $unit перезапущен, но не активен — проверьте: journalctl -u $unit" >&2
+            exit 1
+        fi
         echo "Сервис $unit перезапущен"
         ;;
 
@@ -73,7 +80,9 @@ case "$cmd" in
         if [ "$lines" -lt 1 ] || [ "$lines" -gt 500 ]; then
             die "lines вне 1..500"
         fi
-        journalctl -u "$unit" -n "$lines" --no-pager -o short-iso
+        if ! journalctl -u "$unit" -n "$lines" --no-pager -o short-iso; then
+            die "не удалось прочитать журнал $unit"
+        fi
         ;;
 
     apt_upgrade)

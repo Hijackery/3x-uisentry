@@ -136,19 +136,20 @@ class ActionManager:
         )
 
     async def journal(self, unit: str, lines: int = 40) -> str:
-        """Журнал сервиса. Права root не нужны, поэтому идём напрямую в journalctl."""
+        """Журнал сервиса через sudo-обёртку.
+
+        Напрямую ``journalctl`` сервисному пользователю обычно недоступен: он не
+        входит ни в `systemd-journal`, ни в `adm`, и видел бы только свои записи.
+        Обёртка (`xui-ctl journal`) разрешена в sudoers и проверяет аргументы.
+        """
         if unit not in self.settings.services:
             raise ActionError(f"Сервис {unit} не входит в список наблюдаемых")
         result = await run_command(
             [
-                "journalctl",
-                "-u",
+                self.settings.sudo_wrapper,
+                ACTION_JOURNAL,
                 unit,
-                "-n",
                 str(max(1, min(lines, 500))),
-                "--no-pager",
-                "-o",
-                "short-iso",
             ],
             timeout=20.0,
             action=ACTION_JOURNAL,

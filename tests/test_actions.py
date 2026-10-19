@@ -163,17 +163,31 @@ async def test_execute_rejects_unknown_action(
         await actions.execute(pending)
 
 
-async def test_journal_uses_journalctl_without_sudo(
+async def test_journal_goes_through_privileged_wrapper(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Журнал читается через sudo-обёртку.
+
+    Сервисный пользователь не входит в systemd-journal/adm, поэтому прямой
+    `journalctl` вернул бы пустоту или отказ прав — журнал был бы не виден.
+    """
     actions = manager(make_settings)
     calls = fake_runner(monkeypatch)
     output = await actions.journal("x-ui", 20)
 
-    assert calls[0][0] == "journalctl"
-    assert "-u" in calls[0] and "x-ui" in calls[0]
-    assert calls[0][0] != "/usr/local/bin/xui-ctl"
+    assert calls[0][:3] == ["/usr/local/bin/xui-ctl", "journal", "x-ui"]
+    assert calls[0][3] == "20"
     assert output == "ok"
+
+
+async def test_journal_does_not_trip_action_cooldown(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Просмотр журнала — не опасное действие: кулдаун на него не распространяется."""
+    actions = manager(make_settings, action_cooldown=3600)
+    fake_runner(monkeypatch)
+    await actions.journal("x-ui", 10)
+    await actions.journal("x-ui", 10)  # не должно бросить ActionError
 
 
 async def test_journal_refuses_foreign_unit(

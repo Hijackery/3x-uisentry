@@ -22,6 +22,8 @@ from .settings import Settings
 
 BAR_WIDTH: Final = 10
 MAX_INLINE_ROWS: Final = 12
+#: Подписок на странице: больше — уже нечитаемо с телефона.
+SUBSCRIPTIONS_PAGE: Final = 10
 
 
 def esc(value: object) -> str:
@@ -192,8 +194,36 @@ def render_traffic(snapshot: MonitorSnapshot) -> str:
     return "\n".join(lines)
 
 
+def ordered_subscriptions(
+    subscriptions: list[Subscription], soon_days: int
+) -> list[Subscription]:
+    """Порядок показа: проблемные (истёкшие, исчерпанные, скоро истекают) — вперёд."""
+    expired = [item for item in subscriptions if item.is_expired]
+    depleted = [item for item in subscriptions if item.is_depleted]
+    soon = [
+        item
+        for item in subscriptions
+        if not item.is_expired
+        and item.expires_in_days is not None
+        and item.expires_in_days <= soon_days
+    ]
+    interesting = expired + depleted + soon
+    seen: set[str] = set()
+    ordered: list[Subscription] = []
+    for item in interesting:
+        if item.email not in seen:
+            seen.add(item.email)
+            ordered.append(item)
+    ordered.extend(item for item in subscriptions if item.email not in seen)
+    return ordered
+
+
 def render_subscriptions(
-    subscriptions: list[Subscription], *, soon_days: int = 7, limit: int = 20
+    subscriptions: list[Subscription],
+    *,
+    soon_days: int = 7,
+    limit: int = SUBSCRIPTIONS_PAGE,
+    offset: int = 0,
 ) -> str:
     if not subscriptions:
         return "Подписок нет или список недоступен для этого токена."
@@ -207,27 +237,51 @@ def render_subscriptions(
         and item.expires_in_days is not None
         and item.expires_in_days <= soon_days
     ]
+    ordered = ordered_subscriptions(subscriptions, soon_days)
+    page = ordered[offset : offset + limit]
+
     lines = [
         "🪪 <b>Подписки</b>",
         f"всего {len(subscriptions)} · истёкших {len(expired)} · "
         f"трафик исчерпан {len(depleted)} · истекают ≤{soon_days} дн. {len(soon)}",
-        "",
     ]
-
-    interesting = expired + depleted + soon
-    seen: set[str] = set()
-    ordered: list[Subscription] = []
-    for item in interesting:
-        if item.email not in seen:
-            seen.add(item.email)
-            ordered.append(item)
-    ordered.extend(item for item in subscriptions if item.email not in seen)
-
-    for item in ordered[:limit]:
-        lines.append(_render_subscription(item))
-    if len(ordered) > limit:
-        lines.append(f"… ещё {len(ordered) - limit}")
+    if offset > 0 or offset + len(page) < len(ordered):
+        lines.append(
+            f"страница {offset // limit + 1}: показано {offset + 1}–"
+            f"{offset + len(page)} из {len(ordered)}"
+        )
+    lines.append("")
+    lines.extend(_render_subscription(item) for item in page)
+    if offset + len(page) < len(ordered):
+        lines.append(f"\n… ещё {len(ordered) - offset - len(page)} — кнопка «📄 Ещё»")
     return "\n".join(lines)
+
+
+def subscriptions_menu(
+    offset: int,
+    *,
+    has_more: bool,
+) -> InlineKeyboardMarkup:
+    """Постраничная навигация по подпискам плюс выход в главное меню."""
+    rows: list[list[InlineKeyboardButton]] = []
+    pager: list[InlineKeyboardButton] = []
+    if offset > 0:
+        pager.append(
+            InlineKeyboardButton(
+                "⬅️ Назад",
+                callback_data=f"subs:{max(0, offset - SUBSCRIPTIONS_PAGE)}",
+            )
+        )
+    if has_more:
+        pager.append(
+            InlineKeyboardButton(
+                "📄 Ещё", callback_data=f"subs:{offset + SUBSCRIPTIONS_PAGE}"
+            )
+        )
+    if pager:
+        rows.append(pager)
+    rows.append([home_button()])
+    return InlineKeyboardMarkup(rows)
 
 
 def _render_subscription(item: Subscription) -> str:
@@ -304,6 +358,11 @@ def render_audit(rows: list[sqlite3.Row]) -> str:
 # --------------------------------------------------------------- клавиатуры
 
 
+def home_button() -> InlineKeyboardButton:
+    """Кнопка выхода в главное меню — есть на каждом экране, где её легко потерять."""
+    return InlineKeyboardButton("🏠 В меню", callback_data="home")
+
+
 def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")],
@@ -327,16 +386,6 @@ def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def server_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🌐 Панель", callback_data="panel")],
-            [InlineKeyboardButton("📊 Трафик", callback_data="traffic")],
-            [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")],
-        ]
-    )
-
-
 def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     if is_admin:
@@ -356,7 +405,12 @@ def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarku
                 InlineKeyboardButton("📜 Журнал", callback_data="logs_menu"),
             ]
         )
-    buttons.append([InlineKeyboardButton("🔄 Обновить", callback_data="services")])
+    buttons.append(
+        [
+            InlineKeyboardButton("🔄 Обновить", callback_data="services"),
+            home_button(),
+        ]
+    )
     return InlineKeyboardMarkup(buttons)
 
 
@@ -365,7 +419,8 @@ def logs_menu(units: tuple[str, ...]) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(f"📜 {unit}", callback_data=f"logs:{unit}")]
         for unit in units
     ]
-    buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="services")])
+    buttons.append([InlineKeyboardButton("🔙 Сервисы", callback_data="services")])
+    buttons.append([home_button()])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -389,9 +444,14 @@ def maintenance_menu() -> InlineKeyboardMarkup:
                 ),
                 InlineKeyboardButton("📜 Журнал", callback_data="logs_menu"),
             ],
-            [InlineKeyboardButton("🔙 Назад", callback_data="refresh")],
+            [home_button()],
         ]
     )
+
+
+def result_menu() -> InlineKeyboardMarkup:
+    """Клавиатура после выполненного действия: не оставляем пользователя без выхода."""
+    return InlineKeyboardMarkup([[home_button()]])
 
 
 def confirm_menu(action: str, token: str) -> InlineKeyboardMarkup:

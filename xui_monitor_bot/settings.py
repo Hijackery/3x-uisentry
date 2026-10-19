@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -233,6 +234,23 @@ def _build_settings() -> Settings:
     return settings
 
 
+def _service_problems(services: tuple[str, ...]) -> list[str]:
+    """Имена юнитов попадают в callback_data кнопок Telegram (лимит 64 байта).
+
+    Слишком длинное или «мусорное» имя сломало бы клавиатуру целиком, поэтому
+    такие значения отсекаем ещё на этапе конфигурации.
+    """
+    problems: list[str] = []
+    for unit in services:
+        if not re.fullmatch(r"[A-Za-z0-9._@\-]+", unit):
+            problems.append(f"SERVICES: недопустимое имя юнита {unit!r}")
+        elif len(f"ask:restart_service:{unit}".encode()) > 64:
+            problems.append(
+                f"SERVICES: имя юнита {unit!r} слишком длинное для кнопки Telegram"
+            )
+    return problems
+
+
 def _validate(settings: Settings) -> list[str]:
     problems: list[str] = []
     if not settings.telegram_token:
@@ -259,6 +277,7 @@ def _validate(settings: Settings) -> list[str]:
         problems.append("PANEL_API_TOKEN не задан (создайте токен в 3X-UI)")
     if not settings.services:
         problems.append("SERVICES пуст: нечего проверять через systemd")
+    problems.extend(_service_problems(settings.services))
     if settings.cpu_warn >= settings.cpu_crit:
         problems.append("CPU_WARN должен быть меньше CPU_CRIT")
     if settings.mem_warn >= settings.mem_crit:
