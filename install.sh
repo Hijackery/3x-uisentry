@@ -712,6 +712,9 @@ else
         || fail "Не удалось создать пользователя $SERVICE_USER"
     ok "Создан системный пользователь $SERVICE_USER"
 fi
+# Группа может не совпадать с именем пользователя (существующий пользователь
+# с другой основной группой): права на .env и unit Group= берём из неё.
+SERVICE_GROUP="$(id -gn "$SERVICE_USER" 2>/dev/null || printf '%s' "$SERVICE_USER")"
 
 step "Настраиваем бота (.env)"
 
@@ -728,6 +731,10 @@ set_env() {
     grep -vE "^$1=" "$ENV_FILE" > "$ENV_FILE.tmp" || true
     printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.tmp"
     mv "$ENV_FILE.tmp" "$ENV_FILE"
+    # umask установщика — 077: после mv .env стал бы root:root 600 и сервис
+    # (User=xui-monitor) не смог бы его прочитать при старте.
+    chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE" 2>/dev/null || true
+    chmod 640 "$ENV_FILE" 2>/dev/null || true
 }
 
 question() {
@@ -1032,7 +1039,7 @@ fi
 # .env содержит оба токена. Владелец — root, сервису доступно только чтение
 # (systemd отдаёт переменные сам, а бот не может переписать свой конфиг и
 # пережить таким образом компрометацию).
-chown root:"$SERVICE_USER" "$ENV_FILE"
+chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
@@ -1081,13 +1088,13 @@ chmod 755 "$PREFIX"
 # .env мастер пишет ещё до копирования — возвращаем ему владельца и права,
 # которые сбросил chown -R выше (сервису нужно только чтение).
 if [ -f "$ENV_FILE" ]; then
-    chown root:"$SERVICE_USER" "$ENV_FILE"
+    chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE"
     chmod 640 "$ENV_FILE"
 fi
 
 # Каталог состояния создаёт и пересоздаёт systemd (StateDirectory=), но на
 # этапе установки он нужен уже сейчас — самопроверка пишет в базу.
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR"
+install -d -m 0750 -o "$SERVICE_USER" -g "${SERVICE_GROUP:-$SERVICE_USER}" "$STATE_DIR"
 ok "Файлы на месте (код — root, состояние — $SERVICE_USER в $STATE_DIR)"
 
 step "Создаём venv и ставим Python-зависимости"
@@ -1147,6 +1154,10 @@ if [ "$(env_get COMMAND_ALLOWLIST)" = "$_OLD_ALLOW" ]; then
     set_env COMMAND_ALLOWLIST "$_NEW_ALLOW"
     info "Список безопасных команд расширен (старое значение заменено)."
 fi
+
+# После любых set_env возвращаем .env владельца/права: сервис читает его сам.
+chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE" 2>/dev/null || true
+chmod 640 "$ENV_FILE" 2>/dev/null || true
 
 SUDO_KEYS="$(env_get COMMAND_ALLOWLIST | tr ',' '\n' | sed 's/^ *//; s/ *$//' \
     | tr ' ' '_' | tr '\n' ' ')"
@@ -1216,7 +1227,7 @@ if [ "$INIT" = systemd ]; then
 
     UNIT_FILE="$UNIT_PATH"
     sed -e "s#^User=.*#User=${SERVICE_USER}#" \
-        -e "s#^Group=.*#Group=${SERVICE_USER}#" \
+        -e "s#^Group=.*#Group=${SERVICE_GROUP:-$SERVICE_USER}#" \
         -e "s#/opt/xui-monitor-bot#${PREFIX}#g" \
         -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
         -e "s#/var/lib/xui-monitor#${STATE_DIR}#g" \

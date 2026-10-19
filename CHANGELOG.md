@@ -60,6 +60,10 @@
 
 ### Исправлено
 
+- После миграции `COMMAND_ALLOWLIST` файл `.env` снова получает права
+  `640 root:<группа сервиса>`: `set_env` под umask 077 оставлял `root:root 600`,
+  и бот падал на старте с `PermissionError: .env`. Группа сервиса теперь
+  определяется через `id -gn`, а не предполагается равной имени пользователя.
 - Трафик: экран показывает итоги по inbound'ам и топ клиентов по расходу; при
   пустом ответе объясняет, что проверить (scope, webBasePath, токен).
 - Одно действие — одно сообщение: «в очереди» → «запущено» → отчёт (раньше
@@ -218,6 +222,10 @@ tags are published — the current version is always the `main` branch; update v
 
 ### Fixed
 
+- After the `COMMAND_ALLOWLIST` migration `.env` is restored to
+  `640 root:<service group>`: `set_env` under umask 077 left it `root:root 600`
+  and the bot failed to start with `PermissionError: .env`. The service group is
+  now resolved via `id -gn` instead of assuming it equals the user name.
 - Traffic screen shows per-inbound totals and top clients by usage; when the
   panel returns nothing it explains what to check (scope, webBasePath, token).
 - One action is one message: “queued” → “running” → report (previously both

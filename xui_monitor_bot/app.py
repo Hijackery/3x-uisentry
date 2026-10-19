@@ -318,7 +318,7 @@ class MonitorBot:
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         message = update.effective_message
-        if message is None:
+        if message is None or not self._chat_allowed(message.chat):
             return
         user = update.effective_user
         allowed = self.is_admin(user.id if user else None)
@@ -341,7 +341,7 @@ class MonitorBot:
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         message = update.effective_message
-        if message is None:
+        if message is None or not self._chat_allowed(message.chat):
             return
         allowed = self.is_admin(_user_id(update))
         await self._reply_screen(
@@ -899,7 +899,7 @@ class MonitorBot:
             return
         _, action, token = parts
         try:
-            pending = self.actions.consume(token, user_id)
+            pending = self.actions.consume(token, user_id, expected=action)
         except ActionError as exc:
             await self._edit(
                 callback,
@@ -914,14 +914,6 @@ class MonitorBot:
                 markup=ui.main_menu(self.is_admin(callback.from_user.id)),
             )
             return
-        if pending.action != action:
-            await self._edit(
-                callback,
-                "⛔ Действие не совпадает с подтверждением.",
-                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
-            )
-            return
-
         await self._dispatch(callback, pending.action, pending.args, user_id)
 
     async def _dispatch(

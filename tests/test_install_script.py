@@ -564,3 +564,33 @@ def test_init_does_not_source_env() -> None:
 def test_unit_state_dir_is_templated() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "s#/var/lib/xui-monitor#${STATE_DIR}#g" in text
+
+
+def test_set_env_keeps_env_readable_by_service(tmp_path: Path) -> None:
+    """После set_env под umask 077 .env должен остаться 640, иначе бот не стартует."""
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("set_env() {")
+    function = script[start : script.index("\n}\n", start) + 3]
+    env_file = tmp_path / ".env"
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\numask 077\n"
+        f'ENV_FILE="{env_file}"\n'
+        'SERVICE_USER="$(id -un)"\nSERVICE_GROUP="$(id -gn)"\n'
+        f"{function}\n"
+        "set_env TEST value\n"
+        'stat -c "%a" "$ENV_FILE"\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "640"
+    assert "TEST=value" in env_file.read_text(encoding="utf-8")
+
+
+def test_service_group_is_not_assumed_to_equal_user() -> None:
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'SERVICE_GROUP="$(id -gn "$SERVICE_USER"' in text
+    assert "Group=${SERVICE_GROUP:-$SERVICE_USER}" in text

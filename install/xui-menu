@@ -322,7 +322,8 @@ cmd_set() {
     local tmp="$ENV_FILE.tmp.$$"
     grep -vE "^${key}=" "$ENV_FILE" >"$tmp" 2>/dev/null || true
     printf '%s=%s\n' "$key" "$value" >>"$tmp"
-    install -o root -g "$SERVICE_USER" -m 0640 "$tmp" "$ENV_FILE"
+    install -o root -g "$(id -gn "$SERVICE_USER" 2>/dev/null || printf '%s' "$SERVICE_USER")" \
+        -m 0640 "$tmp" "$ENV_FILE"
     rm -f "$tmp"
     ok "$key обновлён"
     info "Применится после перезапуска: sudo xui-menu restart"
