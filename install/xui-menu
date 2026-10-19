@@ -351,6 +351,18 @@ ${BOLD}xui-menu${RESET} — панель управления ботом мон�
   sudo xui-menu uninstall [--purge] удалить бота
 
 Пути: PREFIX=$PREFIX, .env=$ENV_FILE
+
+${BOLD}English${RESET}
+  sudo xui-menu                     interactive menu
+  sudo xui-menu status              service state and recent errors
+  sudo xui-menu show                current settings (secrets masked)
+  xui-menu keys                     keys that may be changed
+  xui-menu check KEY VALUE          validate a value (no changes)
+  sudo xui-menu set KEY VALUE       change a setting, then restart
+  sudo xui-menu restart | logs [N]  restart the bot / show the log
+  sudo xui-menu update              update the bot from GitHub
+  sudo xui-menu uninstall [--purge] remove the bot
+  Docs: README.en.md (English) · README.md (Русский)
 EOF
 }
 

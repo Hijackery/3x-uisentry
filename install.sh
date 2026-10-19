@@ -209,6 +209,14 @@ ${BOLD}Установка бота мониторинга 3X-UI${RESET}
   REPO, REPO_OWNER, REPO_NAME, REPO_REF, REPO_URL, TARBALL_URL, GIT_URL,
   SOURCE_SHA256, TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_IDS, TELEGRAM_API_URL,
   PANEL_URL, PANEL_BASE_PATH, PANEL_API_TOKEN, SERVICES
+
+${BOLD}English${RESET}
+  Install: bash <(curl -Ls .../v1.0.1/install.sh)
+  Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
+            --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
+            --print-source · --menu · --uninstall · --purge · --no-start
+            --force-config · --yes · --help
+  Docs:     README.en.md (English) · README.md (Русский)
 EOF
 }
 
