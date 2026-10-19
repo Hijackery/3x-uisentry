@@ -864,7 +864,9 @@ else
         warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
     fi
 
-    info "Токен панели лежит в самой панели: Настройки → API Tokens (scope node-sync)."
+    info "Токен создаётся в панели: 3X-UI v3 — «Настройки панели → Учётная запись →"
+    info "API-токен» (scope node-sync или admin); 3X-UI 2.x — «Настройки → API Tokens»."
+    info "Панель показывает значение только при создании — скопируйте сразу."
     info "Не знаете токен? Нажмите Enter — выпущу его сам через x-ui (панель должна быть запущена)."
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
     if [ -z "$PANEL_TOKEN" ]; then
@@ -873,11 +875,12 @@ else
             warn "Внимание: если такой токен уже был, старый перестанет работать."
             PANEL_TOKEN="$(detect_panel_token || true)"
         fi
-        [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели. Возьмите его в панели:
-      панель → Настройки → API Tokens → создать токен со scope node-sync
-   или выпустите из терминала (и скопируйте вывод):
+        [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели:
+      3X-UI v3: «Настройки панели → Учётная запись → API-токен» → создать со scope
+      node-sync (или admin) и скопировать значение сразу;
+      3X-UI 2.x: «Настройки → API Tokens», либо из терминала:
       sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
-   и вставьте значение в PANEL_API_TOKEN."
+   Полученное значение впишите в PANEL_API_TOKEN."
     fi
 
     # Сразу проверяем токен: без этого в .env попадал мусор (например, название
@@ -889,13 +892,17 @@ else
             ok "Токен панели принят"
         elif printf '%s' "$_token_reply" | grep -q '"success":false'; then
             if [ "$ASSUME_YES" -eq 1 ]; then
-                fail "Панель отклонила API-токен. Нужен токен со scope node-sync
-      (панель → Настройки → API Tokens, либо: sudo x-ui setting -getApiToken true
-      -tokenName monitor-bot -tokenScope node-sync)."
+                fail "Панель отклонила API-токен.
+      3X-UI v3: «Настройки панели → Учётная запись → API-токен» — создайте токен со
+      scope node-sync (или admin) и вставьте значение; посмотреть его позже панель
+      не даст, копируйте сразу.
+      3X-UI 2.x: «Настройки → API Tokens» либо
+      sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
             fi
-            warn "Панель отклонила токен — проверьте область доступа (нужен node-sync)."
-            info "Выпустить заново: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
-            info "В PANEL_API_TOKEN вставляется строка «Token: ...», а не название области."
+            warn "Панель отклонила токен — проверьте значение и его область (нужен node-sync или admin)."
+            info "3X-UI v3: Настройки панели → Учётная запись → API-токен (создать, скопировать сразу)."
+            info "3X-UI 2.x: sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync"
+            info "В PANEL_API_TOKEN вставляется значение токена, а не название области ("update-all-geofiles")."
         else
             warn "Проверить токен не удалось (панель не ответила) — это заметит самопроверка"
         fi

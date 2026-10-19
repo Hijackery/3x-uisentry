@@ -104,12 +104,17 @@ paste an address into that field the installer notices and fixes it.
 The token is created **inside the 3X-UI panel** (not in Telegram and not in the
 bot):
 
-1. Open the panel → **Settings** → **API Tokens** (some builds call it “API
-   Settings”).
-2. Create a token with any name (e.g. `monitor-bot`) and the **`node-sync`**
-   scope: it exposes inbounds and subscriptions. `monitor` gives status only,
-   `admin` is not needed.
-3. Copy the value — that is `PANEL_API_TOKEN`.
+1. **3X-UI v3.x:** “Panel settings → Account → API token” → create a token with
+   the **`node-sync`** scope (or `admin`). **3X-UI 2.x:** “Settings → API
+   Tokens”.
+2. `node-sync` exposes inbounds and subscriptions — exactly what the bot needs.
+   `monitor` gives status only and is not enough.
+3. **Copy the value immediately**: v3 shows a token only once, afterwards just
+   “set”. That value is `PANEL_API_TOKEN`.
+
+On v3 the `sudo x-ui setting -getApiToken` command no longer creates admin
+tokens — it rotates the service `cli-fallback` one, so creating the token in the
+UI is simpler.
 
 The quickest way is from the server terminal (the command prints the value):
 

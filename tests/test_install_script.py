@@ -440,3 +440,11 @@ def test_token_detection_ignores_scope_names(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+
+
+def test_installer_mentions_v3_token_location() -> None:
+    """В 3X-UI v3 токен лежит в «Учётной записи», а не в «API Tokens»."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "Учётная запись" in text
+    assert "скопируйте сразу" in text
+    assert "node-sync" in text
