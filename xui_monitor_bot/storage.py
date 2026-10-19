@@ -46,6 +46,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 """
 
 
+class StorageError(RuntimeError):
+    """База повреждена или недоступна: бот не должен стартовать вслепую."""
+
+
 class Storage:
     """Потокобезопасная обёртка над SQLite.
 
@@ -63,9 +67,20 @@ class Storage:
             self.path, isolation_level=None, check_same_thread=False
         )
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode = WAL")
-        self.conn.execute("PRAGMA synchronous = NORMAL")
-        self.conn.executescript(SCHEMA)
+        try:
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            self.conn.execute("PRAGMA synchronous = NORMAL")
+            # Даём другим читателям/писателям шанс освободить базу: без этого
+            # параллельный доступ падал с «database is locked».
+            self.conn.execute("PRAGMA busy_timeout = 5000")
+            self.conn.executescript(SCHEMA)
+        except sqlite3.DatabaseError as exc:
+            self.conn.close()
+            raise StorageError(
+                f"База {self.path} повреждена или недоступна: {exc}. "
+                "Перенесите или удалите файл — бот создаст новую "
+                "(история метрик и журнал действий будут потеряны)."
+            ) from exc
         self._restrict_permissions()
 
     def _restrict_permissions(self) -> None:

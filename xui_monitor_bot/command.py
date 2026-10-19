@@ -36,9 +36,11 @@ async def run_command(
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except TimeoutError:
-        with suppress(ProcessLookupError):
-            process.kill()
-        stdout, stderr = await process.communicate()
+        _terminate(process)
+        # Забираем остаток вывода, но не бесконечно: процесс мог оставить
+        # детей, которые держат пайпы открытыми.
+        with suppress(TimeoutError, asyncio.CancelledError):
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
         return CommandResult(
             action=action or command,
             command=command,
@@ -49,6 +51,11 @@ async def run_command(
             )[-MAX_CAPTURED_OUTPUT:],
             duration=time.monotonic() - started,
         )
+    except asyncio.CancelledError:
+        # Бота выключают или задача отменена: без этого дочерний процесс
+        # (например, apt) оставался работать в фоне после остановки бота.
+        _terminate(process)
+        raise
 
     return CommandResult(
         action=action or command,
@@ -58,6 +65,12 @@ async def run_command(
         stderr=_decode(stderr)[-MAX_CAPTURED_OUTPUT:],
         duration=time.monotonic() - started,
     )
+
+
+def _terminate(process: asyncio.subprocess.Process) -> None:
+    """Убивает процесс, если он ещё жив (kill уже мёртвого — не ошибка)."""
+    with suppress(ProcessLookupError):
+        process.kill()
 
 
 def _decode(raw: bytes) -> str:

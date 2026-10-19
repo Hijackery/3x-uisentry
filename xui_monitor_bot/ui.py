@@ -327,16 +327,36 @@ def render_finding(finding: Finding) -> str:
     return text
 
 
+def _cell(value: object, fmt: str = "{}") -> str:
+    """Число из базы может оказаться NULL или мусором: не роняем весь отчёт."""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "—"
+    return fmt.format(number)
+
+
+def _stamp(value: object, fmt: str) -> str:
+    try:
+        seconds = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "—"
+    try:
+        moment = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    except (OSError, OverflowError, ValueError):
+        return "—"
+    return moment.strftime(fmt)
+
+
 def render_history(rows: list[sqlite3.Row], *, title: str) -> str:
     if not rows:
         return f"{title}\nПока нет накопленных измерений."
     lines = [f"📈 <b>{esc(title)}</b>", "почасовое среднее (UTC) · CPU / RAM / диск"]
     for row in rows:
-        stamp = datetime.fromtimestamp(row["bucket"], tz=timezone.utc).strftime(
-            "%d.%m %H:00"
-        )
+        stamp = _stamp(row["bucket"], "%d.%m %H:00")
         lines.append(
-            f"{stamp} — {row['cpu']:.0f}% / {row['mem']:.0f}% / {row['disk']:.0f}%"
+            f"{stamp} — {_cell(row['cpu'], '{:.0f}')}% / "
+            f"{_cell(row['mem'], '{:.0f}')}% / {_cell(row['disk'], '{:.0f}')}%"
         )
     return "\n".join(lines)
 
@@ -346,9 +366,7 @@ def render_audit(rows: list[sqlite3.Row]) -> str:
         return "Журнал действий пуст."
     lines = ["🧾 <b>Журнал действий</b>"]
     for row in rows:
-        stamp = datetime.fromtimestamp(row["ts"], tz=timezone.utc).strftime(
-            "%d.%m %H:%M:%S"
-        )
+        stamp = _stamp(row["ts"], "%d.%m %H:%M:%S")
         mark = "✅" if row["ok"] else "❌"
         who = row["telegram_id"] or "—"
         lines.append(f"{mark} {stamp} · {esc(row['action'])} · id {who}")

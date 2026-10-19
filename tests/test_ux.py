@@ -145,10 +145,20 @@ async def test_button_press_never_strands_the_user(
 
 
 async def test_cancelled_action_returns_to_menu(bot_app: MonitorBot) -> None:
-    text, markup = await _press(bot_app, "no:abcdefgh")
+    pending = bot_app.actions.request("reboot", "перезагрузка", owner_id=ADMIN_ID)
+    text, markup = await _press(bot_app, f"no:{pending.token}")
     assert "Отменено" in text
     assert markup is not None
     assert markup.inline_keyboard, "после отмены клавиатура не должна исчезать"
+
+
+async def test_cancel_of_unknown_token_is_reported_honestly(
+    bot_app: MonitorBot,
+) -> None:
+    """Раньше бот писал «Отменено», даже когда отменять было нечего."""
+    text, _ = await _press(bot_app, "no:unknown123")
+    assert "Отменено" not in text
+    assert "неактуально" in text
 
 
 # -------------------------------------------------------------- прочее UX

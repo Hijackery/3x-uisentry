@@ -74,20 +74,27 @@ class ActionManager:
         return pending
 
     def consume(self, token: str, user_id: int | None = None) -> PendingAction | None:
-        """Отдаёт действие по токену и сразу забывает его."""
-        pending = self._pending.pop(token, None)
+        """Отдаёт действие по токену и забывает его — но только после проверок.
+
+        Раньше токен удалялся сразу: неудачная попытка (просроченная или чужая)
+        уничтожала подтверждение законного администратора, и он больше не мог
+        подтвердить своё действие.
+        """
+        pending = self._pending.get(token)
         if pending is None:
             return None
         if time.time() - pending.created_at > self.settings.confirm_ttl:
+            self._pending.pop(token, None)
             raise ActionError("Время подтверждения истекло, повторите команду")
         # Токен подтверждения подписан на администратора, который его запросил:
         # чужой (в т.ч. пересланный) токен подтвердить нельзя.
         if pending.owner_id and user_id is not None and pending.owner_id != user_id:
             raise ActionError("Подтверждение запросил другой администратор")
-        return pending
+        return self._pending.pop(token, None)
 
-    def cancel(self, token: str) -> None:
-        self._pending.pop(token, None)
+    def cancel(self, token: str) -> bool:
+        """Снимает подтверждение. False — снимать было нечего."""
+        return self._pending.pop(token, None) is not None
 
     def _prune(self) -> None:
         deadline = time.time() - self.settings.confirm_ttl
@@ -117,14 +124,22 @@ class ActionManager:
         )
 
     async def restart_xray(self) -> CommandResult:
-        """Рестарт xray через API панели — без sudo и без остановки самой панели."""
-        panel = PanelClient(self.settings)
-        try:
-            await panel.restart_xray()
-        except PanelError as exc:
-            raise ActionError(f"Панель отклонила рестарт xray: {exc}") from exc
-        finally:
-            await panel.close()
+        """Рестарт xray через API панели — без sudo и без остановки самой панели.
+
+        Кулдаун здесь так же обязателен, как и для sudo-действий: без него
+        подтверждённую кнопку можно было нажимать подряд, заливая панель
+        запросами на рестарт.
+        """
+        async with self._lock:
+            self._check_cooldown(ACTION_RESTART_XRAY)
+            panel = PanelClient(self.settings)
+            try:
+                await panel.restart_xray()
+            except PanelError as exc:
+                raise ActionError(f"Панель отклонила рестарт xray: {exc}") from exc
+            finally:
+                await panel.close()
+            self._mark_run(ACTION_RESTART_XRAY)
 
         return CommandResult(
             action=ACTION_RESTART_XRAY,
@@ -188,7 +203,9 @@ class ActionManager:
         # Команда передаётся одним аргументом: sudo-правило разрешает
         # ``xui-ctl run_command *``, а белый список проверяется уже в скрипте.
         return await self._privileged(
-            [ACTION_COMMAND, command], ACTION_COMMAND, timeout=300.0
+            [ACTION_COMMAND, command],
+            ACTION_COMMAND,
+            timeout=float(self.settings.command_timeout),
         )
 
     # -------------------------------------------------------------- запуск
@@ -200,11 +217,13 @@ class ActionManager:
         *,
         timeout: float = 60.0,
     ) -> CommandResult:
-        self._check_cooldown(action)
         argv = [self.settings.sudo_wrapper, *args]
+        # Проверка и отметка внутри блокировки: иначе два одновременных нажатия
+        # успевали пройти кулдаун и выполнялись оба.
         async with self._lock:
+            self._check_cooldown(action)
             result = await run_command(argv, timeout=timeout, action=action)
-        self._mark_run(action)
+            self._mark_run(action)
         return result
 
     async def execute(self, pending: PendingAction) -> CommandResult:

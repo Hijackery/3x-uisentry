@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sqlite3
+import sys
 import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any
+from typing import Any, Final
 
 from telegram import CallbackQuery, InlineKeyboardMarkup, Message, Update, User
 from telegram.constants import ChatAction, ParseMode
-from telegram.error import BadRequest, TelegramError
+from telegram.error import BadRequest, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -38,8 +41,8 @@ from .actions import (
 from .alerts import AlertEngine, Finding
 from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
-from .settings import Settings, load_settings
-from .storage import Storage
+from .settings import ConfigError, Settings, load_settings
+from .storage import Storage, StorageError
 
 #: PTB обобщает Application шестью параметрами; конкретные типы здесь не важны.
 BotApplication = Application[Any, Any, Any, Any, Any, Any]
@@ -207,8 +210,11 @@ class MonitorBot:
         delivered = True
         for chunk in _split(text, 3500):
             try:
-                await self.app.bot.send_message(
-                    chat_id=chat_id, text=chunk, parse_mode=ParseMode.HTML
+                await _send_with_retry(
+                    self.app.bot.send_message,
+                    chat_id=chat_id,
+                    text=chunk,
+                    parse_mode=ParseMode.HTML,
                 )
             except TelegramError as exc:
                 logger.error("Не удалось отправить сообщение в %s: %s", chat_id, exc)
@@ -305,7 +311,7 @@ class MonitorBot:
         try:
             update_info = await self.monitor.panel.panel_update_info()
         except Exception as exc:  # доп. информация не критична
-            logger.debug("getPanelUpdateInfo недоступен: %s", exc)
+            logger.info("getPanelUpdateInfo недоступен: %s", exc)
             update_info = {}
         if update_info:
             latest = update_info.get("tagName") or update_info.get("version") or "?"
@@ -420,10 +426,12 @@ class MonitorBot:
             await self._run_confirmed(query, data, user_id)
             return
         if data.startswith("no:"):
-            self.actions.cancel(data[3:])
+            cancelled = self.actions.cancel(data[3:])
             await self._edit(
                 query,
-                "❌ Отменено — действие не выполнено.",
+                "❌ Отменено — действие не выполнено."
+                if cancelled
+                else "⌛ Подтверждение уже неактуально, отменять нечего.",
                 markup=ui.main_menu(self.is_admin(user_id)),
             )
             return
@@ -503,7 +511,15 @@ class MonitorBot:
             await self._edit(callback, "⛔ Только для администраторов.")
             return
 
-        _, action, arg = data.split(":", 2)
+        parts = data.split(":", 2)
+        if len(parts) < 3:
+            await self._edit(
+                callback,
+                "Неизвестная кнопка. Возможно, клавиатура устарела.",
+                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+            )
+            return
+        _, action, arg = parts
         base = CONFIRM_DESCRIPTIONS.get(action)
         if base is None:
             await self._edit(
@@ -540,7 +556,15 @@ class MonitorBot:
             await self._edit(callback, "⛔ Только для администраторов.")
             return
 
-        _, action, token = data.split(":", 2)
+        parts = data.split(":", 2)
+        if len(parts) < 3:
+            await self._edit(
+                callback,
+                "Неизвестная кнопка. Возможно, клавиатура устарела.",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
+            return
+        _, action, token = parts
         try:
             pending = self.actions.consume(token, user_id)
         except ActionError as exc:
@@ -837,14 +861,21 @@ class MonitorBot:
         self._snapshot_at = time.monotonic()
 
         if snapshot.system is not None:
-            await asyncio.to_thread(self.storage.record_sample, snapshot.system)
-            await asyncio.to_thread(
-                self.storage.prune_samples,
-                time.time() - SAMPLE_RETENTION_DAYS * 86400,
-            )
+            try:
+                await asyncio.to_thread(self.storage.record_sample, snapshot.system)
+                await asyncio.to_thread(
+                    self.storage.prune_samples,
+                    time.time() - SAMPLE_RETENTION_DAYS * 86400,
+                )
+            except sqlite3.Error as exc:
+                logger.warning("Не удалось записать метрики в базу: %s", exc)
 
         findings = self.engine.evaluate(snapshot)
-        outbox = await asyncio.to_thread(self.engine.update, findings)
+        try:
+            outbox = await asyncio.to_thread(self.engine.update, findings)
+        except sqlite3.Error as exc:
+            logger.warning("Не удалось обновить состояние алертов: %s", exc)
+            return
         if not outbox:
             return
 
@@ -900,8 +931,9 @@ class MonitorBot:
         markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         try:
-            await callback.edit_message_text(
-                text,
+            await _send_with_retry(
+                callback.edit_message_text,
+                text=text,
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True,
                 reply_markup=markup,
@@ -918,7 +950,15 @@ class MonitorBot:
         except TelegramError as exc:
             logger.warning("Не удалось обновить сообщение: %s", exc)
         message = _message_of(callback)
-        await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        try:
+            await _send_with_retry(
+                message.reply_text,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=markup,
+            )
+        except TelegramError as exc:
+            logger.warning("Не удалось отправить сообщение: %s", exc)
 
 
 # --------------------------------------------------------------- утилиты
@@ -949,13 +989,52 @@ async def _safe_edit(
     status: Message, text: str, *, markup: InlineKeyboardMarkup | None = None
 ) -> None:
     try:
-        await status.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        await _send_with_retry(
+            status.edit_text,
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
     except TelegramError as exc:
         logger.warning("Не удалось обновить статус: %s", exc)
 
 
 def _needs_reboot() -> bool:
     return os.path.exists("/var/run/reboot-required")
+
+
+#: Дольше этого flood control не ждём: иначе обработчик «зависает» на минуты
+#: и Telegram присылает те же апдейты повторно.
+MAX_FLOOD_WAIT: Final = 30.0
+FLOOD_ATTEMPTS: Final = 3
+
+
+async def _send_with_retry(
+    func: Callable[..., Awaitable[object]],
+    **kwargs: object,
+) -> None:
+    """Отправка с уважением к flood control Telegram.
+
+    Без этого `RetryAfter` просто логировался, и сообщение (например, результат
+    рестарта сервиса) бесследно терялось. Здесь ждём указанную паузу и пробуем
+    ещё раз; если Telegram просит слишком долго — сдаёмся с записью в лог.
+    """
+    for attempt in range(FLOOD_ATTEMPTS):
+        try:
+            await func(**kwargs)
+            return
+        except RetryAfter as exc:
+            raw_delay = exc.retry_after
+            delay = (
+                raw_delay.total_seconds()
+                if isinstance(raw_delay, timedelta)
+                else float(raw_delay)
+            ) + 0.5
+            if attempt == FLOOD_ATTEMPTS - 1 or delay > MAX_FLOOD_WAIT:
+                logger.warning("Flood control %.0f c: сообщение не отправлено", delay)
+                raise
+            logger.warning("Flood control: пауза %.0f c, повтор отправки", delay)
+            await asyncio.sleep(delay)
 
 
 def _split(text: str, limit: int = 3500) -> list[str]:
@@ -1009,14 +1088,22 @@ def main() -> None:
     # Секреты (база, лог) не должны быть доступны другим пользователям хоста,
     # даже если файлы создаются с учёткой по умолчанию.
     os.umask(0o077)
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except ConfigError as exc:
+        print(f"Ошибка конфигурации:\n{exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
     _setup_logging(settings)
     if not settings.panel_verify_tls:
         logger.warning(
             "PANEL_VERIFY_TLS=false: TLS-сертификат панели не проверяется — "
             "бот уязвим к подмене панели в сети. Включайте только для отладки."
         )
-    app = create_app(settings)
+    try:
+        app = create_app(settings)
+    except StorageError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(2) from exc
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
