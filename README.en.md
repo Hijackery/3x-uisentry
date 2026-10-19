@@ -284,7 +284,7 @@ All settings are in `/opt/xui-monitor-bot/.env`, an annotated example is
 | `TELEGRAM_ADMIN_IDS` | administrator IDs, comma-separated |
 | `ALERT_CHAT_ID` | chat for alerts (empty — admins in private) |
 | `TELEGRAM_API_URL` | custom Bot API or proxy (official by default) |
-| `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
+| `PANEL_URL` | panel address: IP or domain name, e.g. `https://panel.example.com:2053` (if the panel has “Panel domain” set, use exactly that) |
 | `PANEL_BASE_PATH` | panel `webBasePath`, if set |
 | `PANEL_API_TOKEN` | panel token (scope `node-sync`) |
 | `PANEL_VERIFY_TLS` | verify the panel TLS certificate (default `true`) |
@@ -310,6 +310,19 @@ All settings are in `/opt/xui-monitor-bot/.env`, an annotated example is
 | `LOG_PATH` | log file |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `SUDO_WRAPPER` | path to `xui-ctl` |
+
+`PANEL_URL` accepts both an IP and a domain name. Two practical rules:
+
+- if the panel has **“Panel domain”** (`webDomain`) configured, 3X-UI validates
+  the `Host` header and answers `403` to anything else — then `PANEL_URL` must use
+  exactly that name, not the IP;
+- the name must resolve **from the server itself** (the bot runs there). If the
+  domain points to the public IP and NAT loopback is unavailable, use
+  `http://127.0.0.1:2053` with the same `PANEL_BASE_PATH`. Bracket IPv6:
+  `http://[::1]:2053`.
+
+Quick check: `curl -fsS -o /dev/null -w '%{http_code}\n' https://your-domain:5580/panel/`
+(a `403` means the domain validation is the reason).
 
 Process environment variables take precedence over the `.env` file.
 
