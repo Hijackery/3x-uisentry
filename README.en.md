@@ -24,6 +24,10 @@ after a button confirmation and only for the administrator.
 ## Install
 
 ```bash
+# stable version (recommended): the tag is pinned and served immediately, no branch cache
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+
+# latest from the main branch
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
 ```
 
@@ -75,11 +79,15 @@ Useful options: `--repo owner/name`, `--ref BRANCH`, `--prefix DIR`, `--user NAM
 `--no-start`, `--force-config`, `--print-source`, `--sha256 HASH`, `--init TYPE`,
 `--menu`. Full list — `--help`.
 
-Reproducible install (pinned version plus archive checksum):
+Verifiable install (pinned version plus archive checksum):
 
 ```bash
-sudo env SOURCE_SHA256='<sha256 of the archive>' \
-  bash <(curl -Ls .../raw/<tag>/install.sh)
+# 1) compute the archive hash of the desired version
+curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.0 | sha256sum
+
+# 2) install, verifying the archive against that hash
+sudo env SOURCE_SHA256='<hash from step 1>' \
+  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
 ```
 
 GitHub caches the `main` branch for a few minutes: if the repository was just

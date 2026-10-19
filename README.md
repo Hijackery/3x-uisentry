@@ -24,6 +24,10 @@ Telegram-бот для сервера с панелью 3X-UI: следит за
 ## Установка
 
 ```bash
+# стабильная версия (рекомендуется): тег фиксирован и отдаётся сразу, без кэша ветки
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
+
+# последняя версия из ветки main
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
 ```
 
@@ -65,11 +69,15 @@ sudo env \
 `--user NAME`, `--no-start`, `--force-config`, `--print-source` (показать, откуда
 будет взята версия), `--sha256 HASH`, `--menu`. Полный список — `--help`.
 
-Воспроизводимая установка (привязка к версии и контрольная сумма архива):
+Проверяемая установка (привязка к версии и контрольная сумма архива):
 
 ```bash
-sudo env SOURCE_SHA256='<sha256 архива>' \
-  bash <(curl -Ls .../raw/<тег>/install.sh)
+# 1) посчитать хеш архива нужной версии
+curl -fsSL https://codeload.github.com/Hijackery/xui-monitor-bot/tar.gz/refs/tags/v1.0.0 | sha256sum
+
+# 2) установить, сверив архив с этим хешем
+sudo env SOURCE_SHA256='<хеш из шага 1>' \
+  bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/v1.0.0/install.sh)
 ```
 
 ## Меню настроек (`xui-menu`)
