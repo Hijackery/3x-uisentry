@@ -512,6 +512,41 @@ private. For a shared chat, add the bot there, send a message and find the chat 
 Remember: alerts contain addresses, subscriptions and traffic — everyone in the
 group will see them. Commands and buttons still work only in private chat.
 
+### Terminal (optional)
+
+A full browser shell — a separate service, not part of the bot:
+
+```bash
+sudo bash install.sh --terminal              # shell as uisentry-term
+sudo bash install.sh --root-terminal         # + root session (sudo -i)
+sudo bash install.sh --terminal --terminal-origin https://term.example.com
+```
+
+What happens:
+
+- a dedicated `uisentry-term` user and `uisentry-terminal` service are created;
+- the service listens on `127.0.0.1:8788` and is not exposed publicly;
+- login: Telegram `initData` + TOTP (outside Telegram also an access token from
+  `/etc/uisentry/terminal-secrets.env`, `600 root`);
+- terminal secrets live in `/etc/uisentry/terminal-secrets.env` (`600 root`);
+  systemd injects them, the service user never reads the file;
+- `--root-terminal` adds the exact sudoers rule
+  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l`.
+
+Default access is local/SSH tunnel only:
+
+```bash
+ssh -L 8788:127.0.0.1:8788 root@server
+# then open http://127.0.0.1:8788
+```
+
+For Telegram access set `--terminal-origin https://...` and put Caddy/Nginx with
+TLS in front of `127.0.0.1:8788`.
+
+> A root terminal is a real root shell. TOTP protects the login, but a compromised
+> web layer/session/dependency defeats it. Keep it behind VPN/SSH and do not
+> expose it publicly without a second perimeter.
+
 ## Secrets and storage
 
 - Bot and panel tokens live in `.env` with `640 root:<service group>`; the

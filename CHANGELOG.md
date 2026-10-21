@@ -68,6 +68,17 @@
 - Логи чтения: журнал сервиса с фильтром «🔎 Только ошибки» и добором строк,
   `/audit` с фильтрами «отказы / действия».
 
+### Возможности
+
+- Терминал (опционально): отдельный сервис `uisentry-terminal`, пользователь
+  `uisentry-term`, вход по Telegram initData + TOTP, одноразовые тикеты,
+  access token для доступа вне Telegram, опциональный root через точное
+  sudoers-правило `/bin/bash -l`. По умолчанию слушает 127.0.0.1.
+- Инвентарь панелей/VPN: 3X-UI, S-UI, Marzban, Hiddify, Xray, sing-box,
+  WireGuard, AmneziaWG, OpenVPN, Shadowsocks, Tailscale; установщик сам
+  подставляет SERVICES, экран `/stack` показывает найденное и наблюдаемое.
+- Установщик: apk (Alpine), xbps (Void), pkg (FreeBSD, best-effort).
+
 ### Исправлено
 
 - У логов из `/run` (`os_logs`, `xui_logs`, `kernel_logs`, `dmesg`) появились
@@ -243,6 +254,17 @@ tags are published — the current version is always the `main` branch; update v
   checks.
 - CI now checks `uisentry-menu` and the init script syntax, runs `shellcheck` on the
   menu, and validates the sudoers generated from real unit names and command keys.
+
+### Added
+
+- Optional terminal: separate `uisentry-terminal` service, `uisentry-term` user,
+  Telegram initData + TOTP login, one-time tickets, access token for non-Telegram
+  access, optional root via the exact sudoers rule `/bin/bash -l`. Listens on
+  127.0.0.1 by default.
+- Panel/VPN inventory: 3X-UI, S-UI, Marzban, Hiddify, Xray, sing-box, WireGuard,
+  AmneziaWG, OpenVPN, Shadowsocks, Tailscale; the installer fills `SERVICES`,
+  `/stack` shows detected vs watched.
+- Package managers: apk (Alpine), xbps (Void), pkg (FreeBSD, best-effort).
 
 ### Fixed
 

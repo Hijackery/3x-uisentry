@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .auth import (
     AuthError,
     RateLimiter,
+    ReplayGuard,
     TicketStore,
     validate_init_data,
     verify_totp,
@@ -154,6 +155,7 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     tickets = TicketStore(settings.secret, ttl=settings.session_ttl)
     limiter = RateLimiter(limit=5, window=60.0)
+    replay = ReplayGuard(ttl=120.0)
     sessions: dict[int, WebSocket] = {}
 
     @app.middleware("http")
@@ -171,6 +173,9 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     @app.post("/api/session")
     async def session(request: Request, body: SessionRequest) -> dict[str, Any]:
         client = request.client.host if request.client else "unknown"
+        origin = request.headers.get("origin", "")
+        if settings.public_origin and origin and origin != settings.public_origin:
+            raise HTTPException(status_code=403, detail="чужой Origin")
         try:
             user_id = 0
             name = ""
@@ -193,6 +198,8 @@ def create_app(settings: TerminalSettings) -> FastAPI:
                 raise HTTPException(status_code=429, detail="слишком много попыток")
             if not verify_totp(settings.totp_secret, body.totp):
                 raise AuthError("неверный код TOTP")
+            if not replay.allow(f"{user_id}:{body.totp}"):
+                raise AuthError("этот код TOTP уже использован")
             if body.root and not settings.allow_root:
                 raise AuthError("root-терминал выключен")
             ticket = tickets.issue(user_id, root=body.root and settings.allow_root)

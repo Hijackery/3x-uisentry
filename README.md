@@ -511,6 +511,41 @@ sudo uisentry-menu apt-logs 100
 Помните: в алертах есть адреса, подписки и трафик — в группе их увидят все
 участники. Команды и кнопки при этом всё равно работают только в личке.
 
+### Терминал (опционально)
+
+Полноценный shell в браузере — отдельный сервис, не часть бота:
+
+```bash
+sudo bash install.sh --terminal              # shell пользователя uisentry-term
+sudo bash install.sh --root-terminal         # + root-сессия (sudo -i)
+sudo bash install.sh --terminal --terminal-origin https://term.example.com
+```
+
+Что происходит:
+
+- создаётся отдельный пользователь `uisentry-term` и служба `uisentry-terminal`;
+- сервис слушает `127.0.0.1:8788`, наружу не выставлен;
+- вход: Telegram `initData` + код TOTP (для доступа вне Telegram — ещё и
+  access token из `/etc/uisentry/terminal-secrets.env`, `600 root`);
+- секреты терминала лежат в `/etc/uisentry/terminal-secrets.env` с правами
+  `600 root`; systemd передаёт их процессу, сам пользователь файл не читает;
+- `--root-terminal` добавляет **точное** правило sudoers
+  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l`.
+
+Доступ по умолчанию — только с сервера/через SSH-туннель:
+
+```bash
+ssh -L 8788:127.0.0.1:8788 root@сервер
+# затем откройте http://127.0.0.1:8788
+```
+
+Для доступа из Telegram задайте `--terminal-origin https://...` и поставьте
+Caddy/Nginx с TLS перед `127.0.0.1:8788`.
+
+> Root-терминал — это полноценный root-shell. TOTP защищает вход, но при
+> компрометации веб-слоя/сессии/зависимостей защита падает. Держите его за
+> VPN/SSH-туннелем, не публикуйте в интернет без второго периметра.
+
 ## Секреты и хранение
 
 - Токены бота и панели — в `.env` с правами `640 root:<группа сервиса>`; сервис

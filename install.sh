@@ -213,6 +213,9 @@ MENU_PATH="${MENU_PATH:-/usr/local/bin/uisentry-menu}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
+TERMINAL=0
+TERMINAL_ALLOW_ROOT=0
+TERMINAL_ORIGIN=""
 INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
@@ -245,6 +248,9 @@ ${BOLD}Установка 3X-UI Sentry${RESET}
   --force-config   перезаписать существующий .env значениями по умолчанию
   --no-start       установить, но не запускать сервис
   --init TYPE      менеджер служб: systemd, openrc или sysv (по умолчанию — авто)
+  --terminal       поставить отдельный веб-терминал (TOTP, только localhost)
+  --root-terminal  то же + разрешить root-сессию (sudo -i) через sudoers
+  --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
   --help           эта справка
 
 Переменные окружения (для --yes и unattended-установки):
@@ -256,6 +262,7 @@ ${BOLD}English${RESET}
   Install: bash <(curl -Ls .../main/install.sh)
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
+            --terminal · --root-terminal · --terminal-origin URL
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -279,6 +286,9 @@ while [ $# -gt 0 ]; do
         --force-config) KEEP_CONFIG=0; shift ;;
         --no-start)     START_SERVICE=0; shift ;;
         --init)         INIT="${2:?--init требует systemd|openrc|sysv}"; shift 2 ;;
+        --terminal)     TERMINAL=1; shift ;;
+        --root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=1; shift ;;
+        --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; shift 2 ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -376,6 +386,22 @@ uninstall() {
     fi
 
     rm -f "$SUDOERS_PATH" "$WRAPPER_PATH" "$MENU_PATH"
+
+    # Терминал (если ставился) — отдельная служба, пользователь и секреты.
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable --now uisentry-terminal >/dev/null 2>&1 || true
+    fi
+    rm -f /etc/systemd/system/uisentry-terminal.service \
+        /etc/sudoers.d/uisentry-terminal \
+        /etc/uisentry/terminal.env /etc/uisentry/terminal-secrets.env
+    rm -rf /etc/uisentry /var/lib/uisentry-term
+    if id uisentry-term >/dev/null 2>&1; then
+        userdel uisentry-term >/dev/null 2>&1 || true
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+
     rm -rf "$PREFIX"
 
     if [ "$KEEP_STATE" -eq 1 ]; then
@@ -1398,6 +1424,165 @@ else
             ;;
     esac
     ok "Служба зарегистрирована: $INIT_SCRIPT"
+fi
+
+
+# ------------------------------------------------------------- терминал
+
+install_terminal() {
+    step "Терминал (опционально)"
+    if [ "$INIT" != "systemd" ]; then
+        warn "Терминал ставится только на systemd; для $INIT пропускаю"
+        return 0
+    fi
+    TERM_USER="uisentry-term"
+    TERM_HOME="/var/lib/uisentry-term"
+    TERM_ENV_DIR="/etc/uisentry"
+    TERM_ENV="$TERM_ENV_DIR/terminal.env"
+    TERM_SECRETS="$TERM_ENV_DIR/terminal-secrets.env"
+    TERM_UNIT="/etc/systemd/system/uisentry-terminal.service"
+    TERM_SUDOERS="/etc/sudoers.d/uisentry-terminal"
+
+    if ! id "$TERM_USER" >/dev/null 2>&1; then
+        useradd --system --no-create-home --home-dir "$TERM_HOME" \
+            --shell /bin/bash --comment "3X-UI Sentry terminal" "$TERM_USER" \
+            || { warn "Не удалось создать $TERM_USER"; return 1; }
+    fi
+    TERM_GROUP="$(id -gn "$TERM_USER")"
+    install -d -m 0750 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_HOME"
+    install -d -m 0750 -o root -g root "$TERM_ENV_DIR"
+
+    TERM_BOT_TOKEN="$(env_get TELEGRAM_BOT_TOKEN)"
+    TERM_ADMIN_IDS="$(env_get TELEGRAM_ADMIN_IDS)"
+    if [ -z "$TERM_BOT_TOKEN" ] || [ -z "$TERM_ADMIN_IDS" ]; then
+        warn "Нет TELEGRAM_BOT_TOKEN/TELEGRAM_ADMIN_IDS — терминал пропущен"
+        return 1
+    fi
+    TERM_ACCESS_USER="${TERM_ADMIN_IDS%%,*}"
+    TERM_TICKET_SECRET="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))')"
+    TERM_ACCESS_TOKEN="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    TERM_TOTP="$("$PYTHON_BIN" -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
+
+    if [ -z "$TERMINAL_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        question TERMINAL_ORIGIN \
+            "Публичный HTTPS-адрес терминала (Enter — только localhost/SSH-туннель)" ""
+    fi
+    case "$TERMINAL_ORIGIN" in
+        "") ;;
+        https://*) TERMINAL_ORIGIN="${TERMINAL_ORIGIN%/}" ;;
+        *) warn "TERMINAL_ORIGIN должен начинаться с https:// — игнорирую"; TERMINAL_ORIGIN="" ;;
+    esac
+
+    cat > "$TERM_SECRETS" <<EOF
+TELEGRAM_BOT_TOKEN=$TERM_BOT_TOKEN
+TELEGRAM_ADMIN_IDS=$TERM_ADMIN_IDS
+TERMINAL_SECRET=$TERM_TICKET_SECRET
+TERMINAL_TOTP_SECRET=$TERM_TOTP
+TERMINAL_ACCESS_TOKEN=$TERM_ACCESS_TOKEN
+TERMINAL_ACCESS_USER=$TERM_ACCESS_USER
+EOF
+    chown root:root "$TERM_SECRETS"
+    chmod 600 "$TERM_SECRETS"
+
+    cat > "$TERM_ENV" <<EOF
+TERMINAL_ALLOW_ROOT=$TERMINAL_ALLOW_ROOT
+TERMINAL_HOST=127.0.0.1
+TERMINAL_PORT=8788
+TERMINAL_PUBLIC_ORIGIN=$TERMINAL_ORIGIN
+TERMINAL_SESSION_TTL=30
+TERMINAL_IDLE_TIMEOUT=900
+TERMINAL_MAX_SESSIONS=1
+TERMINAL_ENV=$TERM_ENV
+EOF
+    chown root:root "$TERM_ENV"
+    chmod 600 "$TERM_ENV"
+
+    cat > "$TERM_UNIT" <<EOF
+[Unit]
+Description=3X-UI Sentry — web terminal (TOTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$TERM_USER
+Group=$TERM_GROUP
+WorkingDirectory=$PREFIX
+EnvironmentFile=$TERM_ENV
+EnvironmentFile=$TERM_SECRETS
+Environment=HOME=$TERM_HOME
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$PREFIX/.venv/bin/uvicorn --factory uisentry.terminal.server:create_app_from_env --host 127.0.0.1 --port 8788 --no-access-log
+Restart=on-failure
+RestartSec=5
+# Это настоящий shell: ProtectSystem/ProtectHome сломали бы запись и /root,
+# поэтому изоляция ограничена отдельным пользователем и сетевым периметром.
+PrivateTmp=true
+NoNewPrivileges=false
+RestrictSUIDSGID=false
+UMask=0077
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 644 "$TERM_UNIT"
+    systemctl daemon-reload
+
+    if [ "$TERMINAL_ALLOW_ROOT" -eq 1 ]; then
+        printf '%s ALL=(root) NOPASSWD: /bin/bash -l\n' "$TERM_USER" > "$TERM_SUDOERS"
+        chown root:root "$TERM_SUDOERS"
+        chmod 440 "$TERM_SUDOERS"
+        if command -v visudo >/dev/null 2>&1 \
+            && ! visudo -cf "$TERM_SUDOERS" >/dev/null 2>&1; then
+            rm -f "$TERM_SUDOERS"
+            TERMINAL_ALLOW_ROOT=0
+            sed -i 's/^TERMINAL_ALLOW_ROOT=.*/TERMINAL_ALLOW_ROOT=0/' "$TERM_ENV"
+            warn "visudo не принял root-правило — root-терминал выключен"
+        fi
+    else
+        rm -f "$TERM_SUDOERS"
+    fi
+
+    systemctl enable uisentry-terminal >/dev/null 2>&1 || true
+    if [ "$START_SERVICE" -eq 1 ]; then
+        systemctl restart uisentry-terminal || warn "Не удалось запустить uisentry-terminal"
+        sleep 2
+        if systemctl is-active --quiet uisentry-terminal; then
+            ok "Терминал запущен на 127.0.0.1:8788"
+        else
+            warn "Терминал не активен: journalctl -u uisentry-terminal -n 30"
+        fi
+    else
+        info "Терминал установлен, запуск пропущен (--no-start)"
+    fi
+
+    info "Вход: Telegram + код TOTP из приложения-аутентификатора."
+    if [ -t 1 ]; then
+        printf '        TOTP secret: %s\n' "$TERM_TOTP"
+        printf '        otpauth: otpauth://totp/3X-UI%%20Sentry:root?secret=%s&issuer=3X-UI%%20Sentry\n' "$TERM_TOTP"
+        printf '        access token (вне Telegram): %s\n' "$TERM_ACCESS_TOKEN"
+    else
+        info "Секреты: sudo cat $TERM_SECRETS (только root)"
+    fi
+    if [ -n "$TERMINAL_ORIGIN" ]; then
+        info "Публичный адрес: $TERMINAL_ORIGIN"
+    else
+        info "Доступ только локально. С ноутбука:"
+        info "  ssh -L 8788:127.0.0.1:8788 root@<сервер>"
+        info "  затем http://127.0.0.1:8788"
+    fi
+    if [ "$TERMINAL_ALLOW_ROOT" -eq 1 ]; then
+        warn "ROOT-терминал включён (sudo -i). Держите его за VPN/SSH-туннелем."
+    else
+        info "Root выключен. Включить: --root-terminal."
+    fi
+    return 0
+}
+
+if [ "$TERMINAL" -eq 1 ]; then
+    install_terminal || warn "Терминал не установлен"
 fi
 
 if [ "$START_SERVICE" -eq 1 ]; then

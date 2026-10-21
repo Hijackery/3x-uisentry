@@ -24,12 +24,17 @@ DEFAULT_ENV_FILE = Path(os.environ.get("TERMINAL_ENV", "/etc/uisentry/terminal.e
 
 def _read_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
-    if path.exists():
-        values = {
-            str(key): str(value)
-            for key, value in dotenv_values(path).items()
-            if value is not None
-        }
+    if path.exists() and os.access(path, os.R_OK):
+        try:
+            values = {
+                str(key): str(value)
+                for key, value in dotenv_values(path).items()
+                if value is not None
+            }
+        except OSError:
+            # 600 root-файл: сервисный пользователь читает значения из
+            # EnvironmentFile, а не с диска.
+            values = {}
     # systemd EnvironmentFile и ручной запуск имеют приоритет над файлом.
     for key in (
         "TELEGRAM_BOT_TOKEN",

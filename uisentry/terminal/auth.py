@@ -176,6 +176,24 @@ class TicketStore:
         self._used = {key: exp for key, exp in self._used.items() if exp > now}
 
 
+class ReplayGuard:
+    """Не даёт повторно использовать тот же TOTP-код в пределах окна."""
+
+    def __init__(self, ttl: float = 120.0) -> None:
+        self.ttl = ttl
+        self._seen: dict[str, float] = {}
+
+    def allow(self, key: str, *, now: float | None = None) -> bool:
+        moment = time.time() if now is None else now
+        if len(self._seen) > 512:
+            self._seen = {k: exp for k, exp in self._seen.items() if exp > moment}
+        expires = self._seen.get(key)
+        if expires is not None and expires > moment:
+            return False
+        self._seen[key] = moment + self.ttl
+        return True
+
+
 class RateLimiter:
     """Простой лимит попыток входа: N за окно."""
 
