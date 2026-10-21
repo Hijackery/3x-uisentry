@@ -29,13 +29,14 @@ class StackItem:
 
 
 STACK: tuple[StackItem, ...] = (
+    # --- панели ---
     StackItem(
         "3x-ui",
         "3X-UI",
         "panel",
         ("x-ui", "3x-ui", "xui"),
         ("/usr/local/x-ui", "/etc/x-ui", "/opt/x-ui"),
-        (2053, 54321, 5580, 2096),
+        (2053, 54321, 5580),
         "API поддерживается",
     ),
     StackItem(
@@ -45,7 +46,7 @@ STACK: tuple[StackItem, ...] = (
         ("s-ui", "sui"),
         ("/usr/local/s-ui", "/etc/s-ui", "/opt/s-ui"),
         (2096,),
-        "только служба и порт",
+        "служба/порт",
     ),
     StackItem(
         "marzban",
@@ -54,7 +55,25 @@ STACK: tuple[StackItem, ...] = (
         ("marzban", "marzban-node"),
         ("/opt/marzban", "/etc/marzban"),
         (8000, 62050),
-        "только служба и порт",
+        "служба/порт",
+    ),
+    StackItem(
+        "marzneshin",
+        "Marzneshin",
+        "panel",
+        ("marzneshin",),
+        ("/opt/marzneshin", "/etc/marzneshin"),
+        (8000,),
+        "служба/порт",
+    ),
+    StackItem(
+        "pasarguard",
+        "PasarGuard",
+        "panel",
+        ("pasarguard",),
+        ("/opt/pasarguard", "/etc/pasarguard"),
+        (8000,),
+        "служба/порт",
     ),
     StackItem(
         "hiddify",
@@ -63,8 +82,27 @@ STACK: tuple[StackItem, ...] = (
         ("hiddify", "hiddify-panel", "hiddify-manager"),
         ("/opt/hiddify-manager", "/opt/hiddify", "/etc/hiddify"),
         (8000, 443),
-        "только служба и порт",
+        "служба/порт",
     ),
+    StackItem(
+        "remnawave",
+        "Remnawave",
+        "panel",
+        ("remnawave", "remnawave-node", "remnawave-backend"),
+        ("/opt/remnawave", "/etc/remnawave"),
+        (3000, 3010),
+        "служба/порт",
+    ),
+    StackItem(
+        "outline",
+        "Outline",
+        "panel",
+        ("shadowbox", "outline-ss-server", "outline"),
+        ("/opt/outline", "/etc/outline"),
+        (443, 9000),
+        "служба/порт",
+    ),
+    # --- прокси/ядра ---
     StackItem(
         "xray",
         "Xray",
@@ -75,22 +113,131 @@ STACK: tuple[StackItem, ...] = (
         "ядро; состояние через 3X-UI",
     ),
     StackItem(
+        "v2ray",
+        "V2Ray",
+        "proxy",
+        ("v2ray",),
+        ("/usr/local/etc/v2ray", "/etc/v2ray"),
+        (443,),
+        "служба/порт",
+    ),
+    StackItem(
         "sing-box",
         "sing-box",
         "proxy",
         ("sing-box",),
         ("/etc/sing-box", "/usr/local/etc/sing-box"),
         (443,),
-        "только служба и порт",
+        "служба/порт",
     ),
+    StackItem(
+        "hysteria",
+        "Hysteria",
+        "proxy",
+        ("hysteria", "hysteria-server", "hysteria2"),
+        ("/etc/hysteria", "/etc/hysteria2"),
+        (443, 36712),
+        "служба/порт",
+    ),
+    StackItem(
+        "tuic",
+        "TUIC",
+        "proxy",
+        ("tuic", "tuic-server"),
+        ("/etc/tuic",),
+        (443,),
+        "служба/порт",
+    ),
+    StackItem(
+        "trojan",
+        "Trojan",
+        "proxy",
+        ("trojan", "trojan-go"),
+        ("/etc/trojan", "/etc/trojan-go"),
+        (443,),
+        "служба/порт",
+    ),
+    StackItem(
+        "naiveproxy",
+        "NaiveProxy",
+        "proxy",
+        ("naive", "naiveproxy"),
+        ("/etc/naiveproxy",),
+        (443,),
+        "служба/порт",
+    ),
+    StackItem(
+        "mieru", "Mieru", "proxy", ("mieru",), ("/etc/mieru",), (443,), "служба/порт"
+    ),
+    StackItem(
+        "shadowtls",
+        "ShadowTLS",
+        "proxy",
+        ("shadow-tls", "shadowtls"),
+        ("/etc/shadow-tls",),
+        (443,),
+        "служба/порт",
+    ),
+    StackItem(
+        "brook", "Brook", "proxy", ("brook",), ("/etc/brook",), (9999,), "служба/порт"
+    ),
+    StackItem(
+        "mtg",
+        "MTProto (mtg)",
+        "proxy",
+        ("mtg", "mtproto-proxy"),
+        ("/etc/mtg",),
+        (443, 3128),
+        "служба/порт",
+    ),
+    StackItem(
+        "shadowsocks",
+        "Shadowsocks",
+        "proxy",
+        (
+            "shadowsocks-libev",
+            "shadowsocks",
+            "ss-server",
+            "ssserver",
+            "shadowsocks-rust",
+        ),
+        ("/etc/shadowsocks-libev", "/etc/shadowsocks", "/etc/shadowsocks-rust"),
+        (8388,),
+        "служба/порт",
+    ),
+    StackItem(
+        "squid", "Squid", "proxy", ("squid",), ("/etc/squid",), (3128,), "служба/порт"
+    ),
+    StackItem(
+        "dante",
+        "Dante SOCKS",
+        "proxy",
+        ("danted", "sockd"),
+        ("/etc/danted.conf", "/etc/sockd.conf"),
+        (1080,),
+        "служба/порт",
+    ),
+    StackItem(
+        "3proxy",
+        "3proxy",
+        "proxy",
+        ("3proxy",),
+        ("/etc/3proxy",),
+        (3128,),
+        "служба/порт",
+    ),
+    StackItem(
+        "gost", "GOST", "proxy", ("gost",), ("/etc/gost",), (8080,), "служба/порт"
+    ),
+    # --- VPN ---
     StackItem(
         "wireguard",
         "WireGuard",
         "vpn",
-        ("wg-quick@wg0", "wg-quick@*", "wireguard"),
+        ("wg-quick@wg0", "wg-quick@*", "wireguard", "wireguard-go"),
         ("/etc/wireguard",),
         (51820,),
-        "только служба",
+        "служба/ядро",
     ),
     StackItem(
         "amneziawg",
@@ -99,7 +246,7 @@ STACK: tuple[StackItem, ...] = (
         ("awg-quick@awg0", "awg-quick@*"),
         ("/etc/amnezia/amneziawg", "/etc/amneziawg"),
         (51820,),
-        "только служба",
+        "служба",
     ),
     StackItem(
         "openvpn",
@@ -108,16 +255,52 @@ STACK: tuple[StackItem, ...] = (
         ("openvpn@server", "openvpn@*", "openvpn"),
         ("/etc/openvpn",),
         (1194,),
-        "только служба",
+        "служба",
     ),
     StackItem(
-        "shadowsocks",
-        "Shadowsocks",
-        "proxy",
-        ("shadowsocks-libev", "shadowsocks", "ss-server"),
-        ("/etc/shadowsocks-libev", "/etc/shadowsocks"),
-        (8388,),
-        "только служба",
+        "strongswan",
+        "IPsec/StrongSwan",
+        "vpn",
+        ("strongswan", "strongswan-starter", "ipsec"),
+        ("/etc/ipsec.d", "/etc/strongswan.d"),
+        (500, 4500),
+        "служба",
+    ),
+    StackItem(
+        "softether",
+        "SoftEther",
+        "vpn",
+        ("vpnserver", "softether-vpnserver", "softether-vpnbridge"),
+        ("/usr/local/vpnserver", "/opt/vpnserver"),
+        (443, 992, 5555),
+        "служба",
+    ),
+    StackItem(
+        "zerotier",
+        "ZeroTier",
+        "mesh",
+        ("zerotier-one",),
+        ("/var/lib/zerotier-one",),
+        (9993,),
+        "служба",
+    ),
+    StackItem(
+        "netbird",
+        "NetBird",
+        "mesh",
+        ("netbird",),
+        ("/etc/netbird", "/var/lib/netbird"),
+        (443,),
+        "служба",
+    ),
+    StackItem(
+        "headscale",
+        "Headscale",
+        "mesh",
+        ("headscale",),
+        ("/etc/headscale",),
+        (8080, 50443),
+        "служба",
     ),
     StackItem(
         "tailscale",
@@ -126,12 +309,35 @@ STACK: tuple[StackItem, ...] = (
         ("tailscaled",),
         ("/var/lib/tailscale",),
         (41641,),
-        "только служба",
+        "служба",
+    ),
+    StackItem(
+        "nebula", "Nebula", "mesh", ("nebula",), ("/etc/nebula",), (4242,), "служба"
     ),
 )
 
+
 #: Дополнительные службы, которые полезно наблюдать вместе со стеком.
-EXTRA_UNITS = ("fail2ban", "docker", "nginx", "caddy")
+EXTRA_UNITS = (
+    "fail2ban",
+    "docker",
+    "containerd",
+    "nginx",
+    "caddy",
+    "haproxy",
+    "ssh",
+    "sshd",
+    "cron",
+    "crond",
+    "ufw",
+    "firewalld",
+    "nftables",
+    "iptables",
+    "chrony",
+    "chronyd",
+    "systemd-timesyncd",
+    "unattended-upgrades",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +406,11 @@ def _matches(unit: str, candidates: tuple[str, ...]) -> str | None:
     return None
 
 
+def _process_names() -> set[str]:
+    text = _run(["ps", "-eo", "comm="])
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
 def _listening_ports() -> set[int]:
     text = ""
     if shutil.which("ss"):
@@ -214,6 +425,7 @@ def _listening_ports() -> set[int]:
 
 def detect_stack() -> list[Detected]:
     units = _units()
+    processes = _process_names()
     detected: list[Detected] = []
     for item in STACK:
         evidence: list[str] = []
@@ -230,6 +442,12 @@ def detect_stack() -> list[Detected]:
                 unit = match
                 evidence.append("unit")
                 break
+        if not unit:
+            for candidate in item.units:
+                name = candidate.rstrip("*").rstrip("@")
+                if name and name in processes:
+                    evidence.append("process")
+                    break
         for path in item.paths:
             if Path(path).exists():
                 if "path" not in evidence:

@@ -578,6 +578,14 @@ case "$OS_ID" in
         PKG_INSTALL="pacman -S --noconfirm --needed"
         VENV_PKGS="python"
         ;;
+    gentoo|funtoo)
+        PKG_INSTALL="emerge --noreplace"
+        VENV_PKGS="dev-lang/python"
+        ;;
+    solus)
+        PKG_INSTALL="eopkg install -y"
+        VENV_PKGS="python3"
+        ;;
     alpine)
         PKG_INSTALL="apk add --no-cache"
         PKG_UPDATE="apk update"
@@ -597,7 +605,9 @@ case "$OS_ID" in
             "pacman:pacman -S --noconfirm --needed:python" \
             "apk:apk add --no-cache:python3 py3-pip py3-virtualenv" \
             "xbps-install:xbps-install -Sy:python3 python3-pip" \
-            "pkg:pkg install -y:python311"
+            "pkg:pkg install -y:python311" \
+            "emerge:emerge --noreplace:dev-lang/python" \
+            "eopkg:eopkg install -y:python3"
         do
             _mgr="${pair%%:*}"
             _rest="${pair#*:}"

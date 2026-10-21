@@ -111,9 +111,9 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 | Что | Поддержка |
 |---|---|
 | **Службы** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
-| **Пакеты** | `apt`, `dnf`, `yum`, `zypper`, `pacman` — определяются автоматически |
+| **Пакеты** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` — определяются автоматически |
 | **Python** | 3.10 и новее; установщик подбирает интерпретатор сам |
-| **Панель** | 3X-UI 2.x и 3.x (API `/panel/api/...`, Bearer-токен) |
+| **Панель** | API 3X-UI 2.x/3.x; остальные панели/VPN — детект и мониторинг службы/порта/процесса |
 | **sudo** | классический sudo и `sudo-rs` (Ubuntu 26.04+): правила генерируются без шаблонов и алиасов |
 | **Архитектуры** | x86_64, ARM — всё, где есть Python и поддерживаемая инициализация |
 
@@ -205,6 +205,20 @@ sudo env \
 значения, а существующие подставит по умолчанию — править файл руками не нужно.
 
 ## Подключение к панели
+
+### Что детектируется
+
+Панели: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
+Outline. Прокси/ядра: Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,
+Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy, GOST. VPN/mesh:
+WireGuard, AmneziaWG, OpenVPN, IPsec/StrongSwan, SoftEther, Tailscale, ZeroTier,
+NetBird, Headscale, Nebula.
+
+Определение — по юнитам (systemd/OpenRC/SysV), путям конфигов и именам
+процессов (`ps`). API-интеграция сейчас только у 3X-UI (inbound'ы, подписки,
+рестарт xray); остальные показываются как службы/порты и честно помечаются
+«API не поддерживается». Docker-контейнеры видны как служба `docker`, но не
+опрашиваются через Docker API (это дало бы боту root-эквивалентные права).
 
 ### Если 3X-UI нет: monitor-only
 

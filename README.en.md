@@ -114,9 +114,9 @@ Service x-ui restarted
 | Item | Support |
 |---|---|
 | **Services** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
-| **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman` — detected automatically |
+| **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` — detected automatically |
 | **Python** | 3.10+; the installer picks a suitable interpreter |
-| **Panel** | 3X-UI 2.x and 3.x (`/panel/api/...`, Bearer token) |
+| **Panel** | 3X-UI 2.x/3.x API; other panels/VPN are detected and monitored as service/port/process |
 | **sudo** | classic sudo and `sudo-rs` (Ubuntu 26.04+): rules are generated without wildcards or aliases |
 | **Architectures** | x86_64, ARM — anything with Python and a supported init system |
 
@@ -209,6 +209,20 @@ If an incomplete `.env` is left from an aborted run, the wizard fills in the
 missing values and offers the existing ones as defaults — no manual editing.
 
 ## Connecting to the panel
+
+### What is detected
+
+Panels: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
+Outline. Proxies/cores: Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan,
+NaiveProxy, Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy,
+GOST. VPN/mesh: WireGuard, AmneziaWG, OpenVPN, IPsec/StrongSwan, SoftEther,
+Tailscale, ZeroTier, NetBird, Headscale, Nebula.
+
+Detection uses units (systemd/OpenRC/SysV), config paths and process names
+(`ps`). Only 3X-UI has API integration (inbounds, subscriptions, xray restart);
+the rest are shown as service/port and honestly marked “API not supported”.
+Docker containers are visible as the `docker` service but are not queried via the
+Docker API (that would give the bot root-equivalent rights).
 
 ### No 3X-UI: monitor-only
 

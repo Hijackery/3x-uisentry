@@ -90,3 +90,28 @@ def test_panel_detection_cli(monkeypatch, capsys) -> None:  # type: ignore[no-un
     monkeypatch.setattr(inventory, "_units", lambda: {"x-ui"})
     assert inventory.main(["--panel"]) == 0
     assert capsys.readouterr().out.strip() == "1"
+
+
+def test_expanded_registry_detects_vpn_and_panels(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(
+        inventory,
+        "_units",
+        lambda: {"hysteria-server", "wg-quick@wg0", "remnawave", "ssserver"},
+    )
+    monkeypatch.setattr(inventory, "_process_names", lambda: set())
+    keys = {item.item.key for item in inventory.detect_stack()}
+    assert {"hysteria", "wireguard", "remnawave", "shadowsocks"} <= keys
+
+
+def test_process_evidence_without_unit(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: set())
+    monkeypatch.setattr(inventory, "_process_names", lambda: {"xray"})
+    found = next(item for item in inventory.detect_stack() if item.item.key == "xray")
+    assert "process" in found.evidence
+    assert found.unit == ""
+
+
+def test_extra_units_include_security_and_web(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: {"fail2ban", "docker", "nginx"})
+    services = inventory.watched_services()
+    assert {"fail2ban", "docker", "nginx"} <= set(services)

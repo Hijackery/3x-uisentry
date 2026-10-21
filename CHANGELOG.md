@@ -35,6 +35,13 @@
 
 ### Возможности
 
+- Расширенный реестр стека: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
+  Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,
+  Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy, GOST;
+  WireGuard, AmneziaWG, OpenVPN, IPsec, SoftEther, Tailscale, ZeroTier, NetBird,
+  Headscale, Nebula. Детект по юнитам, путям и процессам; пакеты apk/xbps/
+  emerge/eopkg/pkg.
+
 - Read-only Mini App: дашборд в Telegram (обзор, службы, панель, трафик,
   подписки, история), вход по initData, cookie HttpOnly, CSP, сервис
   `stacksentry-webapp` на 127.0.0.1:8787, кнопка «Панель» в Telegram. Без действий
@@ -250,6 +257,13 @@ tags are published — the current version is always the `main` branch; update v
 `sudo stacksentry-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- Expanded stack registry: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
+  Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,
+  Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy, GOST;
+  WireGuard, AmneziaWG, OpenVPN, IPsec, SoftEther, Tailscale, ZeroTier, NetBird,
+  Headscale, Nebula. Detection by units, paths and processes; apk/xbps/emerge/
+  eopkg/pkg packages.
 
 - Read-only Mini App: a Telegram dashboard (overview, services, panel, traffic,
   subscriptions, history), initData login, HttpOnly cookie, CSP, the
