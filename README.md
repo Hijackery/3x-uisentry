@@ -791,7 +791,6 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — ОС, init, пакеты, панели, протоколы, рестарт.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — компоненты, поток данных, безопасность, расширение.
 - [docs/RELEASING.md](docs/RELEASING.md) — версии, проверка и установка обновлений.
-- [ROADMAP.md](ROADMAP.md) — направления развития.
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
 - [SECURITY.md](SECURITY.md) — политика и модель безопасности.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — сборка, проверки, PR.
@@ -829,7 +828,6 @@ CI гоняет Python 3.10 и 3.13, `shellcheck`, `bash -n` и `visudo -cf`.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, обязательные проверки, стиль.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
-- [ROADMAP.md](ROADMAP.md) — направления развития.
 - [docs/](docs/README.md) — совместимость, архитектура, обновления.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.
 - [`.env.example`](.env.example) — все настройки с комментариями.

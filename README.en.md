@@ -780,7 +780,6 @@ More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — OS, init, packages, panels, protocols, restart.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, security, extension.
 - [docs/RELEASING.md](docs/RELEASING.md) — versions, checking and applying updates.
-- [ROADMAP.md](ROADMAP.md) — planned work.
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
 - [SECURITY.md](SECURITY.md) — security policy and model.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, checks, PRs.
@@ -818,7 +817,6 @@ Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
-- [ROADMAP.md](ROADMAP.md) — planned work.
 - [docs/](docs/README.md) — compatibility, architecture, updates.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
 - [`.env.example`](.env.example) — every setting with comments.
