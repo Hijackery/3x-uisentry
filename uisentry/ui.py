@@ -574,8 +574,87 @@ def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
         buttons.append(
             [InlineKeyboardButton("🛠 Обслуживание", callback_data="maintenance")]
         )
-    buttons.append([InlineKeyboardButton("❓ Помощь", callback_data="help")])
+        buttons.append(
+            [
+                InlineKeyboardButton("🔐 Безопасность", callback_data="security"),
+                InlineKeyboardButton("❓ Помощь", callback_data="help"),
+            ]
+        )
+    else:
+        buttons.append([InlineKeyboardButton("❓ Помощь", callback_data="help")])
     return InlineKeyboardMarkup(buttons)
+
+
+def render_security(settings: Settings, until: float) -> str:
+    if not settings.require_2fa:
+        return (
+            "🔐 <b>Безопасность</b>\n\n"
+            "2FA для опасных действий выключена. Включить: "
+            "<code>sudo uisentry-menu</code> или повторный установщик с "
+            "<code>--2fa</code>.\n\n"
+            "Даже без 2FA действия требуют подтверждения и пишутся в аудит."
+        )
+    if until > time.time():
+        status = (
+            "🔓 Разблокировано до <b>"
+            + time.strftime("%H:%M", time.localtime(until))
+            + "</b>"
+        )
+    else:
+        status = "🔒 Заблокировано — нужен код TOTP"
+    minutes = max(1, settings.elevation_ttl // 60)
+    return (
+        "🔐 <b>Безопасность</b>\n\n"
+        f"2FA: <b>включена</b>\n{status}\n\n"
+        f"Разблокировка действует {minutes} мин. Для обновлений ОС и "
+        "перезагрузки нужен свежий код (не старше 2 минут).\n\n"
+        "Просмотр состояния, журналов и подписок доступен без кода."
+    )
+
+
+def security_menu(elevated: bool) -> InlineKeyboardMarkup:
+    if elevated:
+        action = InlineKeyboardButton(
+            "🔒 Заблокировать сейчас", callback_data="security:lock"
+        )
+    else:
+        action = InlineKeyboardButton(
+            "🔓 Разблокировать действия", callback_data="security:unlock"
+        )
+    return InlineKeyboardMarkup(
+        [
+            [action],
+            [InlineKeyboardButton("🔄 Обновить", callback_data="security")],
+            [home_button()],
+        ]
+    )
+
+
+def twofa_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("❌ Отмена", callback_data="security:cancel"),
+                InlineKeyboardButton("❓ Где взять код", callback_data="security:help"),
+            ],
+            [home_button()],
+        ]
+    )
+
+
+def render_2fa_prompt(title: str, lock_left: float = 0.0) -> str:
+    lines = [
+        "🔐 <b>Нужен код 2FA</b>",
+        f"Действие: {title}",
+        "",
+    ]
+    if lock_left > 0:
+        lines.append(f"⏳ Слишком много попыток. Подождите {lock_left:.0f} с.")
+    else:
+        lines.append(
+            "Отправьте 6 цифр из приложения-аутентификатора. Сообщение с кодом я удалю."
+        )
+    return "\n".join(lines)
 
 
 def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarkup:
@@ -903,6 +982,8 @@ def render_help(is_admin: bool) -> str:
         "",
         "🔐 <b>Безопасность</b>",
         "• Команды и кнопки работают только в личном чате администратора.",
+        "• 2FA: просмотр без кода; рестарты/apt/команды — после TOTP на 15 мин; "
+        "обновления ОС и перезагрузка — свежий код. Раздел «🔐 Безопасность».",
         "• Опасные действия — только после подтверждения; токен одноразовый.",
         "• Всё пишется в аудит; секреты в сообщениях и логах маскируются.",
         "• Бот работает от отдельного пользователя, привилегии — через узкий "

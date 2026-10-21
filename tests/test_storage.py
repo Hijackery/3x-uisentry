@@ -149,3 +149,14 @@ def test_pending_jobs_migration_adds_message_id(tmp_path) -> None:  # type: igno
         assert rows[0]["message_id"] == 777
     finally:
         storage.close()
+
+
+def test_elevation_roundtrip_and_expiry(storage: Storage) -> None:
+    now = time.time()
+    until = storage.set_elevation(42, 900, now=now)
+    assert until == now + 900
+    assert storage.elevation_until(42, now=now + 10) == until
+    assert storage.elevation_until(42, now=now + 901) == 0.0
+    storage.set_elevation(42, 60, now=now + 1000)
+    storage.clear_elevation(42)
+    assert storage.elevation_until(42, now=now + 1001) == 0.0

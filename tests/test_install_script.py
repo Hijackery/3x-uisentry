@@ -623,3 +623,13 @@ def test_log_variant_buttons_are_allowed() -> None:
     for key in keys:
         assert key in install, key
         assert f'"{key}"' in wrapper, key
+
+
+def test_installer_supports_2fa() -> None:
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "--2fa" in text
+    assert "--no-2fa" in text
+    assert "otpauth://totp/" in text
+    menu = (BASE_DIR / "install" / "uisentry-menu").read_text(encoding="utf-8")
+    assert "cmd_totp" in menu
+    assert "TOTP secret" in menu

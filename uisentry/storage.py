@@ -60,6 +60,12 @@ CREATE TABLE IF NOT EXISTS pending_jobs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_created ON pending_jobs(created_at);
+
+CREATE TABLE IF NOT EXISTS elevations (
+    telegram_id INTEGER PRIMARY KEY,
+    until REAL NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -227,6 +233,44 @@ class Storage:
                 row["key"]
                 for row in self.conn.execute("SELECT key FROM alert_state").fetchall()
             ]
+
+    # ----------------------------------------------------------- 2FA elevation
+
+    def set_elevation(
+        self, telegram_id: int, ttl: int, *, now: float | None = None
+    ) -> float:
+        moment = time.time() if now is None else now
+        until = moment + ttl
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO elevations (telegram_id, until, created_at) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(telegram_id) DO UPDATE SET "
+                "until = excluded.until, created_at = excluded.created_at",
+                (telegram_id, until, moment),
+            )
+        return until
+
+    def elevation_until(self, telegram_id: int, *, now: float | None = None) -> float:
+        moment = time.time() if now is None else now
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT until FROM elevations WHERE telegram_id = ?",
+                (telegram_id,),
+            ).fetchone()
+        if row is None:
+            return 0.0
+        until = float(row["until"])
+        if until <= moment:
+            self.clear_elevation(telegram_id)
+            return 0.0
+        return until
+
+    def clear_elevation(self, telegram_id: int) -> None:
+        with self._lock:
+            self.conn.execute(
+                "DELETE FROM elevations WHERE telegram_id = ?", (telegram_id,)
+            )
 
     # --------------------------------------------------------- pending jobs
 

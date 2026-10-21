@@ -496,6 +496,11 @@ over the file.
 | `CHECK_INTERVAL` | background check period, seconds (minimum 15) |
 | `ACTION_COOLDOWN` | pause between identical actions, seconds |
 | `CONFIRM_TTL` | confirmation button lifetime, seconds |
+| `TOTP_SECRET` | TOTP secret (base32) for 2FA; empty — disabled |
+| `TOTP_REQUIRED` | `1` — require a code for dangerous actions |
+| `ELEVATION_TTL` | how long an unlock lasts, seconds |
+| `TOTP_MAX_ATTEMPTS` | code attempts before lockout |
+| `TOTP_LOCKOUT` | lockout duration after too many attempts, seconds |
 | `COMMAND_TIMEOUT` | allowlisted command timeout, seconds |
 | `COMMAND_ALLOWLIST` | safe diagnostic commands (aliases, see above) |
 | `STATE_PATH` | SQLite database |
@@ -546,6 +551,27 @@ TLS in front of `127.0.0.1:8788`.
 > A root terminal is a real root shell. TOTP protects the login, but a compromised
 > web layer/session/dependency defeats it. Keep it behind VPN/SSH and do not
 > expose it publicly without a second perimeter.
+
+## 2FA for dangerous actions
+
+Viewing state, logs and subscriptions needs **no code**. A code is required only
+where the server can be broken (step-up):
+
+| Level | What | 2FA |
+|---|---|---|
+| 🟢 read-only | status, services, panel, traffic, subscriptions, history, audit | none |
+| 🟡 actions | service/xray restart, `apt update`, allowlisted command | code once, 15-minute unlock |
+| 🔴 destructive | `apt full/phased`, release upgrade, reboot | **fresh** code (max 2 min old) |
+
+Flow: tap “Restart x-ui” → “🔐 Enter the 6-digit code” → the bot deletes the code
+message, verifies it and says “🔓 Actions unlocked until 14:35” → the usual
+confirmation appears. “🔐 Security” in the menu shows status, unlock and lock.
+
+Enable: the installer asks (or `--2fa`). The secret is shown once; add it to
+Google Authenticator/Aegis/1Password. Show it later: `sudo uisentry-menu totp`
+(root only). Protection: one-time code within the window, 3 attempts, 5-minute
+lockout, every success/failure is audited. The secret lives in `.env` with
+`640 root:<service group>` and is scrubbed from logs.
 
 ## Secrets and storage
 

@@ -468,6 +468,21 @@ menu_pick() {
     menu_edit_key "${keys[$(( pick - 1 ))]}"
 }
 
+cmd_totp() {
+    need_root "totp"
+    need_env
+    local secret required
+    secret="$(sed -n 's/^TOTP_SECRET=//p' "$ENV_FILE" | head -1)"
+    required="$(sed -n 's/^TOTP_REQUIRED=//p' "$ENV_FILE" | head -1)"
+    if [ -z "$secret" ]; then
+        info "TOTP_SECRET пуст. Включить: sudo bash install.sh --2fa"
+        return 0
+    fi
+    printf 'TOTP_REQUIRED=%s\n' "${required:-0}"
+    printf 'TOTP secret: %s\n' "$secret"
+    printf 'otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n' "$secret"
+}
+
 cmd_apt_logs() {
     need_root "apt-logs"
     local lines="${1:-80}"
@@ -601,6 +616,7 @@ ${BOLD}uisentry-menu${RESET} — панель управления 3X-UI Sentry
   sudo uisentry-menu restart             перезапустить бота
   sudo uisentry-menu restart-xray        перезапустить xray в панели (через API)
   sudo uisentry-menu apt-logs [N]        журнал фоновых apt-обновлений
+  sudo uisentry-menu totp               TOTP-секрет и otpauth (только root)
   sudo uisentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
   sudo uisentry-menu update              обновить бота с GitHub
   sudo uisentry-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
@@ -617,6 +633,7 @@ ${BOLD}English${RESET}
   sudo uisentry-menu restart | logs [N]  restart the bot / show the log
   sudo uisentry-menu restart-xray        restart xray via the panel API
   sudo uisentry-menu apt-logs [N]        log of background apt upgrades
+  sudo uisentry-menu totp               TOTP secret and otpauth (root only)
   sudo uisentry-menu update              update the bot from GitHub
   sudo uisentry-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
@@ -633,6 +650,7 @@ case "${1:-}" in
     restart) cmd_restart ;;
     restart-xray) cmd_restart_xray ;;
     apt-logs) cmd_apt_logs "${2:-80}" ;;
+    totp) cmd_totp ;;
     logs) cmd_logs "${2:-50}" ;;
     update) cmd_update ;;
     uninstall|remove) cmd_uninstall "${2:-}" ;;

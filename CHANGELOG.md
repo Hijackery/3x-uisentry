@@ -28,6 +28,12 @@
 
 ### Возможности
 
+- 2FA (TOTP) для опасных действий бота: step-up — просмотр без кода, рестарты и
+  apt update после кода с разблокировкой на 15 минут, обновления ОС и
+  перезагрузка — только со свежим кодом. Код одноразовый, 3 попытки, блокировка
+  на 5 минут, аудит; сообщение с кодом удаляется. Установщик спрашивает и
+  печатает otpauth; `sudo uisentry-menu totp` показывает секрет.
+
 - Обновления в боте разделены и отчитываются в чат: `apt update`, `full-upgrade`,
   `phased`, проверка релиза (`do-release-upgrade --check`) и запуск
   `do-release-upgrade` — отдельные пункты. Бот сам следит за systemd-юнитом и
@@ -209,6 +215,12 @@ tags are published — the current version is always the `main` branch; update v
 `sudo uisentry-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- TOTP 2FA for dangerous bot actions: step-up — read-only without a code,
+  restarts and apt update after a code with a 15-minute unlock, OS upgrades and
+  reboot require a fresh code. Codes are one-time, 3 attempts, 5-minute lockout,
+  audited; the code message is deleted. The installer asks and prints otpauth;
+  `sudo uisentry-menu totp` shows the secret.
 
 - Separate, self-reporting updates: `apt update`, `full-upgrade`, `phased`,
   release check (`do-release-upgrade --check`) and the actual

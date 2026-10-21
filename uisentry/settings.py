@@ -161,6 +161,13 @@ class Settings:
     expiring_soon_days: int
     disk_path: str
 
+    #: 2FA для опасных действий (step-up). Пустой секрет = 2FA выключена.
+    totp_secret: str = ""
+    require_2fa: bool = False
+    elevation_ttl: int = 900
+    totp_max_attempts: int = 3
+    totp_lockout: int = 300
+
     extra: dict[str, str] = field(default_factory=dict, repr=False)
 
     def is_admin(self, telegram_id: int | None) -> bool:
@@ -231,6 +238,11 @@ def _build_settings() -> Settings:
         alert_hysteresis=env_float("ALERT_HYSTERESIS", 5.0),
         expiring_soon_days=env_int("EXPIRING_SOON_DAYS", 3, minimum=0),
         disk_path=env_str("DISK_PATH", "/"),
+        totp_secret=env_str("TOTP_SECRET").strip().upper().replace(" ", ""),
+        require_2fa=env_bool("TOTP_REQUIRED", False),
+        elevation_ttl=env_int("ELEVATION_TTL", 900, minimum=60),
+        totp_max_attempts=env_int("TOTP_MAX_ATTEMPTS", 3, minimum=1),
+        totp_lockout=env_int("TOTP_LOCKOUT", 300, minimum=30),
     )
 
     problems = _validate(settings)
@@ -290,6 +302,19 @@ def _validate(settings: Settings) -> list[str]:
             f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "
             "(нужен PEM-файл с сертификатом панели или её CA)"
         )
+    if settings.require_2fa and not settings.totp_secret:
+        problems.append(
+            "TOTP_REQUIRED=1, но TOTP_SECRET пуст — некому подтверждать действия"
+        )
+    if settings.totp_secret:
+        try:
+            import base64
+
+            base64.b32decode(
+                settings.totp_secret + "=" * ((8 - len(settings.totp_secret) % 8) % 8)
+            )
+        except Exception:  # noqa: BLE001 — любая ошибка декодирования
+            problems.append("TOTP_SECRET: неверный base32")
     if not settings.services:
         problems.append("SERVICES пуст: нечего проверять через systemd")
     problems.extend(_service_problems(settings.services))

@@ -216,6 +216,8 @@ START_SERVICE=1
 TERMINAL=0
 TERMINAL_ALLOW_ROOT=0
 TERMINAL_ORIGIN=""
+ENABLE_2FA=0
+DISABLE_2FA=0
 INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
@@ -251,6 +253,8 @@ ${BOLD}Установка 3X-UI Sentry${RESET}
   --terminal       поставить отдельный веб-терминал (TOTP, только localhost)
   --root-terminal  то же + разрешить root-сессию (sudo -i) через sudoers
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
+  --2fa            включить 2FA (TOTP) для опасных действий
+  --no-2fa         выключить 2FA (секрет сохраняется)
   --help           эта справка
 
 Переменные окружения (для --yes и unattended-установки):
@@ -262,7 +266,7 @@ ${BOLD}English${RESET}
   Install: bash <(curl -Ls .../main/install.sh)
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
-            --terminal · --root-terminal · --terminal-origin URL
+            --terminal · --root-terminal · --terminal-origin URL · --2fa · --no-2fa
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -289,6 +293,8 @@ while [ $# -gt 0 ]; do
         --terminal)     TERMINAL=1; shift ;;
         --root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=1; shift ;;
         --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; shift 2 ;;
+        --2fa)          ENABLE_2FA=1; shift ;;
+        --no-2fa)       DISABLE_2FA=1; shift ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -1003,6 +1009,43 @@ else
     [ -n "$ADMIN_IDS" ] || fail "Нужен хотя бы один Telegram ID администратора"
     printf '%s' "$ADMIN_IDS" | grep -qE '^[0-9]+(,[0-9]+)*$' \
         || fail "ADMIN_IDS должны быть числами через запятую, получено: $ADMIN_IDS"
+
+    # --- 2FA для опасных действий ---
+    CURRENT_2FA="$(env_get TOTP_REQUIRED)"
+    if [ "$DISABLE_2FA" -eq 1 ]; then
+        ENABLE_2FA=0
+    elif [ "$ENABLE_2FA" -eq 0 ] && [ -z "$CURRENT_2FA" ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        ask "Включить 2FA (TOTP) для опасных действий? [y/N] "
+        read -r _2fa_answer <&$READ_FD || _2fa_answer=""
+        case "$_2fa_answer" in
+            [yYдД]*) ENABLE_2FA=1 ;;
+            *) ENABLE_2FA=0 ;;
+        esac
+    elif [ -z "$CURRENT_2FA" ]; then
+        ENABLE_2FA=0
+    else
+        [ "$CURRENT_2FA" = "1" ] && ENABLE_2FA=1
+    fi
+    if [ "$DISABLE_2FA" -eq 1 ]; then
+        set_env TOTP_REQUIRED 0
+        info "2FA выключена. Секрет сохранён — включить позже: --2fa."
+    elif [ "$ENABLE_2FA" -eq 1 ]; then
+        TOTP_SECRET_VALUE="$(env_get TOTP_SECRET)"
+        if [ -z "$TOTP_SECRET_VALUE" ]; then
+            TOTP_SECRET_VALUE="$("$PYTHON_BIN" -c \
+                'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
+            info "2FA включена. Добавьте секрет в приложение-аутентификатор:"
+            printf '        TOTP secret: %s\n' "$TOTP_SECRET_VALUE"
+            printf '        otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n' "$TOTP_SECRET_VALUE"
+        fi
+        set_env TOTP_SECRET "$TOTP_SECRET_VALUE"
+        set_env TOTP_REQUIRED 1
+        ok "2FA для опасных действий включена"
+    else
+        set_env TOTP_REQUIRED 0
+        [ -n "$(env_get TOTP_SECRET)" ] || set_env TOTP_SECRET ""
+    fi
 
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
     PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"

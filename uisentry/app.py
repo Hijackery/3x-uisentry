@@ -60,6 +60,7 @@ from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
 from .storage import Storage, StorageError
+from .totp import ReplayGuard, verify_totp
 
 #: PTB обобщает Application шестью параметрами; конкретные типы здесь не важны.
 BotApplication = Application[Any, Any, Any, Any, Any, Any]
@@ -87,6 +88,27 @@ REBOOT_WATCH_GRACE = 1200
 APT_WATCH_STEP = 10
 APT_WATCH_MAX = 2 * 3600
 APT_WATCH_ERROR_LIMIT = 6
+
+#: Разрушительные действия: для них нужен свежий код, а не старая разблокировка.
+CRITICAL_ACTIONS = frozenset(
+    {
+        ACTION_UPGRADE,
+        ACTION_UPGRADE_PHASED,
+        ACTION_RELEASE_UPGRADE,
+        ACTION_REBOOT,
+    }
+)
+#: Всё, что меняет сервер, требует step-up 2FA (если она включена).
+PROTECTED_ACTIONS = CRITICAL_ACTIONS | {
+    ACTION_RESTART_SERVICE,
+    ACTION_RESTART_XRAY,
+    ACTION_APT_UPDATE,
+    ACTION_COMMAND,
+}
+#: Свежий код: разблокировка должна быть не старше 2 минут.
+CRITICAL_FRESH_WINDOW = 120
+#: Сколько ждём код после нажатия опасной кнопки.
+TWOFA_PROMPT_TTL = 120
 
 #: Действия, которые ставят задачу в systemd и требуют отчёта в чат.
 QUEUED_ACTIONS = (
@@ -151,6 +173,11 @@ class MonitorBot:
         #: Последний «экран» в чате: при переходе к новому меню старый удаляем,
         #: чтобы не плодить вереницу сообщений. Алерты и отчёты не трогаем.
         self._last_screen: dict[int, int] = {}
+        #: Step-up 2FA: ожидание кода, неудачи и блокировка после перебора.
+        self._totp_replay = ReplayGuard(ttl=120.0)
+        self._totp_failures: dict[int, list[float]] = {}
+        self._totp_locked: dict[int, float] = {}
+        self._pending_2fa: dict[int, dict[str, Any]] = {}
         self.app: BotApplication = self._build()
 
     # ------------------------------------------------------------ сборка
@@ -183,6 +210,7 @@ class MonitorBot:
             ("logs", self.cmd_logs),
             ("maint", self.cmd_maintenance),
             ("stack", self.cmd_stack),
+            ("security", self.cmd_security),
             ("traffic", self.cmd_traffic),
             ("run", self.cmd_run),
         ):
@@ -876,12 +904,198 @@ class MonitorBot:
             await self._show_run_log(query, data, user_id)
         elif data == "command_prompt":
             await self._prompt_command(query, context)
+        elif data == "security":
+            await self._show_security(query, user_id)
+        elif data == "security:unlock":
+            await self._start_2fa(query, "unlock", "", user_id, "security")
+        elif data == "security:lock":
+            await asyncio.to_thread(self.storage.clear_elevation, user_id)
+            await self._show_security(query, user_id)
+        elif data == "security:cancel":
+            self._pending_2fa.pop(user_id, None)
+            await self._show_security(query, user_id)
+        elif data == "security:help":
+            await self._edit(
+                query,
+                "🔐 Код выдаёт приложение-аутентификатор "
+                "(Google Authenticator, Aegis, 1Password и т.п.). "
+                "Секрет выдаётся при установке или в "
+                "<code>sudo uisentry-menu</code>. Код меняется каждые 30 с.",
+                markup=ui.twofa_menu(),
+            )
         else:
             await self._edit(
                 query,
                 "Неизвестная кнопка. Возможно, клавиатура устарела.",
                 markup=ui.main_menu(self.is_admin(user_id)),
             )
+
+    # ------------------------------------------------------------- 2FA
+
+    def _confirmation_description(self, action: str, arg: str) -> str | None:
+        base = CONFIRM_DESCRIPTIONS.get(action)
+        if base is None:
+            return None
+        description = (
+            f"{base} <code>{ui.esc(arg)}</code>?"
+            if action == ACTION_RESTART_SERVICE
+            else f"{base}?"
+        )
+        if action == ACTION_REBOOT:
+            description = (
+                "<b>Перезагрузить сервер?</b> "
+                "Бот и панель будут недоступны ~1-2 минуты."
+            )
+        return description
+
+    def _needs_2fa(self, action: str) -> bool:
+        return self.settings.require_2fa and action in PROTECTED_ACTIONS
+
+    def _is_elevated(self, user_id: int, *, fresh: bool = False) -> bool:
+        if not self.settings.require_2fa:
+            return True
+        until = self.storage.elevation_until(user_id)
+        now = time.time()
+        if until <= now:
+            return False
+        if fresh:
+            return (until - now) > (self.settings.elevation_ttl - CRITICAL_FRESH_WINDOW)
+        return True
+
+    def _totp_lock_left(self, user_id: int) -> float:
+        return max(0.0, self._totp_locked.get(user_id, 0.0) - time.time())
+
+    def _check_totp(self, user_id: int, code: str) -> tuple[bool, str, int]:
+        lock_left = self._totp_lock_left(user_id)
+        if lock_left > 0:
+            return (
+                False,
+                f"Слишком много попыток. Подождите {lock_left:.0f} с.",
+                0,
+            )
+        if not verify_totp(self.settings.totp_secret, code):
+            now = time.time()
+            failures = [
+                item
+                for item in self._totp_failures.get(user_id, [])
+                if now - item < self.settings.totp_lockout
+            ]
+            failures.append(now)
+            self._totp_failures[user_id] = failures
+            left = max(0, self.settings.totp_max_attempts - len(failures))
+            if left == 0:
+                self._totp_locked[user_id] = now + self.settings.totp_lockout
+                self._totp_failures[user_id] = []
+            return False, "Неверный код.", left
+        if not self._totp_replay.allow(f"{user_id}:{code}"):
+            return False, "Этот код уже использован, дождитесь следующего.", 1
+        self._totp_failures.pop(user_id, None)
+        return True, "", self.settings.totp_max_attempts
+
+    async def _start_2fa(
+        self,
+        callback: CallbackQuery,
+        action: str,
+        arg: str,
+        user_id: int,
+        data: str,
+    ) -> None:
+        self._pending_2fa[user_id] = {
+            "action": action,
+            "arg": arg,
+            "data": data,
+            "expires": time.time() + TWOFA_PROMPT_TTL,
+        }
+        title = (
+            "Разблокировать опасные действия"
+            if action == "unlock"
+            else self._confirmation_description(action, arg) or action
+        )
+        await self._edit(
+            callback,
+            ui.render_2fa_prompt(title, self._totp_lock_left(user_id)),
+            markup=ui.twofa_menu(),
+        )
+
+    async def _complete_2fa(self, message: Message, user_id: int, code: str) -> None:
+        pending = self._pending_2fa.get(user_id)
+        if pending is None:
+            return
+        if pending["expires"] < time.time():
+            self._pending_2fa.pop(user_id, None)
+            await message.reply_text(
+                "⌛ Время ввода кода истекло. Начните действие заново."
+            )
+            return
+        ok, reason, left = self._check_totp(user_id, code)
+        await asyncio.to_thread(
+            self.storage.audit,
+            "2fa",
+            telegram_id=user_id,
+            ok=ok,
+            result=reason or "ok",
+        )
+        if not ok:
+            suffix = f" Осталось попыток: {left}." if left else ""
+            await message.reply_text(f"❌ {ui.esc(reason)}{suffix}")
+            if left == 0:
+                self._pending_2fa.pop(user_id, None)
+            return
+        until = await asyncio.to_thread(
+            self.storage.set_elevation, user_id, self.settings.elevation_ttl
+        )
+        self._pending_2fa.pop(user_id, None)
+        await message.reply_text(
+            f"🔓 Действия разблокированы до "
+            f"{time.strftime('%H:%M', time.localtime(until))}.",
+            parse_mode=ParseMode.HTML,
+        )
+        action = str(pending.get("action", ""))
+        if action == "unlock":
+            await message.reply_text(
+                ui.render_security(self.settings, until),
+                parse_mode=ParseMode.HTML,
+                reply_markup=ui.security_menu(True),
+            )
+            return
+        await self._send_confirmation(
+            message, action, str(pending.get("arg", "")), user_id
+        )
+
+    async def _send_confirmation(
+        self, message: Message, action: str, arg: str, user_id: int
+    ) -> None:
+        description = self._confirmation_description(action, arg)
+        if description is None:
+            return
+        pending = self.actions.request(action, description, arg, owner_id=user_id)
+        await message.reply_text(
+            f"⚠️ {description}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=ui.confirm_menu(action, pending.token),
+        )
+
+    async def _show_security(self, callback: CallbackQuery, user_id: int) -> None:
+        until = await asyncio.to_thread(self.storage.elevation_until, user_id)
+        await self._edit(
+            callback,
+            ui.render_security(self.settings, until),
+            markup=ui.security_menu(until > time.time()),
+        )
+
+    async def cmd_security(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        user_id = _user_id(update) or 0
+        until = await asyncio.to_thread(self.storage.elevation_until, user_id)
+        await self._reply_screen(
+            message,
+            ui.render_security(self.settings, until),
+            markup=ui.security_menu(until > time.time()),
+        )
 
     # ------------------------------------------------------- подтверждения
 
@@ -899,29 +1113,22 @@ class MonitorBot:
             )
             return
         _, action, arg = parts
-        base = CONFIRM_DESCRIPTIONS.get(action)
-        if base is None:
+        description = self._confirmation_description(action, arg)
+        if description is None:
             await self._edit(
                 callback,
                 "Неизвестное действие. Возможно, клавиатура устарела.",
                 markup=ui.main_menu(self.is_admin(callback.from_user.id)),
             )
             return
+        user_id = callback.from_user.id
+        if self._needs_2fa(action) and not self._is_elevated(
+            user_id, fresh=action in CRITICAL_ACTIONS
+        ):
+            await self._start_2fa(callback, action, arg, user_id, data)
+            return
 
-        description = (
-            f"{base} <code>{ui.esc(arg)}</code>?"
-            if action == ACTION_RESTART_SERVICE
-            else f"{base}?"
-        )
-        if action == ACTION_REBOOT:
-            description = (
-                "<b>Перезагрузить сервер?</b> "
-                "Бот и панель будут недоступны ~1-2 минуты."
-            )
-
-        pending = self.actions.request(
-            action, description, arg, owner_id=callback.from_user.id
-        )
+        pending = self.actions.request(action, description, arg, owner_id=user_id)
         await self._edit(
             callback,
             f"⚠️ {description}",
@@ -944,6 +1151,16 @@ class MonitorBot:
             )
             return
         _, action, token = parts
+        if self._needs_2fa(action) and not self._is_elevated(
+            user_id, fresh=action in CRITICAL_ACTIONS
+        ):
+            await self._edit(
+                callback,
+                "🔐 Сначала разблокируйте действия: «Безопасность» → "
+                "«Разблокировать», затем подтвердите снова.",
+                markup=ui.security_menu(False),
+            )
+            return
         try:
             pending = self.actions.consume(token, user_id, expected=action)
         except ActionError as exc:
@@ -1433,6 +1650,19 @@ class MonitorBot:
         if message is None or user is None:
             return
         if not self._chat_allowed(message.chat) or not self.is_admin(user.id):
+            return
+        if user.id in self._pending_2fa:
+            code = "".join(ch for ch in (message.text or "") if ch.isdigit())
+            if len(code) != 6:
+                await message.reply_text(
+                    "Нужны 6 цифр из приложения-аутентификатора или нажмите «Отмена»."
+                )
+                return
+            try:
+                await message.delete()
+            except TelegramError as exc:
+                logger.debug("Не удалось удалить сообщение с кодом: %s", exc)
+            await self._complete_2fa(message, user.id, code)
             return
         command = " ".join((message.text or "").split())
         if not command:
@@ -1943,7 +2173,7 @@ def _setup_logging(settings: Settings) -> None:
     # трейсбеки): токен бота из URL и точные значения токенов из конфигурации.
     formatter = _ScrubbingFormatter(
         "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-        (settings.telegram_token, settings.panel_api_token),
+        (settings.telegram_token, settings.panel_api_token, settings.totp_secret),
     )
     for handler in handlers:
         handler.setFormatter(formatter)
