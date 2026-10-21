@@ -273,4 +273,8 @@ async def test_post_init_skips_webapp_menu_button_when_disabled(
     monkeypatch.setattr(type(bot_app.app.bot), "set_chat_menu_button", setter)
 
     await bot_app._post_init(bot_app.app)
-    setter.assert_not_awaited()
+    setter.assert_awaited_once()
+    assert setter.await_args is not None
+    from telegram import MenuButtonDefault
+
+    assert isinstance(setter.await_args.kwargs["menu_button"], MenuButtonDefault)
