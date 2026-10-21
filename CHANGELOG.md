@@ -42,6 +42,14 @@
   через `PANEL_TYPE`/`stacksentry-menu`; для S-UI/Hiddify адрес панели
   указывается вместе с web/admin proxy path.
 
+- Адаптация под сервер: установщик определяет ОС, пакетный менеджер, службы и
+  тип панели (3X-UI/Marzban/Remnawave/S-UI/Hiddify) и предлагает только
+  подходящие поля — токен либо логин/пароль, с проверкой API. В меню добавлен
+  пункт «Что найдено на сервере», тип панели и доступы Marzban; рестарт ядра
+  выбирает нужный endpoint. Главное меню бота скрывает «Трафик»/«Подписки» без
+  API, кнопка рестарта ядра появляется только для поддерживаемых панелей, а
+  обслуживание показывает apt-действия только на APT-системах.
+
 - Расширенный реестр стека: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
   Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,
   Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy, GOST;

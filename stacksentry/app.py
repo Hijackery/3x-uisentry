@@ -57,7 +57,7 @@ from .actions import (
     ActionManager,
 )
 from .alerts import AlertEngine, Finding, Rule
-from .inventory import detect_stack
+from .inventory import detect_stack, platform_info
 from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
@@ -167,6 +167,8 @@ class MonitorBot:
         self.monitor = Monitor(settings)
         self.engine = AlertEngine(settings, self.storage)
         self.actions = ActionManager(settings)
+        #: ОС/пакетный менеджер: меню обслуживания подстраивается под сервер.
+        self.platform = platform_info()
         self._snapshot: MonitorSnapshot | None = None
         self._snapshot_at: float = 0.0
         #: Последнее обращение к «тяжёлым» командам (журнал через sudo).
@@ -181,6 +183,28 @@ class MonitorBot:
         self._totp_locked: dict[int, float] = {}
         self._pending_2fa: dict[int, dict[str, Any]] = {}
         self.app: BotApplication = self._build()
+
+    def _main_menu(self, user_id: int | None) -> InlineKeyboardMarkup:
+        """Главное меню с учётом настроенной панели (тип/включена ли)."""
+        return ui.main_menu(self.is_admin(user_id), settings=self.settings)
+
+    def _maintenance_text(self) -> str:
+        """Текст обслуживания: честно про пакетный менеджер этого сервера."""
+        base = (
+            "🛠 <b>Обслуживание</b>\n\n"
+            "Все действия требуют подтверждения и пишутся в журнал."
+        )
+        pm = self.platform.package_manager
+        if not pm or pm == "apt":
+            return base
+        title = ui.PACKAGE_MANAGER_TITLES.get(pm, pm)
+        return (
+            "🛠 <b>Обслуживание</b>\n\n"
+            f"Пакетный менеджер: <b>{ui.esc(title)}</b>.\n"
+            "Фоновые apt-обновления на этой ОС недоступны; используйте "
+            "«Выполнить команду» из белого списка или штатные средства системы.\n\n"
+            "Все действия требуют подтверждения и пишутся в журнал."
+        )
 
     # ------------------------------------------------------------ сборка
 
@@ -378,7 +402,7 @@ class MonitorBot:
                 if allowed
                 else "⛔ Этот бот доступен только администратору сервера."
             ),
-            markup=ui.main_menu(True) if allowed else None,
+            markup=self._main_menu(True) if allowed else None,
         )
 
     async def cmd_help(
@@ -391,7 +415,7 @@ class MonitorBot:
         await self._reply_screen(
             message,
             ui.render_help(allowed),
-            markup=ui.main_menu(True) if allowed else None,
+            markup=self._main_menu(True) if allowed else None,
         )
 
     async def cmd_status(
@@ -408,7 +432,7 @@ class MonitorBot:
         await self._reply_screen(
             message,
             ui.render_overview(snapshot, self.settings, age=self._snapshot_age()),
-            markup=ui.main_menu(self.is_admin(_user_id(update))),
+            markup=self._main_menu(_user_id(update)),
         )
 
     async def cmd_stack(
@@ -423,7 +447,9 @@ class MonitorBot:
             message,
             ui.render_stack(detected, self.settings.services, snapshot.services),
             markup=ui.services_menu(
-                self.settings.services, self.is_admin(_user_id(update))
+                self.settings.services,
+                self.is_admin(_user_id(update)),
+                settings=self.settings,
             ),
         )
 
@@ -437,7 +463,9 @@ class MonitorBot:
             message,
             ui.render_services(await self.snapshot()),
             markup=ui.services_menu(
-                self.settings.services, self.is_admin(_user_id(update))
+                self.settings.services,
+                self.is_admin(_user_id(update)),
+                settings=self.settings,
             ),
         )
 
@@ -447,7 +475,9 @@ class MonitorBot:
         message = update.effective_message
         if message is None or not await self._guard(message, update.effective_user):
             return
-        text = ui.render_panel(await self.snapshot())
+        text = ui.render_panel(
+            await self.snapshot(), panel_type=self.settings.panel_type
+        )
         update_info: dict[str, Any] = {}
         if self.settings.panel_enabled:
             try:
@@ -459,7 +489,7 @@ class MonitorBot:
             latest = update_info.get("tagName") or update_info.get("version") or "?"
             text += f"\nПоследний релиз панели: {ui.esc(latest)}"
         await self._reply_screen(
-            message, text, markup=ui.main_menu(self.is_admin(_user_id(update)))
+            message, text, markup=self._main_menu(_user_id(update))
         )
 
     async def cmd_subs(
@@ -496,7 +526,7 @@ class MonitorBot:
         await self._reply_screen(
             message,
             ui.render_history(rows, title="Последние 24 часа"),
-            markup=ui.main_menu(self.is_admin(_user_id(update))),
+            markup=self._main_menu(_user_id(update)),
         )
 
     async def cmd_audit(
@@ -528,9 +558,8 @@ class MonitorBot:
             return
         await self._reply_screen(
             message,
-            "🛠 <b>Обслуживание</b>\n\n"
-            "Все действия требуют подтверждения и пишутся в журнал.",
-            markup=ui.maintenance_menu(),
+            self._maintenance_text(),
+            markup=ui.maintenance_menu(package_manager=self.platform.package_manager),
         )
 
     async def cmd_traffic(
@@ -542,7 +571,7 @@ class MonitorBot:
         await self._reply_screen(
             message,
             ui.render_traffic(await self.snapshot()),
-            markup=ui.main_menu(self.is_admin(_user_id(update))),
+            markup=self._main_menu(_user_id(update)),
         )
 
     async def cmd_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -566,7 +595,7 @@ class MonitorBot:
                 "Пришлите команду следующим сообщением в любом разделе или "
                 "<code>/run &lt;команда&gt;</code>.\n\n"
                 f"Разрешено:\n{allowed}",
-                markup=ui.main_menu(True),
+                markup=self._main_menu(True),
             )
             return
         if context.user_data is not None:
@@ -582,7 +611,7 @@ class MonitorBot:
                 message,
                 "⛔ Команда не в белом списке.\n"
                 f"Разрешено: <code>{ui.esc(allowed)}</code>",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
             return
         pending = self.actions.request(
@@ -794,7 +823,7 @@ class MonitorBot:
                 f"😴 Понял: <code>{ui.esc(key)}</code> молчит до "
                 f"{time.strftime('%H:%M', time.localtime(until))}. "
                 "Если проблема пройдёт сама — сообщу, когда срок выйдет.",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
             return
 
@@ -811,7 +840,7 @@ class MonitorBot:
                 "❌ Отменено — действие не выполнено."
                 if cancelled
                 else "⌛ Подтверждение уже неактуально, отменять нечего.",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
             return
 
@@ -839,7 +868,11 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_services(await self.snapshot()),
-                markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
+                markup=ui.services_menu(
+                    self.settings.services,
+                    self.is_admin(user_id),
+                    settings=self.settings,
+                ),
             )
         elif data == "stack":
             detected = await asyncio.to_thread(detect_stack)
@@ -847,19 +880,25 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_stack(detected, self.settings.services, snapshot.services),
-                markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
+                markup=ui.services_menu(
+                    self.settings.services,
+                    self.is_admin(user_id),
+                    settings=self.settings,
+                ),
             )
         elif data == "panel":
             await self._edit(
                 query,
-                ui.render_panel(await self.snapshot()),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                ui.render_panel(
+                    await self.snapshot(), panel_type=self.settings.panel_type
+                ),
+                markup=self._main_menu(user_id),
             )
         elif data == "traffic":
             await self._edit(
                 query,
                 ui.render_traffic(await self.snapshot()),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
         elif data == "subs" or data.startswith("subs:"):
             offset = (
@@ -874,7 +913,7 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_history(rows, title="Последние 24 часа"),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
         elif data == "logs_menu":
             await self._edit(
@@ -899,14 +938,15 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_help(self.is_admin(user_id)),
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
         elif data == "maintenance":
             await self._edit(
                 query,
-                "🛠 <b>Обслуживание</b>\n\n"
-                "Все действия требуют подтверждения и пишутся в журнал.",
-                markup=ui.maintenance_menu(),
+                self._maintenance_text(),
+                markup=ui.maintenance_menu(
+                    package_manager=self.platform.package_manager
+                ),
             )
         elif data.startswith("logs:"):
             await self._show_logs(query, data[5:])
@@ -941,7 +981,7 @@ class MonitorBot:
             await self._edit(
                 query,
                 "Неизвестная кнопка. Возможно, клавиатура устарела.",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
 
     # ------------------------------------------------------------- 2FA
@@ -1124,7 +1164,7 @@ class MonitorBot:
             await self._edit(
                 callback,
                 "Неизвестная кнопка. Возможно, клавиатура устарела.",
-                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+                markup=self._main_menu(callback.from_user.id),
             )
             return
         _, action, arg = parts
@@ -1133,7 +1173,7 @@ class MonitorBot:
             await self._edit(
                 callback,
                 "Неизвестное действие. Возможно, клавиатура устарела.",
-                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+                markup=self._main_menu(callback.from_user.id),
             )
             return
         user_id = callback.from_user.id
@@ -1162,7 +1202,7 @@ class MonitorBot:
             await self._edit(
                 callback,
                 "Неизвестная кнопка. Возможно, клавиатура устарела.",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
             return
         _, action, token = parts
@@ -1182,14 +1222,14 @@ class MonitorBot:
             await self._edit(
                 callback,
                 f"⏳ {ui.esc(str(exc))}",
-                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+                markup=self._main_menu(callback.from_user.id),
             )
             return
         if pending is None:
             await self._edit(
                 callback,
                 "⏳ Подтверждение не найдено или уже использовано.",
-                markup=ui.main_menu(self.is_admin(callback.from_user.id)),
+                markup=self._main_menu(callback.from_user.id),
             )
             return
         await self._dispatch(callback, pending.action, pending.args, user_id)
@@ -1205,6 +1245,32 @@ class MonitorBot:
         # Переиспользуем сообщение с подтверждением, а не плодим ещё одно.
         status = _message_of(query)
         await _safe_edit(status, "⏳ Выполняю…", markup=None)
+        # Кнопки apt-обновлений скрыты на других ОС, но callback_data можно
+        # подделать: не запускаем заведомо неверный пакетный менеджер.
+        if action in {
+            ACTION_APT_UPDATE,
+            ACTION_UPGRADE,
+            ACTION_UPGRADE_PHASED,
+            ACTION_RELEASE_UPGRADE,
+        } and self.platform.package_manager not in {"", "apt"}:
+            await _safe_edit(
+                status,
+                "❌ На этой ОС APT недоступен "
+                f"(пакетный менеджер: {ui.esc(self.platform.package_manager or '?')}).",
+                markup=ui.result_menu(),
+            )
+            return
+        if action == ACTION_RESTART_XRAY and (
+            not self.settings.panel_enabled
+            or self.settings.panel_type not in ui.PANEL_RESTART
+        ):
+            await _safe_edit(
+                status,
+                "❌ Перезапуск ядра недоступен для настроенной панели "
+                f"({ui.esc(self.settings.panel_type)}).",
+                markup=ui.result_menu(),
+            )
+            return
         if chat_id:
             self._last_screen[chat_id] = status.message_id
         self.invalidate()
@@ -1705,7 +1771,7 @@ class MonitorBot:
                 message,
                 "⛔ Команда не в белом списке.\n"
                 f"Разрешено: <code>{ui.esc(listed)}</code>",
-                markup=ui.main_menu(True),
+                markup=self._main_menu(True),
             )
 
     async def _prompt_command(
@@ -1721,7 +1787,7 @@ class MonitorBot:
         await self._edit(
             callback,
             ui.render_command_help(self.settings.command_allowlist),
-            markup=ui.main_menu(True),
+            markup=self._main_menu(True),
         )
 
     # ---------------------------------------------------------- фоновые
@@ -1798,7 +1864,7 @@ class MonitorBot:
             await self._edit(
                 callback,
                 "Неизвестный вариант журнала.",
-                markup=ui.main_menu(self.is_admin(user_id)),
+                markup=self._main_menu(user_id),
             )
             return
         wait = self._heavy_wait(user_id)

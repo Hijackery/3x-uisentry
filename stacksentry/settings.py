@@ -334,6 +334,17 @@ def _validate(settings: Settings) -> list[str]:
         problems.append(
             "PANEL_TYPE: поддерживаются 3x-ui, marzban, remnawave, s-ui, hiddify"
         )
+    if settings.panel_type == "marzban":
+        has_login = bool(settings.panel_username and settings.panel_password)
+        if settings.panel_url and not has_login:
+            problems.append(
+                "PANEL_TYPE=marzban: нужны PANEL_USERNAME и PANEL_PASSWORD "
+                "(или очистите PANEL_URL для monitor-only)"
+            )
+        if not settings.panel_url and (
+            settings.panel_username or settings.panel_password
+        ):
+            problems.append("PANEL_TYPE=marzban: задан логин/пароль, но пуст PANEL_URL")
     if "://" in settings.panel_base_path:
         problems.append(
             "PANEL_BASE_PATH выглядит как адрес — здесь нужен только путь панели "

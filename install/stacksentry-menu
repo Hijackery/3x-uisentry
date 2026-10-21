@@ -50,34 +50,37 @@ MENU_ROWS=(
     "1|Состояние службы и последние ошибки"
     "2|Показать настройки (секреты замаскированы)"
     "3|Журнал бота (последние 50 строк)"
+    "4|Что найдено на сервере (ОС, панели, VPN)"
     "s|"
     "g|Telegram"
-    "4|Токен бота (@BotFather)"
-    "5|ID администраторов"
-    "6|Чат для алертов"
+    "5|Токен бота (@BotFather)"
+    "6|ID администраторов"
+    "7|Чат для алертов"
     "s|"
-    "g|Панель 3X-UI"
-    "7|Адрес панели (PANEL_URL)"
-    "8|webBasePath (PANEL_BASE_PATH)"
-    "9|API-токен панели"
-    "10|Проверка TLS и CA-сертификат"
+    "g|Панель"
+    "8|Тип панели (3x-ui/marzban/remnawave/s-ui/hiddify)"
+    "9|Адрес панели (PANEL_URL)"
+    "10|Путь панели / webBasePath"
+    "11|API-токен панели"
+    "12|Логин и пароль (Marzban)"
+    "13|Проверка TLS и CA-сертификат"
     "s|"
     "g|Пороги и алерты"
-    "11|Загрузка CPU (предупреждение/критично)"
-    "12|Память (предупреждение/критично)"
-    "13|Диск (предупреждение/критично)"
-    "14|Гистерезис и кулдаун"
-    "15|За сколько дней предупреждать о подписке"
+    "14|Загрузка CPU (предупреждение/критично)"
+    "15|Память (предупреждение/критично)"
+    "16|Диск (предупреждение/критично)"
+    "17|Гистерезис и кулдаун"
+    "18|За сколько дней предупреждать о подписке"
     "s|"
     "g|Обслуживание"
-    "16|Службы под наблюдением"
-    "17|Уровень логирования"
-    "18|Изменить любой ключ по имени"
-    "19|Перезапустить бота"
-    "20|Перезапустить xray в панели"
-    "21|Обновить бота с GitHub"
+    "19|Службы под наблюдением"
+    "20|Уровень логирования"
+    "21|Изменить любой ключ по имени"
+    "22|Перезапустить бота"
+    "23|Перезапустить ядро панели (3X-UI/Marzban/S-UI)"
+    "24|Обновить бота с GitHub"
     "s|"
-    "22|Удалить бота"
+    "25|Удалить бота"
     "0|Выход"
 )
 
@@ -183,11 +186,11 @@ declare -A KEY_HINT=(
     [TELEGRAM_ADMIN_IDS]="ID администраторов через запятую"
     [ALERT_CHAT_ID]="ID чата для алертов (число, у групп отрицательное) или пусто — тогда админам в личку"
     [PANEL_URL]="адрес панели, например https://panel.example.com:2053"
-    [PANEL_BASE_PATH]="webBasePath панели (пусто, если не задан)"
+    [PANEL_BASE_PATH]="webBasePath 3X-UI; у S-UI/Hiddify путь обычно уже в PANEL_URL"
     [PANEL_API_TOKEN]="токен панели (3X-UI node-sync / Remnawave / S-UI / Hiddify)"
     [PANEL_TYPE]="3x-ui, marzban, remnawave, s-ui или hiddify"
-    [PANEL_USERNAME]="логин Marzban"
-    [PANEL_PASSWORD]="пароль Marzban"
+    [PANEL_USERNAME]="логин администратора Marzban"
+    [PANEL_PASSWORD]="пароль администратора Marzban"
     [SERVICES]="юниты под наблюдением, через запятую"
     [LOG_LEVEL]="DEBUG, INFO, WARNING или ERROR"
 )
@@ -342,6 +345,37 @@ cmd_set() {
     rm -f "$tmp"
     ok "$key обновлён"
     info "Применится после перезапуска: sudo stacksentry-menu restart"
+}
+
+env_peek() {
+    [ -f "$ENV_FILE" ] || return 0
+    sed -n "s/^$1=//p" "$ENV_FILE" | head -1
+}
+
+cmd_detect() {
+    need_env
+    head1 "Что найдено на сервере"
+    if ! command -v python3 >/dev/null 2>&1; then
+        warn "python3 не найден — автоопределение недоступно"
+        return 0
+    fi
+    local out
+    out="$(PYTHONPATH="$PREFIX" python3 -m stacksentry.inventory --platform 2>/dev/null || true)"
+    [ -n "$out" ] && info "$out"
+    out="$(PYTHONPATH="$PREFIX" python3 -m stacksentry.inventory 2>/dev/null || true)"
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out" | sed 's/^/      /'
+    else
+        info "Панели и VPN-стек не найдены (или нет доступа к службам)."
+    fi
+    local ptype
+    ptype="$(PYTHONPATH="$PREFIX" python3 -m stacksentry.inventory --panel-type 2>/dev/null || true)"
+    if [ -n "$ptype" ]; then
+        ok "Поддерживаемая API-панель: $ptype"
+    else
+        info "Поддерживаемых API-панелей не найдено — доступен monitor-only."
+    fi
+    info "Тип и доступы: пункты 8–12; повторный мастер: sudo bash $PREFIX/install.sh"
 }
 
 cmd_status() {
@@ -526,26 +560,78 @@ cmd_apt_logs() {
 cmd_restart_xray() {
     need_root "restart-xray"
     need_env
-    local url base token api code
-    url="$(sed -n 's/^PANEL_URL=//p' "$ENV_FILE" | head -1)"
-    base="$(sed -n 's/^PANEL_BASE_PATH=//p' "$ENV_FILE" | head -1)"
-    token="$(sed -n 's/^PANEL_API_TOKEN=//p' "$ENV_FILE" | head -1)"
-    if [ -z "$url" ] || [ -z "$token" ]; then
-        die "в .env нет PANEL_URL или PANEL_API_TOKEN"
-    fi
-    api="$url"
-    [ -n "$base" ] && api="$url/${base#/}"
-    api="${api%/}/panel/api"
-    info "Запрос к панели: POST $api/server/restartXrayService"
-    code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
-        -H "Authorization: Bearer $token" \
-        "$api/server/restartXrayService" 2>/dev/null || echo 000)"
-    case "$code" in
-        200) ok "xray перезапущен" ;;
-        401|403) die "панель отклонила токен (HTTP $code) — нужен scope node-sync или admin" ;;
-        404) die "панель ответила 404 — проверьте PANEL_URL и PANEL_BASE_PATH" ;;
-        000) die "панель недоступна — проверьте PANEL_URL и что она запущена" ;;
-        *) warn "панель ответила HTTP $code" ;;
+    local ptype url token
+    ptype="$(env_peek PANEL_TYPE)"
+    ptype="${ptype:-3x-ui}"
+    url="$(env_peek PANEL_URL)"
+    token="$(env_peek PANEL_API_TOKEN)"
+    [ -n "$url" ] || die "в .env пуст PANEL_URL"
+    case "$ptype" in
+        3x-ui)
+            local base api code
+            base="$(env_peek PANEL_BASE_PATH)"
+            [ -n "$token" ] || die "в .env пуст PANEL_API_TOKEN"
+            api="$url"
+            [ -n "$base" ] && api="$url/${base#/}"
+            api="${api%/}/panel/api"
+            info "Запрос к 3X-UI: POST $api/server/restartXrayService"
+            code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
+                -H "Authorization: Bearer $token" \
+                "$api/server/restartXrayService" 2>/dev/null || echo 000)"
+            case "$code" in
+                200) ok "xray перезапущен" ;;
+                401|403) die "панель отклонила токен (HTTP $code) — нужен scope node-sync или admin" ;;
+                404) die "панель ответила 404 — проверьте PANEL_URL и PANEL_BASE_PATH" ;;
+                000) die "панель недоступна — проверьте PANEL_URL и что она запущена" ;;
+                *) warn "панель ответила HTTP $code" ;;
+            esac
+            ;;
+        s-ui)
+            [ -n "$token" ] || die "в .env пуст PANEL_API_TOKEN"
+            info "Запрос к S-UI: POST $url/apiv2/restartSb"
+            local body code
+            body="$(mktemp)"
+            code="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' -X POST \
+                -H "Token: $token" "$url/apiv2/restartSb" 2>/dev/null || echo 000)"
+            if grep -q '"success":true' "$body" 2>/dev/null; then
+                ok "sing-box перезапущен"
+            else
+                rm -f "$body"
+                die "S-UI не подтвердила рестарт (HTTP $code) — проверьте токен и путь панели"
+            fi
+            rm -f "$body"
+            ;;
+        marzban)
+            local user pass login body code
+            user="$(env_peek PANEL_USERNAME)"
+            pass="$(env_peek PANEL_PASSWORD)"
+            if [ -z "$user" ] || [ -z "$pass" ]; then
+                die "для Marzban нужны PANEL_USERNAME и PANEL_PASSWORD"
+            fi
+            body="$(mktemp)"
+            login="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' \
+                --data-urlencode "username=$user" \
+                --data-urlencode "password=$pass" \
+                --data-urlencode "grant_type=password" \
+                "$url/api/admin/token" 2>/dev/null || echo 000)"
+            token="$(sed -nE 's/.*"access_token":"([^"]+)".*/\1/p' "$body" 2>/dev/null | head -1)"
+            if [ "$login" != "200" ] || [ -z "$token" ]; then
+                rm -f "$body"
+                die "Marzban отклонил логин/пароль (HTTP $login)"
+            fi
+            code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
+                -H "Authorization: Bearer $token" \
+                "$url/api/core/restart" 2>/dev/null || echo 000)"
+            rm -f "$body"
+            case "$code" in
+                200) ok "ядро Marzban перезапущено" ;;
+                401|403) die "Marzban отклонил токен (HTTP $code)" ;;
+                *) warn "Marzban ответил HTTP $code" ;;
+            esac
+            ;;
+        *)
+            die "перезапуск ядра не поддерживается для PANEL_TYPE=$ptype"
+            ;;
     esac
 }
 
@@ -567,35 +653,38 @@ menu() {
             1) cmd_status ;;
             2) cmd_show ;;
             3) cmd_logs 50 ;;
-            4) menu_edit_key TELEGRAM_BOT_TOKEN ;;
-            5) menu_edit_key TELEGRAM_ADMIN_IDS ;;
-            6) menu_edit_key ALERT_CHAT_ID ;;
-            7) menu_edit_key PANEL_URL ;;
-            8) menu_edit_key PANEL_BASE_PATH ;;
-            9) menu_edit_key PANEL_API_TOKEN ;;
-            10) menu_pick "Сертификат панели" PANEL_VERIFY_TLS PANEL_CA_BUNDLE ;;
-            11) menu_pick "Порог CPU" CPU_WARN CPU_CRIT ;;
-            12) menu_pick "Порог памяти" MEM_WARN MEM_CRIT ;;
-            13) menu_pick "Порог диска" DISK_WARN DISK_CRIT ;;
-            14) menu_pick "Гистерезис и кулдаун" ALERT_HYSTERESIS ALERT_COOLDOWN ;;
-            15) menu_edit_key EXPIRING_SOON_DAYS ;;
-            16) menu_edit_key SERVICES ;;
-            17) menu_edit_key LOG_LEVEL ;;
-            18)
+            4) cmd_detect ;;
+            5) menu_edit_key TELEGRAM_BOT_TOKEN ;;
+            6) menu_edit_key TELEGRAM_ADMIN_IDS ;;
+            7) menu_edit_key ALERT_CHAT_ID ;;
+            8) menu_edit_key PANEL_TYPE ;;
+            9) menu_edit_key PANEL_URL ;;
+            10) menu_edit_key PANEL_BASE_PATH ;;
+            11) menu_edit_key PANEL_API_TOKEN ;;
+            12) menu_pick "Доступы Marzban" PANEL_USERNAME PANEL_PASSWORD ;;
+            13) menu_pick "Сертификат панели" PANEL_VERIFY_TLS PANEL_CA_BUNDLE ;;
+            14) menu_pick "Порог CPU" CPU_WARN CPU_CRIT ;;
+            15) menu_pick "Порог памяти" MEM_WARN MEM_CRIT ;;
+            16) menu_pick "Порог диска" DISK_WARN DISK_CRIT ;;
+            17) menu_pick "Гистерезис и кулдаун" ALERT_HYSTERESIS ALERT_COOLDOWN ;;
+            18) menu_edit_key EXPIRING_SOON_DAYS ;;
+            19) menu_edit_key SERVICES ;;
+            20) menu_edit_key LOG_LEVEL ;;
+            21)
                 ask "Имя ключа (stacksentry-menu keys — список): "
                 local key=""
                 read -r key <&$READ_FD || key=""
                 [ -n "$key" ] && menu_edit_key "$key"
                 ;;
-            19) cmd_restart ;;
-            20)
-                ask "Перезапустить xray в панели? [y/N] "
+            22) cmd_restart ;;
+            23)
+                ask "Перезапустить ядро панели? [y/N] "
                 local yes=""
                 read -r yes <&$READ_FD || yes=""
                 case "$yes" in (y|Y|yes|да) cmd_restart_xray ;; (*) info "Отменено" ;; esac
                 ;;
-            21) cmd_update ;;
-            22)
+            24) cmd_update ;;
+            25)
                 ask "Удалить бота? Это необратимо, введите yes: "
                 local confirm=""
                 read -r confirm <&$READ_FD || confirm=""
@@ -625,11 +714,12 @@ ${BOLD}stacksentry-menu${RESET} — панель управления StackSentr
   sudo stacksentry-menu                     интерактивное меню
   sudo stacksentry-menu status              состояние службы и последние ошибки
   sudo stacksentry-menu show                текущие настройки (секреты замаскированы)
+  sudo stacksentry-menu detect              что найдено: ОС, панели, VPN, службы
   stacksentry-menu keys                     какие ключи разрешено менять
   stacksentry-menu check KEY VALUE          проверить значение (без изменений)
   sudo stacksentry-menu set KEY VALUE       изменить настройку и подсказать рестарт
   sudo stacksentry-menu restart             перезапустить бота
-  sudo stacksentry-menu restart-xray        перезапустить xray в панели (через API)
+  sudo stacksentry-menu restart-xray        перезапустить ядро панели (3X-UI/Marzban/S-UI)
   sudo stacksentry-menu apt-logs [N]        журнал фоновых apt-обновлений
   sudo stacksentry-menu totp               TOTP-секрет и otpauth (только root)
   sudo stacksentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
@@ -642,11 +732,12 @@ ${BOLD}English${RESET}
   sudo stacksentry-menu                     interactive menu
   sudo stacksentry-menu status              service state and recent errors
   sudo stacksentry-menu show                current settings (secrets masked)
+  sudo stacksentry-menu detect              detected OS, panels, VPN, services
   stacksentry-menu keys                     keys that may be changed
   stacksentry-menu check KEY VALUE          validate a value (no changes)
   sudo stacksentry-menu set KEY VALUE       change a setting, then restart
   sudo stacksentry-menu restart | logs [N]  restart the bot / show the log
-  sudo stacksentry-menu restart-xray        restart xray via the panel API
+  sudo stacksentry-menu restart-xray        restart the panel core when supported
   sudo stacksentry-menu apt-logs [N]        log of background apt upgrades
   sudo stacksentry-menu totp               TOTP secret and otpauth (root only)
   sudo stacksentry-menu update              update the bot from GitHub
@@ -659,6 +750,7 @@ case "${1:-}" in
     ""|menu) menu ;;
     status) cmd_status ;;
     show|settings) cmd_show ;;
+    detect|stack) cmd_detect ;;
     keys) cmd_keys ;;
     check) cmd_check "${2:-}" "${3:-}" ;;
     set) cmd_set "${2:-}" "${3:-}" ;;

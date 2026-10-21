@@ -232,6 +232,14 @@ URL notes:
 - 3X-UI: `PANEL_BASE_PATH` is the panel webBasePath; the bot appends
   `/panel/api`.
 
+The installer, menu and bot adapt to the server. The wizard detects the OS,
+package manager, services and panel type, then asks only for the relevant
+credentials — a token for 3X-UI/Remnawave/S-UI/Hiddify or username/password for
+Marzban — and probes the API. `stacksentry-menu detect` shows what was found,
+the menu has a panel type item, and the core restart picks the right endpoint.
+The bot hides Traffic/Subscriptions until an API is configured and hides apt
+actions on non-APT systems.
+
 ### What is detected
 
 Panels: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
@@ -429,7 +437,8 @@ sudo stacksentry-menu keys         # which keys may be changed
 stacksentry-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
 sudo stacksentry-menu set PANEL_TIMEOUT 20
 sudo stacksentry-menu restart       # apply
-sudo stacksentry-menu restart-xray  # restart xray via the panel API
+sudo stacksentry-menu detect        # detected OS, panels, VPN, services
+sudo stacksentry-menu restart-xray  # restart the panel core when supported
 sudo stacksentry-menu apt-logs 100  # log of background apt upgrades
 sudo stacksentry-menu logs 100
 ```
@@ -439,19 +448,20 @@ service state is shown on top:
 
 ```text
 ╔════════════════════════════════════════════════════════╗
-│         3X-UI monitor bot — control panel              │
+│              StackSentry — control panel               │
 │  Service stacksentry-bot: ● running                    │
 │   Diagnostics                                          │
 │    1. Service state and recent errors                  │
 │    2. Show settings (secrets masked)                   │
 │    3. Bot log (last 50 lines)                          │
+│    4. Detected OS, panels, VPN, services               │
 │────────────────────────────────────────────────────────│
 │   Telegram                                             │
-│    4. Bot token (@BotFather)                           │
-│    5. Admin IDs                                        │
-│    6. Alert chat                                       │
+│    5. Bot token (@BotFather)                           │
+│    6. Admin IDs                                        │
+│    7. Alert chat                                       │
 │   …                                                    │
-│   22. Remove the bot                                   │
+│   25. Remove the bot                                   │
 │    0. Exit                                             │
 ╚════════════════════════════════════════════════════════╝
 ```
@@ -463,25 +473,28 @@ service state is shown on top:
 | 1 | service state and recent errors | — | — |
 | 2 | shows settings, secrets masked | — | — |
 | 3 | bot log, 50 lines | — | — |
-| 4 | Telegram bot token | the value from @BotFather | `123456789:AAH...` |
-| 5 | administrator IDs | numbers separated by commas | `11111111,22222222` |
-| 6 | alert chat | chat ID; group IDs are negative; empty — private | `-1001234567890` |
-| 7 | panel address (`PANEL_URL`) | scheme, host and port, **no path** | `https://panel.example.com:5580` |
-| 8 | `webBasePath` (`PANEL_BASE_PATH`) | the “Panel URL” value from 3X-UI; usually empty. **Not** `/panel` | empty or `mypanel` |
-| 9 | panel API token | the token value (`node-sync`/`admin` scope) | `AbCdEf...` |
-| 10 | TLS and CA (submenu) | `PANEL_VERIFY_TLS`: `true`/`false`; `PANEL_CA_BUNDLE`: PEM path | `true`, `/etc/ssl/panel-ca.pem` |
-| 11 | CPU thresholds (submenu) | `CPU_WARN` and `CPU_CRIT`, % | `80`, `95` |
-| 12 | memory thresholds (submenu) | `MEM_WARN` and `MEM_CRIT`, % | `85`, `95` |
-| 13 | disk thresholds (submenu) | `DISK_WARN` and `DISK_CRIT`, % | `85`, `93` |
-| 14 | hysteresis and cooldown (submenu) | `ALERT_HYSTERESIS` in %, `ALERT_COOLDOWN` in s | `5`, `1800` |
-| 15 | days before a subscription expiry warning | a whole number of days | `3` |
-| 16 | monitored services | service names separated by commas | `x-ui,fail2ban` |
-| 17 | log level | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
-| 18 | any allow-listed key | the key name first, then the value | `DISK_PATH` → `/` |
-| 19 | restart the bot and verify | — | — |
-| 20 | restart xray via the API | `y` to confirm | `y` |
-| 21 | update from `main` | — | — |
-| 22 | removal | `yes` to confirm | `yes` |
+| 4 | auto-detect: OS, package manager, panels, VPN, services | — | — |
+| 5 | Telegram bot token | the value from @BotFather | `123456789:AAH...` |
+| 6 | administrator IDs | numbers separated by commas | `11111111,22222222` |
+| 7 | alert chat | chat ID; group IDs are negative; empty — private | `-1001234567890` |
+| 8 | panel type (`PANEL_TYPE`) | one of the supported types | `s-ui` |
+| 9 | panel address (`PANEL_URL`) | scheme, host, port and (S-UI/Hiddify) the panel path | `https://panel.example.com:5580` |
+| 10 | panel path (`PANEL_BASE_PATH`) | 3X-UI `webBasePath`; S-UI/Hiddify usually include it in the URL | empty or `mypanel` |
+| 11 | panel API token | 3X-UI/Remnawave/S-UI token or Hiddify admin UUID | `AbCdEf...` |
+| 12 | Marzban username and password (submenu) | `PANEL_USERNAME`, `PANEL_PASSWORD` | `admin`, `***` |
+| 13 | TLS and CA (submenu) | `PANEL_VERIFY_TLS`: `true`/`false`; `PANEL_CA_BUNDLE`: PEM path | `true`, `/etc/ssl/panel-ca.pem` |
+| 14 | CPU thresholds (submenu) | `CPU_WARN` and `CPU_CRIT`, % | `80`, `95` |
+| 15 | memory thresholds (submenu) | `MEM_WARN` and `MEM_CRIT`, % | `85`, `95` |
+| 16 | disk thresholds (submenu) | `DISK_WARN` and `DISK_CRIT`, % | `85`, `93` |
+| 17 | hysteresis and cooldown (submenu) | `ALERT_HYSTERESIS` in %, `ALERT_COOLDOWN` in s | `5`, `1800` |
+| 18 | days before a subscription expiry warning | a whole number of days | `3` |
+| 19 | monitored services | service names separated by commas | `x-ui,fail2ban` |
+| 20 | log level | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
+| 21 | any allow-listed key | the key name first, then the value | `DISK_PATH` → `/` |
+| 22 | restart the bot and verify | — | — |
+| 23 | restart the panel core | `y` to confirm | `y` |
+| 24 | update from `main` | — | — |
+| 25 | removal | `yes` to confirm | `yes` |
 
 An empty value clears a setting: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
 For items 4–17 you can skip the menu and use

@@ -28,6 +28,23 @@ MAX_INLINE_ROWS: Final = 12
 #: Подписок на странице: больше — уже нечитаемо с телефона.
 SUBSCRIPTIONS_PAGE: Final = 10
 
+#: Человеческие названия панелей для экранов и кнопок.
+PANEL_TITLES: Final = {
+    "3x-ui": "3X-UI",
+    "marzban": "Marzban",
+    "remnawave": "Remnawave",
+    "s-ui": "S-UI",
+    "hiddify": "Hiddify",
+}
+#: Панели, у которых бот умеет перезапускать ядро через API.
+PANEL_RESTART: Final = frozenset({"3x-ui", "marzban", "s-ui"})
+#: Панели, отдающие inbound'ы (для детального экрана трафика).
+PANEL_INBOUNDS: Final = frozenset({"3x-ui"})
+
+
+def panel_title(panel_type: str) -> str:
+    return PANEL_TITLES.get(panel_type, panel_type or "панель")
+
 
 def esc(value: object) -> str:
     return html.escape(str(value))
@@ -163,8 +180,8 @@ def render_overview(
         else "Метрики системы недоступны"
     )
     lines.append(render_services(snapshot))
-    lines.append(render_panel(snapshot))
-    lines.append(render_traffic(snapshot))
+    lines.append(render_panel(snapshot, panel_type=settings.panel_type))
+    lines.append(render_traffic(snapshot, panel_type=settings.panel_type))
 
     lines.append(_stamp_line(age))
     return "\n".join(lines)
@@ -288,77 +305,111 @@ def render_services(snapshot: MonitorSnapshot) -> str:
     return "\n".join(lines)
 
 
-def render_panel(snapshot: MonitorSnapshot) -> str:
+def render_panel(snapshot: MonitorSnapshot, panel_type: str = "3x-ui") -> str:
     panel = snapshot.panel
+    name = panel_title(panel_type)
     if panel.disabled:
         return (
-            "\n🌐 <b>Панель</b>\n"
+            f"\n🌐 <b>Панель {esc(name)}</b>\n"
             "⚪ API панели не настроен — режим «только мониторинг служб».\n\n"
-            "Службы и VPN-стек наблюдаются; inbound'ы и подписки недоступны.\n"
-            "Настроить API 3X-UI: <code>sudo stacksentry-menu</code> → "
-            "адрес панели и токен."
+            "Службы и VPN-стек наблюдаются; пользователи и трафик недоступны.\n"
+            "Настроить API: <code>sudo stacksentry-menu</code> → "
+            "тип, адрес и токен панели."
         )
     if not panel.reachable:
         reason = esc(panel.error or "нет ответа")
-        return f"\n🌐 <b>Панель 3X-UI</b>\n🔴 недоступна: {reason}"
+        return f"\n🌐 <b>Панель {esc(name)}</b>\n🔴 недоступна: {reason}"
     latency = f"{panel.latency_ms:.0f} мс" if panel.latency_ms is not None else "—"
     api = "токен принят" if panel.api_authorized else "⚠️ токен не принят"
+    core = ""
+    if panel_type == "3x-ui":
+        core = (
+            f" · xray {esc(panel.xray_version or '?')} ({esc(panel.xray_state or '?')})"
+        )
     hint = ""
     if not panel.api_authorized:
-        version = panel.panel_version or ""
-        hint = (
-            f"\n→ токен панели не принят. Где взять: {panel_token_hint(version)}"
-            "\n→ и проверьте PANEL_BASE_PATH (webBasePath панели): "
-            "иначе API отвечает 404"
-        )
+        if panel_type == "3x-ui":
+            hint = (
+                f"\n→ токен панели не принят. Где взять: "
+                f"{panel_token_hint(panel.panel_version or '')}"
+                "\n→ и проверьте PANEL_BASE_PATH (webBasePath панели): "
+                "иначе API отвечает 404"
+            )
+        else:
+            hint = (
+                "\n→ проверьте PANEL_TYPE, PANEL_URL (включая путь панели) "
+                "и PANEL_API_TOKEN в <code>sudo stacksentry-menu</code>"
+            )
     return (
-        "\n🌐 <b>Панель 3X-UI</b>\n"
+        f"\n🌐 <b>Панель {esc(name)}</b>\n"
         f"🟢 отвечает за {latency}\n"
-        f"Панель {esc(panel.panel_version or '?')} · "
-        f"xray {esc(panel.xray_version or '?')} ({esc(panel.xray_state or '?')})\n"
+        f"Панель {esc(panel.panel_version or '?')}{core}\n"
         f"API: {api}{hint}"
     )
 
 
-def render_traffic(snapshot: MonitorSnapshot) -> str:
+def render_traffic(snapshot: MonitorSnapshot, panel_type: str = "3x-ui") -> str:
     """Трафик: итоги по inbound'ам и топ клиентов (в отличие от «Подписок»)."""
+    name = panel_title(panel_type)
     if not snapshot.inbounds and not snapshot.subscriptions:
         if snapshot.panel.disabled:
             return (
                 "\n📊 <b>Трафик</b>\n"
-                "API панели не настроен — inbound'ы и трафик недоступны.\n"
+                "API панели не настроен — трафик недоступен.\n"
                 "Службы и VPN-стек наблюдаются. Настроить: "
                 "<code>sudo stacksentry-menu</code>."
             )
-        return (
-            "\n📊 <b>Трафик</b>\n"
-            "Панель не отдала inbound'ы и клиентов — показывать нечего.\n\n"
-            "<b>Что проверить</b>\n"
+        hints = (
             "• у API-токена панели scope <code>node-sync</code> или "
             "<code>admin</code>;\n"
             "• <code>PANEL_BASE_PATH</code> — это «URL панели» из настроек "
             "(обычно пусто), а не путь <code>/panel</code>;\n"
             "• раздел «🌐 Панель» — отвечает ли API и принят ли токен.\n\n"
             "Токен: «Настройки панели → Учётная запись → API-токен»."
+            if panel_type == "3x-ui"
+            else (
+                "• тип панели (<code>PANEL_TYPE</code>) и адрес с её путём;\n"
+                "• токен/логин в <code>sudo stacksentry-menu</code>;\n"
+                "• раздел «🌐 Панель» — отвечает ли API и принят ли токен."
+            )
+        )
+        return (
+            "\n📊 <b>Трафик</b>\n"
+            f"Панель {esc(name)} не отдала пользователей — показывать нечего.\n\n"
+            "<b>Что проверить</b>\n"
+            f"{hints}"
         )
 
-    lines = [
-        "",
-        "📊 <b>Трафик</b>",
-        f"Включено {sum(1 for item in snapshot.inbounds if item.enabled)} из "
-        f"{len(snapshot.inbounds)} · клиентов {snapshot.active_clients} · "
-        f"суммарно {fmt_bytes(snapshot.total_used_bytes)}",
-    ]
-    for inbound in snapshot.inbounds[:MAX_INLINE_ROWS]:
-        icon = "🟢" if inbound.enabled else "⚪"
-        limit = f" из {fmt_bytes(inbound.total_bytes)}" if inbound.total_bytes else ""
-        lines.append(
-            f"{icon} {esc(inbound.remark)} — {esc(inbound.protocol)}:{inbound.port} · "
-            f"клиентов {inbound.clients} · ↑{fmt_bytes(inbound.up_bytes)} "
-            f"↓{fmt_bytes(inbound.down_bytes)}{limit}"
-        )
-    if len(snapshot.inbounds) > MAX_INLINE_ROWS:
-        lines.append(f"… ещё {len(snapshot.inbounds) - MAX_INLINE_ROWS}")
+    if snapshot.inbounds:
+        lines = [
+            "",
+            "📊 <b>Трафик</b>",
+            f"Включено {sum(1 for item in snapshot.inbounds if item.enabled)} из "
+            f"{len(snapshot.inbounds)} · клиентов {snapshot.active_clients} · "
+            f"суммарно {fmt_bytes(snapshot.total_used_bytes)}",
+        ]
+        for inbound in snapshot.inbounds[:MAX_INLINE_ROWS]:
+            icon = "🟢" if inbound.enabled else "⚪"
+            limit = (
+                f" из {fmt_bytes(inbound.total_bytes)}" if inbound.total_bytes else ""
+            )
+            lines.append(
+                f"{icon} {esc(inbound.remark)} — "
+                f"{esc(inbound.protocol)}:{inbound.port} · "
+                f"клиентов {inbound.clients} · ↑{fmt_bytes(inbound.up_bytes)} "
+                f"↓{fmt_bytes(inbound.down_bytes)}{limit}"
+            )
+        if len(snapshot.inbounds) > MAX_INLINE_ROWS:
+            lines.append(f"… ещё {len(snapshot.inbounds) - MAX_INLINE_ROWS}")
+    else:
+        used = sum(item.used_bytes for item in snapshot.subscriptions)
+        active = sum(1 for item in snapshot.subscriptions if item.enabled)
+        lines = [
+            "",
+            "📊 <b>Трафик</b>",
+            f"Панель {esc(name)} · пользователей {len(snapshot.subscriptions)} "
+            f"(активных {active}) · суммарно {fmt_bytes(used)}",
+        ]
 
     top = sorted(
         (item for item in snapshot.subscriptions if item.used_bytes > 0),
@@ -572,22 +623,42 @@ def home_button() -> InlineKeyboardButton:
     return InlineKeyboardButton("🏠 В меню", callback_data="home")
 
 
-def main_menu(is_admin: bool) -> InlineKeyboardMarkup:
+def main_menu(
+    is_admin: bool, *, settings: Settings | None = None
+) -> InlineKeyboardMarkup:
+    """Главное меню подстраивается под настроенную панель.
+
+    Без API панели нет смысла показывать «Трафик» и «Подписки»: они всё равно
+    пустые. Кнопка «Панель» остаётся, чтобы объяснить, как включить API.
+    """
+    panel_enabled = True if settings is None else settings.panel_enabled
     buttons = [
         [InlineKeyboardButton("🔄 Обновить", callback_data="refresh")],
         [
             InlineKeyboardButton("🖥 Сервер", callback_data="server"),
             InlineKeyboardButton("⚙️ Сервисы", callback_data="services"),
         ],
-        [
-            InlineKeyboardButton("🌐 Панель", callback_data="panel"),
-            InlineKeyboardButton("📊 Трафик", callback_data="traffic"),
-        ],
-        [
-            InlineKeyboardButton("🪪 Подписки", callback_data="subs"),
-            InlineKeyboardButton("📈 История", callback_data="history"),
-        ],
     ]
+    if panel_enabled:
+        buttons.append(
+            [
+                InlineKeyboardButton("🌐 Панель", callback_data="panel"),
+                InlineKeyboardButton("📊 Трафик", callback_data="traffic"),
+            ]
+        )
+        buttons.append(
+            [
+                InlineKeyboardButton("🪪 Подписки", callback_data="subs"),
+                InlineKeyboardButton("📈 История", callback_data="history"),
+            ]
+        )
+    else:
+        buttons.append(
+            [
+                InlineKeyboardButton("🌐 Панель (не настроена)", callback_data="panel"),
+                InlineKeyboardButton("📈 История", callback_data="history"),
+            ]
+        )
     if is_admin:
         buttons.append(
             [InlineKeyboardButton("🛠 Обслуживание", callback_data="maintenance")]
@@ -675,7 +746,12 @@ def render_2fa_prompt(title: str, lock_left: float = 0.0) -> str:
     return "\n".join(lines)
 
 
-def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarkup:
+def services_menu(
+    units: tuple[str, ...],
+    is_admin: bool,
+    *,
+    settings: Settings | None = None,
+) -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     if is_admin:
         for unit in units:
@@ -691,9 +767,16 @@ def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarku
                     ),
                 ]
             )
-        buttons.append(
-            [InlineKeyboardButton("♻️ Рестарт xray", callback_data="ask:restart_xray:")]
-        )
+        # Кнопка рестарта ядра — только если панель это умеет.
+        if settings is None or (
+            settings.panel_enabled and settings.panel_type in PANEL_RESTART
+        ):
+            label = "♻️ Рестарт xray"
+            if settings is not None and settings.panel_type == "s-ui":
+                label = "♻️ Рестарт sing-box"
+            buttons.append(
+                [InlineKeyboardButton(label, callback_data="ask:restart_xray:")]
+            )
     buttons.append([InlineKeyboardButton("🧩 Стек сервера", callback_data="stack")])
     buttons.append(
         [
@@ -735,33 +818,59 @@ def logs_menu(units: tuple[str, ...]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def maintenance_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+PACKAGE_MANAGER_TITLES: Final = {
+    "apt": "APT (Debian/Ubuntu)",
+    "dnf": "DNF (Fedora/RHEL)",
+    "yum": "YUM (CentOS/RHEL)",
+    "zypper": "Zypper (openSUSE)",
+    "pacman": "Pacman (Arch)",
+    "apk": "APK (Alpine)",
+    "xbps": "XBPS (Void)",
+    "emerge": "Portage (Gentoo)",
+    "eopkg": "eopkg (Solus)",
+    "pkg": "pkg (FreeBSD)",
+}
+
+
+def maintenance_menu(*, package_manager: str | None = None) -> InlineKeyboardMarkup:
+    """Пункты обслуживания под пакетный менеджер сервера.
+
+    Фоновые обновления реализованы для APT; на других системах не показываем
+    заведомо нерабочие кнопки, оставляя команды из белого списка и перезагрузку.
+    """
+    apt = package_manager in (None, "", "apt")
+    rows: list[list[InlineKeyboardButton]] = []
+    if apt:
+        rows.extend(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔄 Обновить список пакетов (apt update)",
+                        callback_data="ask:apt_update:",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "📦 Обновить систему (full-upgrade)",
+                        callback_data="ask:apt_upgrade:",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "⬆️ Обновить с phased (обычный upgrade)",
+                        callback_data="ask:apt_upgrade_phased:",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🚀 Запустить релиз-обновление ОС",
+                        callback_data="ask:release_upgrade:",
+                    )
+                ],
+            ]
+        )
+    rows.extend(
         [
-            [
-                InlineKeyboardButton(
-                    "🔄 Обновить список пакетов (apt update)",
-                    callback_data="ask:apt_update:",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "📦 Обновить систему (full-upgrade)",
-                    callback_data="ask:apt_upgrade:",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "⬆️ Обновить с phased (обычный upgrade)",
-                    callback_data="ask:apt_upgrade_phased:",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🚀 Запустить релиз-обновление ОС",
-                    callback_data="ask:release_upgrade:",
-                )
-            ],
             [
                 InlineKeyboardButton(
                     "💻 Выполнить команду", callback_data="command_prompt"
@@ -776,6 +885,7 @@ def maintenance_menu() -> InlineKeyboardMarkup:
             [home_button()],
         ]
     )
+    return InlineKeyboardMarkup(rows)
 
 
 def result_menu(

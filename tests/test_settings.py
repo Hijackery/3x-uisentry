@@ -130,3 +130,29 @@ def test_panel_type_is_normalized(tmp_path: Path) -> None:
 def test_unknown_panel_type_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="PANEL_TYPE"):
         load_settings(write_env(tmp_path, PANEL_TYPE="unknown"))
+
+
+def test_marzban_requires_login_and_password(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="PANEL_USERNAME"):
+        load_settings(
+            write_env(
+                tmp_path,
+                PANEL_TYPE="marzban",
+                PANEL_URL="https://marzban.example.com",
+                PANEL_API_TOKEN="",
+            )
+        )
+
+
+def test_marzban_credentials_without_url_are_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="пуст PANEL_URL"):
+        load_settings(
+            write_env(
+                tmp_path,
+                PANEL_TYPE="marzban",
+                PANEL_URL="",
+                PANEL_API_TOKEN="",
+                PANEL_USERNAME="admin",
+                PANEL_PASSWORD="secret",
+            )
+        )

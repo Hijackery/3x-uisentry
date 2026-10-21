@@ -263,7 +263,7 @@ ${BOLD}Установка StackSentry${RESET}
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
   --2fa            включить 2FA (TOTP) для опасных действий
   --no-2fa         выключить 2FA (секрет сохраняется)
-  --panel          настроить API 3X-UI (по умолчанию — автоопределение)
+  --panel          настроить API панели (по умолчанию — автоопределение)
   --no-panel       не настраивать API панели (только мониторинг служб)
   --webapp         поставить read-only Mini App (127.0.0.1:8787)
   --webapp-origin URL  публичный HTTPS-адрес Mini App (для кнопки в Telegram)
@@ -1009,11 +1009,20 @@ if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
             "" | *ExampleTokenReplaceMe*) CONFIG_COMPLETE=0 ;;
         esac
     done
+    _cfg_panel_type="$(env_get PANEL_TYPE)"
+    [ -n "$_cfg_panel_type" ] || _cfg_panel_type="3x-ui"
     if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
-        for _key in PANEL_URL PANEL_API_TOKEN; do
-            _value="$(env_get "$_key")"
-            [ -n "$_value" ] || CONFIG_COMPLETE=0
-        done
+        if [ "$_cfg_panel_type" = "marzban" ]; then
+            for _key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
+                _value="$(env_get "$_key")"
+                [ -n "$_value" ] || CONFIG_COMPLETE=0
+            done
+        else
+            for _key in PANEL_URL PANEL_API_TOKEN; do
+                _value="$(env_get "$_key")"
+                [ -n "$_value" ] || CONFIG_COMPLETE=0
+            done
+        fi
     fi
     # --panel на monitor-only .env должен снова открыть мастер.
     if [ "$PANEL_MODE" = "1" ] && [ -z "$(env_get PANEL_URL)" ]; then
@@ -1031,6 +1040,27 @@ else
     [ -f "$ENV_FILE" ] || { cp "$SOURCE_DIR/.env.example" "$ENV_FILE" 2>/dev/null || touch "$ENV_FILE"; }
 
     read -r DETECTED_PORT DETECTED_BASE <<<"$(panel_settings)"
+    # Панель и её тип определяем по службам/путям/процессам, а не «только 3X-UI».
+    DETECTED_PANEL_TYPE="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" \
+        -m stacksentry.inventory --panel-type 2>/dev/null || true)"
+    DETECTED_PANEL_PORT="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" \
+        -m stacksentry.inventory --panel-port 2>/dev/null || true)"
+    PANEL_TYPE_VALUE="$(env_get PANEL_TYPE)"
+    [ -n "$PANEL_TYPE_VALUE" ] || PANEL_TYPE_VALUE="${DETECTED_PANEL_TYPE:-3x-ui}"
+    if [ -n "$DETECTED_PANEL_TYPE" ]; then
+        info "Обнаружена панель: $DETECTED_PANEL_TYPE${DETECTED_PANEL_PORT:+ (порт $DETECTED_PANEL_PORT)}"
+    fi
+    if [ -n "$DETECTED_PANEL_TYPE" ] && [ "$DETECTED_PANEL_TYPE" != "$PANEL_TYPE_VALUE" ] \
+        && [ -z "$(env_get PANEL_TYPE)" ]; then
+        warn "Тип панели взят из автоопределения: $PANEL_TYPE_VALUE"
+    fi
+    case "$PANEL_TYPE_VALUE" in
+        s-ui) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-2095}" ;;
+        marzban) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-8000}" ;;
+        hiddify) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-443}" ;;
+        remnawave) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-3000}" ;;
+        *) DEFAULT_PANEL_PORT="${DETECTED_PORT:-2053}" ;;
+    esac
     HOST="127.0.0.1"
     IP_LIST="$(detect_ips)"
     FIRST_IP="${IP_LIST%% *}"
@@ -1041,7 +1071,7 @@ else
         info "IP-адреса этого сервера: $IP_LIST"
         info "Можно вписать любой из них — в ответе укажите адрес, который слышит ваш телефон/VPN."
     fi
-    SUGGESTED_URL="${PANEL_URL:-http://${HOST}:${DETECTED_PORT:-2053}}"
+    SUGGESTED_URL="${PANEL_URL:-http://${HOST}:${DEFAULT_PANEL_PORT}}"
 
     question TG_TOKEN "Токен Telegram-бота от @BotFather" \
         "$(printf '%s' "${TELEGRAM_BOT_TOKEN:-$(env_get TELEGRAM_BOT_TOKEN)}")"
@@ -1112,7 +1142,7 @@ else
         [ -n "$(env_get TOTP_SECRET)" ] || set_env TOTP_SECRET ""
     fi
 
-    # --- API панели: автоопределение 3X-UI ---
+    # --- API панели: автоопределение типа (3X-UI/Marzban/Remnawave/S-UI/Hiddify) ---
     if [ "$PANEL_MODE" = "auto" ]; then
         if [ -n "$(env_get PANEL_URL)" ]; then
             PANEL_MODE=1
@@ -1122,7 +1152,7 @@ else
     fi
     if [ "$PANEL_MODE" = "0" ] && [ "$PANEL_MODE_EXPLICIT" -eq 0 ] \
         && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        ask "3X-UI API не найден. Настроить адрес и токен вручную? [y/N] "
+        ask "Поддерживаемая API-панель не найдена. Настроить вручную? [y/N] "
         read -r _panel_answer <&$READ_FD || _panel_answer=""
         case "$_panel_answer" in
             [yYдД]*) PANEL_MODE=1 ;;
@@ -1130,7 +1160,20 @@ else
         esac
     fi
 
+    PANEL_USERNAME_VALUE="$(env_get PANEL_USERNAME)"
+    PANEL_PASSWORD_VALUE="$(env_get PANEL_PASSWORD)"
     if [ "$PANEL_MODE" = "1" ]; then
+    if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        question PANEL_TYPE_VALUE "Тип панели (3x-ui, marzban, remnawave, s-ui, hiddify)" "$PANEL_TYPE_VALUE"
+    fi
+    PANEL_TYPE_VALUE="$(printf '%s' "$PANEL_TYPE_VALUE" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$PANEL_TYPE_VALUE" in
+        3x-ui|marzban|remnawave|s-ui|hiddify) ;;
+        *) fail "PANEL_TYPE: поддерживаются 3x-ui, marzban, remnawave, s-ui и hiddify" ;;
+    esac
+    if [ "$PANEL_TYPE_VALUE" = "3x-ui" ]; then
+    PANEL_USERNAME_VALUE=""
+    PANEL_PASSWORD_VALUE=""
     _existing_panel_url="$(env_get PANEL_URL)"
     [ -n "$_existing_panel_url" ] && SUGGESTED_URL="$_existing_panel_url"
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
@@ -1239,12 +1282,117 @@ else
     fi
 
     else
+        # Остальные панели: адрес (у S-UI и Hiddify — вместе с путём) и токен.
+        PANEL_USERNAME_VALUE=""
+        PANEL_PASSWORD_VALUE=""
+        case "$PANEL_TYPE_VALUE" in
+            s-ui)
+                info "S-UI: адрес вместе с web path панели, например http://host:2095/app"
+                question PANEL_URL_VALUE "Адрес S-UI (с путём панели)" "$SUGGESTED_URL"
+                ;;
+            hiddify)
+                info "Hiddify: адрес вместе с admin proxy path, например https://host/AbCdEf"
+                question PANEL_URL_VALUE "Адрес Hiddify (с admin proxy path)" "$SUGGESTED_URL"
+                ;;
+            *)
+                question PANEL_URL_VALUE "Адрес панели $PANEL_TYPE_VALUE" "$SUGGESTED_URL"
+                ;;
+        esac
+        PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"
+        case "$PANEL_URL_VALUE" in
+            http://*|https://*) ;;
+            *) PANEL_URL_VALUE="$(normalize_url "$SUGGESTED_URL")"
+               warn "Некорректный адрес, беру автоопределённый: $PANEL_URL_VALUE" ;;
+        esac
+        PANEL_URL_VALUE="$(collapse_slashes "$PANEL_URL_VALUE")"
+        PANEL_BASE=""
+        PROBE_URL="$PANEL_URL_VALUE"
+        if curl -sS --max-time 5 -o /dev/null "$PROBE_URL/" 2>/dev/null; then
+            ok "Панель отвечает: $PROBE_URL"
+        else
+            warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
+        fi
+        if [ "$PANEL_TYPE_VALUE" = "marzban" ]; then
+            question PANEL_USERNAME_VALUE "Логин администратора Marzban" "${PANEL_USERNAME_VALUE:-admin}"
+            [ -n "$PANEL_USERNAME_VALUE" ] || fail "Нужен логин администратора Marzban"
+            question PANEL_PASSWORD_VALUE "Пароль администратора Marzban" "$PANEL_PASSWORD_VALUE"
+            [ -n "$PANEL_PASSWORD_VALUE" ] || fail "Нужен пароль администратора Marzban"
+            _login_tmp="$(mktemp)"
+            _login_code="$(curl -sS --max-time 10 -o "$_login_tmp" -w '%{http_code}' \
+                --data-urlencode "username=$PANEL_USERNAME_VALUE" \
+                --data-urlencode "password=$PANEL_PASSWORD_VALUE" \
+                --data-urlencode "grant_type=password" \
+                "$PANEL_URL_VALUE/api/admin/token" 2>/dev/null || echo 000)"
+            _login_reply="$(cat "$_login_tmp" 2>/dev/null || true)"
+            rm -f "$_login_tmp"
+            if printf '%s' "$_login_reply" | grep -q '"access_token"'; then
+                ok "Marzban принял логин и пароль"
+            elif [ "$_login_code" = "401" ] || [ "$_login_code" = "403" ]; then
+                warn "Marzban отклонил логин/пароль (HTTP $_login_code) — проверьте учётную запись"
+            else
+                warn "Проверить логин Marzban не удалось (HTTP $_login_code) — это заметит самопроверка"
+            fi
+            PANEL_TOKEN=""
+        else
+            case "$PANEL_TYPE_VALUE" in
+                s-ui)
+                    info "S-UI: Admin → API Token; токен передаётся заголовком Token"
+                    ;;
+                hiddify)
+                    info "Hiddify: Settings → API; ключ — UUID администратора (Hiddify-API-Key)"
+                    ;;
+                *)
+                    info "Remnawave: API-токен создаётся в настройках панели"
+                    ;;
+            esac
+            question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
+            [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели $PANEL_TYPE_VALUE"
+            _probe_tmp="$(mktemp)"
+            case "$PANEL_TYPE_VALUE" in
+                s-ui)
+                    _probe_code="$(curl -sS --max-time 5 -o "$_probe_tmp" -w '%{http_code}' \
+                        -H "Token: $PANEL_TOKEN" \
+                        "$PANEL_URL_VALUE/apiv2/status?r=sbd" 2>/dev/null || echo 000)"
+                    if grep -q '"success":true' "$_probe_tmp" 2>/dev/null; then
+                        ok "S-UI приняла токен"
+                    else
+                        warn "S-UI не подтвердила токен (HTTP $_probe_code) — проверьте значение и путь панели"
+                    fi
+                    ;;
+                hiddify)
+                    _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                        -H "Hiddify-API-Key: $PANEL_TOKEN" \
+                        "$PANEL_URL_VALUE/api/v2/panel/info/" 2>/dev/null || echo 000)"
+                    case "$_probe_code" in
+                        200) ok "Hiddify принял API-ключ" ;;
+                        401|403) warn "Hiddify отклонил ключ (HTTP $_probe_code) — проверьте admin UUID и путь" ;;
+                        *) warn "Проверить Hiddify не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
+                    esac
+                    ;;
+                remnawave)
+                    _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                        -H "Authorization: Bearer $PANEL_TOKEN" \
+                        "$PANEL_URL_VALUE/api/users?size=1" 2>/dev/null || echo 000)"
+                    case "$_probe_code" in
+                        200) ok "Remnawave принял токен" ;;
+                        401|403) warn "Remnawave отклонил токен (HTTP $_probe_code)" ;;
+                        *) warn "Проверить Remnawave не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
+                    esac
+                    ;;
+            esac
+            rm -f "$_probe_tmp"
+        fi
+    fi
+
+    else
         PANEL_URL_VALUE=""
         PANEL_BASE=""
         PANEL_TOKEN=""
+        PANEL_USERNAME_VALUE=""
+        PANEL_PASSWORD_VALUE=""
         PROBE_URL=""
         info "API панели не настроен — режим «только мониторинг служб»."
-        info "Позже: sudo stacksentry-menu → адрес панели и API-токен."
+        info "Позже: sudo stacksentry-menu → тип, адрес и токен панели."
     fi
 
     # Автоопределение панелей и VPN-стека (stdlib, работает до venv).
@@ -1268,16 +1416,24 @@ else
     question START_CHAT "Чат для алертов (Enter — админам в личку)" "$(env_get ALERT_CHAT_ID)"
 
     if [ "$PANEL_MODE" = "1" ]; then
-        info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_URL_VALUE${PANEL_BASE:+/$PANEL_BASE}, сервисы $SERVICES_LIST, токен панели ***${PANEL_TOKEN: -4}"
+        if [ "$PANEL_TYPE_VALUE" = "marzban" ]; then
+            _panel_auth="логин $PANEL_USERNAME_VALUE, пароль ***"
+        else
+            _panel_auth="токен ***${PANEL_TOKEN: -4}"
+        fi
+        info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_TYPE_VALUE $PANEL_URL_VALUE, сервисы $SERVICES_LIST, $_panel_auth"
     else
         info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель не настроена (monitor-only), сервисы $SERVICES_LIST"
     fi
 
     set_env TELEGRAM_BOT_TOKEN "$TG_TOKEN"
     set_env TELEGRAM_ADMIN_IDS "$ADMIN_IDS"
+    set_env PANEL_TYPE "$PANEL_TYPE_VALUE"
     set_env PANEL_URL "$PANEL_URL_VALUE"
     set_env PANEL_BASE_PATH "$PANEL_BASE"
     set_env PANEL_API_TOKEN "$PANEL_TOKEN"
+    set_env PANEL_USERNAME "$PANEL_USERNAME_VALUE"
+    set_env PANEL_PASSWORD "$PANEL_PASSWORD_VALUE"
     set_env SERVICES "$SERVICES_LIST"
     set_env ALERT_CHAT_ID "$START_CHAT"
     set_env STATE_PATH "$STATE_DIR/state.db"
@@ -1312,6 +1468,8 @@ if [ "$CONFIG_COMPLETE" -eq 1 ]; then
         set_env PANEL_URL ""
         set_env PANEL_API_TOKEN ""
         set_env PANEL_BASE_PATH ""
+        set_env PANEL_USERNAME ""
+        set_env PANEL_PASSWORD ""
         info "API панели отключён (--no-panel): monitor-only."
     fi
 fi
@@ -1325,10 +1483,18 @@ chmod 640 "$ENV_FILE"
 for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS; do
     [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo stacksentry-menu (или повторите установку)"
 done
+_final_panel_type="$(env_get PANEL_TYPE)"
+[ -n "$_final_panel_type" ] || _final_panel_type="3x-ui"
 if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
-    for key in PANEL_URL PANEL_API_TOKEN; do
-        [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — задайте оба или очистите оба (monitor-only)"
-    done
+    if [ "$_final_panel_type" = "marzban" ]; then
+        for key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
+            [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — для Marzban нужны адрес, логин и пароль"
+        done
+    else
+        for key in PANEL_URL PANEL_API_TOKEN; do
+            [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — задайте оба или очистите оба (monitor-only)"
+        done
+    fi
 fi
 
 # Заглушка из .env.example: с ней бот стартует, но Telegram отвечает 401.

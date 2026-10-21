@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 
 from stacksentry import ui
 from stacksentry.models import (
@@ -247,3 +248,72 @@ def test_main_menu_hides_maintenance_from_guests() -> None:
     assert "maintenance" in [
         b.callback_data for row in ui.main_menu(True).inline_keyboard for b in row
     ]
+
+
+def test_main_menu_hides_panel_data_when_api_disabled(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(panel_url="", panel_api_token="")
+    labels = [
+        button.text
+        for row in ui.main_menu(True, settings=settings).inline_keyboard
+        for button in row
+    ]
+    assert "🌐 Панель (не настроена)" in labels
+    assert not any("Трафик" in text or "Подписки" in text for text in labels)
+    assert any("Сервисы" in text for text in labels)
+
+
+def test_main_menu_shows_panel_data_when_enabled(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(panel_type="s-ui")
+    labels = [
+        button.text
+        for row in ui.main_menu(False, settings=settings).inline_keyboard
+        for button in row
+    ]
+    assert "🌐 Панель" in labels
+    assert "📊 Трафик" in labels
+    assert "🪪 Подписки" in labels
+
+
+def test_services_menu_adapts_core_restart(
+    make_settings: Callable[..., Settings],
+) -> None:
+    def labels(panel_type: str) -> list[str]:
+        settings = make_settings(panel_type=panel_type)
+        return [
+            button.text
+            for row in ui.services_menu(
+                ("x-ui",), True, settings=settings
+            ).inline_keyboard
+            for button in row
+        ]
+
+    assert any("Рестарт xray" in text for text in labels("3x-ui"))
+    assert any("Рестарт sing-box" in text for text in labels("s-ui"))
+    assert not any("Рестарт xray" in text for text in labels("remnawave"))
+
+
+def test_maintenance_menu_is_package_manager_aware() -> None:
+    apt = [
+        button.text
+        for row in ui.maintenance_menu(package_manager="apt").inline_keyboard
+        for button in row
+    ]
+    dnf = [
+        button.text
+        for row in ui.maintenance_menu(package_manager="dnf").inline_keyboard
+        for button in row
+    ]
+    assert any("apt update" in text for text in apt)
+    assert not any("apt" in text for text in dnf)
+    assert any("Выполнить команду" in text for text in dnf)
+    assert any("Перезагрузить сервер" in text for text in dnf)
+
+
+def test_panel_render_uses_configured_panel_name() -> None:
+    text = ui.render_panel(snapshot(panel=panel()), panel_type="s-ui")
+    assert "S-UI" in text
+    assert "xray" not in text

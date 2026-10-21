@@ -45,8 +45,8 @@ STACK: tuple[StackItem, ...] = (
         "panel",
         ("s-ui", "sui"),
         ("/usr/local/s-ui", "/etc/s-ui", "/opt/s-ui"),
-        (2096,),
-        "служба/порт",
+        (2095, 2096),
+        "API поддерживается",
     ),
     StackItem(
         "marzban",
@@ -55,7 +55,7 @@ STACK: tuple[StackItem, ...] = (
         ("marzban", "marzban-node"),
         ("/opt/marzban", "/etc/marzban"),
         (8000, 62050),
-        "служба/порт",
+        "API поддерживается",
     ),
     StackItem(
         "marzneshin",
@@ -82,7 +82,7 @@ STACK: tuple[StackItem, ...] = (
         ("hiddify", "hiddify-panel", "hiddify-manager"),
         ("/opt/hiddify-manager", "/opt/hiddify", "/etc/hiddify"),
         (8000, 443),
-        "служба/порт",
+        "API поддерживается",
     ),
     StackItem(
         "remnawave",
@@ -91,7 +91,7 @@ STACK: tuple[StackItem, ...] = (
         ("remnawave", "remnawave-node", "remnawave-backend"),
         ("/opt/remnawave", "/etc/remnawave"),
         (3000, 3010),
-        "служба/порт",
+        "API поддерживается",
     ),
     StackItem(
         "outline",
@@ -355,6 +355,98 @@ class Detected:
         return f"похоже на {self.unit} (не подтверждено службой)"
 
 
+#: Панели, для которых у бота есть рабочий API-адаптер.
+API_PANEL_TYPES: frozenset[str] = frozenset(
+    {"3x-ui", "s-ui", "marzban", "remnawave", "hiddify"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformInfo:
+    os_id: str
+    os_name: str
+    os_like: tuple[str, ...]
+    package_manager: str
+    init: str
+
+
+_PACKAGE_MANAGERS: tuple[tuple[str, str], ...] = (
+    ("apt-get", "apt"),
+    ("dnf", "dnf"),
+    ("yum", "yum"),
+    ("zypper", "zypper"),
+    ("pacman", "pacman"),
+    ("apk", "apk"),
+    ("xbps-install", "xbps"),
+    ("emerge", "emerge"),
+    ("eopkg", "eopkg"),
+    ("pkg", "pkg"),
+)
+
+
+def _os_release() -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        text = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return values
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key:
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def detect_package_manager() -> str:
+    for binary, name in _PACKAGE_MANAGERS:
+        if shutil.which(binary):
+            return name
+    return ""
+
+
+def detect_init() -> str:
+    if Path("/run/systemd/system").is_dir() and shutil.which("systemctl"):
+        return "systemd"
+    if shutil.which("rc-service") or shutil.which("openrc"):
+        return "openrc"
+    if Path("/etc/init.d").is_dir():
+        return "sysv"
+    if Path("/usr/local/etc/rc.d").is_dir():
+        return "rc"
+    return ""
+
+
+def platform_info() -> PlatformInfo:
+    data = _os_release()
+    like = tuple(item for item in data.get("ID_LIKE", "").split() if item)
+    return PlatformInfo(
+        os_id=data.get("ID", ""),
+        os_name=data.get("PRETTY_NAME") or data.get("NAME", ""),
+        os_like=like,
+        package_manager=detect_package_manager(),
+        init=detect_init(),
+    )
+
+
+def detected_panel() -> Detected | None:
+    """Первая найденная панель с поддерживаемым API (служба важнее пути)."""
+    panels = [item for item in detect_stack() if item.item.kind == "panel"]
+    with_unit = [item for item in panels if "unit" in item.evidence]
+    for item in (*with_unit, *panels):
+        if item.item.key in API_PANEL_TYPES:
+            return item
+    return None
+
+
+def panel_suggestion() -> tuple[str, int]:
+    """Тип и порт обнаруженной панели; пусто/0 — ничего поддерживаемого нет."""
+    panel = detected_panel()
+    if panel is None:
+        return "", 0
+    port = panel.item.ports[0] if panel.item.ports else 0
+    return panel.item.key, port
+
+
 def _run(argv: list[str], timeout: float = 5.0) -> str:
     try:
         result = subprocess.run(
@@ -485,12 +577,30 @@ def main(argv: list[str] | None = None) -> int:
         print(",".join(watched_services()))
         return 0
     if "--panel" in args:
-        confirmed = any(
-            item.item.key == "3x-ui"
-            and ("unit" in item.evidence or "path" in item.evidence)
-            for item in items
+        print("1" if detected_panel() is not None else "0")
+        return 0
+    if "--panel-type" in args:
+        found = detected_panel()
+        print(found.item.key if found is not None else "")
+        return 0
+    if "--panel-port" in args:
+        panel = detected_panel()
+        print(panel.item.ports[0] if panel is not None and panel.item.ports else 0)
+        return 0
+    if "--platform-json" in args:
+        info = platform_info()
+        print(
+            json.dumps(
+                {
+                    "os_id": info.os_id,
+                    "os_name": info.os_name,
+                    "os_like": list(info.os_like),
+                    "package_manager": info.package_manager,
+                    "init": info.init,
+                },
+                ensure_ascii=False,
+            )
         )
-        print("1" if confirmed else "0")
         return 0
     if "--json" in args:
         print(
@@ -504,12 +614,21 @@ def main(argv: list[str] | None = None) -> int:
                         "evidence": list(d.evidence),
                         "ports": list(d.item.ports),
                         "note": d.item.note,
+                        "api_supported": d.item.key in API_PANEL_TYPES,
                     }
                     for d in items
                 ],
                 ensure_ascii=False,
                 indent=2,
             )
+        )
+        return 0
+    if "--platform" in args:
+        info = platform_info()
+        print(
+            f"ОС: {info.os_name or info.os_id or '?'}; "
+            f"пакеты: {info.package_manager or 'неизвестно'}; "
+            f"init: {info.init or 'неизвестно'}"
         )
         return 0
     if not items:

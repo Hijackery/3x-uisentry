@@ -227,6 +227,14 @@ sudo env \
   `https://example.com/AbCdEf`; бот сам добавит `/api/v2/`.
 - 3X-UI: `PANEL_BASE_PATH` — webBasePath панели; `/panel/api` добавит бот.
 
+Установщик, меню и бот подстраиваются под сервер. Мастер определяет ОС,
+пакетный менеджер, службы и тип панели, затем спрашивает только нужное:
+токен для 3X-UI/Remnawave/S-UI/Hiddify или логин/пароль для Marzban, с
+проверкой API. `stacksentry-menu detect` показывает найденное, в меню есть
+пункт «Тип панели», а рестарт ядра сам выбирает endpoint. Главное меню бота
+не показывает «Трафик»/«Подписки», пока API не настроен, и скрывает
+apt-обновления на не-Debian системах.
+
 ### Что детектируется
 
 Панели: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
@@ -425,7 +433,8 @@ sudo stacksentry-menu keys         # какие ключи разрешено м
 stacksentry-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
 sudo stacksentry-menu set PANEL_TIMEOUT 20
 sudo stacksentry-menu restart       # применить
-sudo stacksentry-menu restart-xray  # перезапустить xray через API панели
+sudo stacksentry-menu detect        # что найдено: ОС, панели, VPN, службы
+sudo stacksentry-menu restart-xray  # перезапустить ядро панели (3X-UI/Marzban/S-UI)
 sudo stacksentry-menu apt-logs 100  # журнал фоновых apt-обновлений
 sudo stacksentry-menu logs 100
 ```
@@ -435,19 +444,20 @@ sudo stacksentry-menu logs 100
 
 ```text
 ╔════════════════════════════════════════════════════════╗
-│       Бот мониторинга 3X-UI — панель управления        │
+│        StackSentry — панель управления                 │
 │  Служба stacksentry-bot: ● работает                    │
 │   Диагностика                                          │
 │    1. Состояние службы и последние ошибки              │
 │    2. Показать настройки (секреты замаскированы)       │
 │    3. Журнал бота (последние 50 строк)                 │
+│    4. Что найдено на сервере (ОС, панели, VPN)         │
 │────────────────────────────────────────────────────────│
 │   Telegram                                             │
-│    4. Токен бота (@BotFather)                          │
-│    5. ID администраторов                               │
-│    6. Чат для алертов                                  │
+│    5. Токен бота (@BotFather)                          │
+│    6. ID администраторов                               │
+│    7. Чат для алертов                                  │
 │   …                                                    │
-│   22. Удалить бота                                     │
+│   25. Удалить бота                                     │
 │    0. Выход                                            │
 ╚════════════════════════════════════════════════════════╝
 ```
@@ -459,33 +469,37 @@ sudo stacksentry-menu logs 100
 | 1 | состояние службы и последние ошибки | — | — |
 | 2 | показывает настройки, секреты замаскированы | — | — |
 | 3 | журнал бота, 50 строк | — | — |
-| 4 | токен Telegram-бота | значение от @BotFather | `123456789:AAH...` |
-| 5 | ID администраторов | числа через запятую | `11111111,22222222` |
-| 6 | чат для алертов | ID чата; у групп он отрицательный; пусто — в личку | `-1001234567890` |
-| 7 | адрес панели (`PANEL_URL`) | схема, хост и порт, **без пути** | `https://panel.example.com:5580` |
-| 8 | `webBasePath` (`PANEL_BASE_PATH`) | значение «URL панели» из настроек 3X-UI; обычно пусто. **Не** `/panel` | пусто или `mypanel` |
-| 9 | API-токен панели | значение токена (scope `node-sync`/`admin`) | `AbCdEf...` |
-| 10 | TLS и CA (подменю) | `PANEL_VERIFY_TLS`: `true`/`false`; `PANEL_CA_BUNDLE`: путь к PEM | `true`, `/etc/ssl/panel-ca.pem` |
-| 11 | порог CPU (подменю) | `CPU_WARN` и `CPU_CRIT`, % | `80`, `95` |
-| 12 | порог памяти (подменю) | `MEM_WARN` и `MEM_CRIT`, % | `85`, `95` |
-| 13 | порог диска (подменю) | `DISK_WARN` и `DISK_CRIT`, % | `85`, `93` |
-| 14 | гистерезис и кулдаун (подменю) | `ALERT_HYSTERESIS` в %, `ALERT_COOLDOWN` в сек | `5`, `1800` |
-| 15 | за сколько дней предупреждать о подписке | целое число дней | `3` |
-| 16 | службы под наблюдением | имена служб через запятую | `x-ui,fail2ban` |
-| 17 | уровень логирования | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
-| 18 | любой ключ из белого списка | сначала имя ключа, затем значение | `DISK_PATH` → `/` |
-| 19 | перезапуск бота с проверкой | — | — |
-| 20 | перезапуск xray через API | подтверждение `y` | `y` |
-| 21 | обновление из `main` | — | — |
-| 22 | удаление | `yes` для подтверждения | `yes` |
+| 4 | автоопределение: ОС, пакетный менеджер, панели, VPN, службы | — | — |
+| 5 | токен Telegram-бота | значение от @BotFather | `123456789:AAH...` |
+| 6 | ID администраторов | числа через запятую | `11111111,22222222` |
+| 7 | чат для алертов | ID чата; у групп он отрицательный; пусто — в личку | `-1001234567890` |
+| 8 | тип панели (`PANEL_TYPE`) | один из поддерживаемых типов | `s-ui` |
+| 9 | адрес панели (`PANEL_URL`) | схема, хост, порт и (для S-UI/Hiddify) путь панели | `https://panel.example.com:5580` |
+| 10 | путь панели (`PANEL_BASE_PATH`) | `webBasePath` 3X-UI; у S-UI/Hiddify путь обычно уже в адресе | пусто или `mypanel` |
+| 11 | API-токен панели | токен 3X-UI/Remnawave/S-UI или admin UUID Hiddify | `AbCdEf...` |
+| 12 | логин и пароль Marzban (подменю) | `PANEL_USERNAME`, `PANEL_PASSWORD` | `admin`, `***` |
+| 13 | TLS и CA (подменю) | `PANEL_VERIFY_TLS`: `true`/`false`; `PANEL_CA_BUNDLE`: путь к PEM | `true`, `/etc/ssl/panel-ca.pem` |
+| 14 | порог CPU (подменю) | `CPU_WARN` и `CPU_CRIT`, % | `80`, `95` |
+| 15 | порог памяти (подменю) | `MEM_WARN` и `MEM_CRIT`, % | `85`, `95` |
+| 16 | порог диска (подменю) | `DISK_WARN` и `DISK_CRIT`, % | `85`, `93` |
+| 17 | гистерезис и кулдаун (подменю) | `ALERT_HYSTERESIS` в %, `ALERT_COOLDOWN` в сек | `5`, `1800` |
+| 18 | за сколько дней предупреждать о подписке | целое число дней | `3` |
+| 19 | службы под наблюдением | имена служб через запятую | `x-ui,fail2ban` |
+| 20 | уровень логирования | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
+| 21 | любой ключ из белого списка | сначала имя ключа, затем значение | `DISK_PATH` → `/` |
+| 22 | перезапуск бота с проверкой | — | — |
+| 23 | перезапуск ядра панели | подтверждение `y` | `y` |
+| 24 | обновление из `main` | — | — |
+| 25 | удаление | `yes` для подтверждения | `yes` |
 
 Пустое значение очищает настройку: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
-Для пунктов 4–17 можно не ходить в меню, а сразу писать:
+Для пунктов 5–20 можно не ходить в меню, а сразу писать:
 `sudo stacksentry-menu set KEY VALUE` (то же, что пункт 18, но одной командой).
 
 ```bash
 # примеры значений
-sudo stacksentry-menu set PANEL_URL https://panel.example.com:5580
+sudo stacksentry-menu set PANEL_TYPE s-ui
+sudo stacksentry-menu set PANEL_URL https://panel.example.com:2095/app
 sudo stacksentry-menu set PANEL_BASE_PATH ""          # «URL панели» = /
 sudo stacksentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
 sudo stacksentry-menu set ALERT_CHAT_ID -1001234567890

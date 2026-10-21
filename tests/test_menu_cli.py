@@ -178,7 +178,7 @@ def test_interactive_menu_is_framed_and_rejects_bad_choice() -> None:
     assert result.returncode == 0, result.stderr
     assert "╔" in result.stdout and "╚" in result.stdout
     assert "Показать настройки" in result.stdout
-    assert "Перезапустить xray в панели" in result.stdout
+    assert "Перезапустить ядро панели" in result.stdout
     assert "Нет такого пункта: 99" in result.stdout
 
 
