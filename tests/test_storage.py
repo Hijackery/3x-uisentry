@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from uisentry.models import SystemMetrics
-from uisentry.storage import Storage
+from stacksentry.models import SystemMetrics
+from stacksentry.storage import Storage
 
 
 def make_metrics(cpu: float, mem: float, *, ts: float) -> SystemMetrics:

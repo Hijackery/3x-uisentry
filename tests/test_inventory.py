@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from uisentry import inventory, ui
-from uisentry.models import ServiceStatus
+from stacksentry import inventory, ui
+from stacksentry.models import ServiceStatus
 
 
 def test_detects_3xui_and_extra_units(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -71,10 +71,10 @@ def test_services_menu_has_stack_button() -> None:
 
 
 def test_installer_uses_inventory() -> None:
-    from uisentry.settings import BASE_DIR
+    from stacksentry.settings import BASE_DIR
 
     text = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
-    assert "-m uisentry.inventory --services" in text
+    assert "-m stacksentry.inventory --services" in text
     assert "apk add --no-cache" in text
 
 

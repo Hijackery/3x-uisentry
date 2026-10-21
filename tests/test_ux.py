@@ -25,13 +25,13 @@ from telegram import (
 )
 from telegram.constants import ChatType
 
-from uisentry import ui
-from uisentry.app import MonitorBot
-from uisentry.settings import BASE_DIR, ConfigError, Settings, load_settings
+from stacksentry import ui
+from stacksentry.app import MonitorBot
+from stacksentry.settings import BASE_DIR, ConfigError, Settings, load_settings
 
 ADMIN_ID = 42
-UI_SRC = (BASE_DIR / "uisentry" / "ui.py").read_text(encoding="utf-8")
-APP_SRC = (BASE_DIR / "uisentry" / "app.py").read_text(encoding="utf-8")
+UI_SRC = (BASE_DIR / "stacksentry" / "ui.py").read_text(encoding="utf-8")
+APP_SRC = (BASE_DIR / "stacksentry" / "app.py").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------- статическая проверка
@@ -63,7 +63,7 @@ def test_every_button_callback_is_handled() -> None:
 
 def test_every_confirm_button_has_description() -> None:
     """Кнопка подтверждения без описания = «Неизвестное действие» у админа."""
-    from uisentry.app import CONFIRM_DESCRIPTIONS
+    from stacksentry.app import CONFIRM_DESCRIPTIONS
 
     for data in sorted(_all_callback_data()):
         if not data.startswith("ask:"):
@@ -294,7 +294,7 @@ def test_heavy_commands_are_rate_limited(bot_app: MonitorBot) -> None:
 
 def test_split_keeps_html_tags_whole() -> None:
     """Нарезка длинных сообщений не должна рвать теги Telegram."""
-    from uisentry.app import _split
+    from stacksentry.app import _split
 
     lines = [f"<b>Строка {i}</b> — значение {i}" for i in range(400)]
     text = "\n".join(lines)
@@ -313,7 +313,7 @@ def test_split_keeps_html_tags_whole() -> None:
 
 
 def test_split_short_text_is_untouched() -> None:
-    from uisentry.app import _split
+    from stacksentry.app import _split
 
     assert _split("короткий <b>текст</b>", 100) == ["короткий <b>текст</b>"]
 
@@ -364,7 +364,7 @@ def test_help_manual_explains_metrics() -> None:
         "Панель",
         "Подписки",
         "Что значат цифры",
-        "uisentry-menu",
+        "stacksentry-menu",
     ):
         assert marker in text, marker
     assert "/services" in text
@@ -409,7 +409,7 @@ def test_help_is_a_full_presentational_manual() -> None:
 
 
 def test_apt_status_header_is_parsed() -> None:
-    from uisentry.app import _parse_apt_status
+    from stacksentry.app import _parse_apt_status
 
     fields, tail = _parse_apt_status(
         "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"
@@ -503,7 +503,7 @@ async def test_stale_callback_answer_does_not_crash(bot_app: MonitorBot) -> None
 
 def test_command_help_is_grouped_and_described() -> None:
     """Список /run — человеческий: группы и описания, а не голые алиасы."""
-    from uisentry.settings import BASE_DIR
+    from stacksentry.settings import BASE_DIR
 
     line = next(
         item

@@ -18,8 +18,8 @@ python3 -m venv .venv
 .venv/bin/ruff check .
 .venv/bin/python -m mypy .          # strict, 3.10+
 .venv/bin/python -m pytest          # все тесты должны быть зелёными
-bash -n install.sh && shellcheck install.sh install/uisentry-ctl install/uisentry-menu
-sudo visudo -cf install/uisentry-sudoers
+bash -n install.sh && shellcheck install.sh install/stacksentry-ctl install/stacksentry-menu
+sudo visudo -cf install/stacksentry-sudoers
 ```
 
 Те же проверки гоняются в CI на Python 3.10 и 3.13 (плюс отдельная job для
@@ -58,7 +58,7 @@ Thanks for helping. The project is small, so the rules are short.
 
 **Required checks before a PR:** `ruff format --check .`, `ruff check .`,
 `mypy .` (strict, 3.10+), `pytest`, `bash -n` + `shellcheck` for the shell
-scripts, and `visudo -cf install/uisentry-sudoers`. The same checks run in CI
+scripts, and `visudo -cf install/stacksentry-sudoers`. The same checks run in CI
 on Python 3.10 and 3.13, plus a separate job for the installer scripts.
 
 **Style:** type hints everywhere, `mypy --strict`, 88-column limit; comments and

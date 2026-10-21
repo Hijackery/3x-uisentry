@@ -19,7 +19,7 @@ body:
     attributes:
       label: Как воспроизвести
       placeholder: |
-        1. sudo bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+        1. sudo bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
         2. ...
     validations:
       required: true
@@ -51,8 +51,8 @@ body:
     attributes:
       label: Логи (токены замаскированы)
       description: |
-        `journalctl -u uisentry-bot -n 50 --no-pager` или,
-        для систем без systemd, последние строки `/var/lib/uisentry/bot.log`.
+        `journalctl -u stacksentry-bot -n 50 --no-pager` или,
+        для систем без systemd, последние строки `/var/lib/stacksentry/bot.log`.
       render: shell
   - type: checkboxes
     id: checks

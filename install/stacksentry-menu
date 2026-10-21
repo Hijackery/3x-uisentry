@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 #
-# uisentry-menu — консольная панель StackSentry.
+# stacksentry-menu — консольная панель StackSentry.
 #
-# Запуск:  sudo uisentry-menu            # интерактивное меню
-#          sudo uisentry-menu status     # состояние службы
-#          sudo uisentry-menu show       # настройки (секреты замаскированы)
-#          sudo uisentry-menu keys       # какие ключи можно менять
-#          sudo uisentry-menu set PANEL_TIMEOUT 20
-#          uisentry-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
-#          sudo uisentry-menu restart | logs [N] | update | uninstall [--purge]
+# Запуск:  sudo stacksentry-menu            # интерактивное меню
+#          sudo stacksentry-menu status     # состояние службы
+#          sudo stacksentry-menu show       # настройки (секреты замаскированы)
+#          sudo stacksentry-menu keys       # какие ключи можно менять
+#          sudo stacksentry-menu set PANEL_TIMEOUT 20
+#          stacksentry-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
+#          sudo stacksentry-menu restart | logs [N] | update | uninstall [--purge]
 #
 # Меню меняет только ключи из белого списка, пишет .env атомарно с правами
 # 640 root:<сервисный пользователь> и перезапускает службу по подтверждению.
 set -euo pipefail
 
-PREFIX="${PREFIX:-/opt/uisentry}"
+PREFIX="${PREFIX:-/opt/stacksentry}"
 ENV_FILE="${ENV_FILE:-$PREFIX/.env}"
-SERVICE_NAME="${SERVICE_NAME:-uisentry-bot}"
-SERVICE_USER="${SERVICE_USER:-uisentry}"
-REPO_URL="${REPO_URL:-https://github.com/Hijackery/3x-uisentry}"
+SERVICE_NAME="${SERVICE_NAME:-stacksentry-bot}"
+SERVICE_USER="${SERVICE_USER:-stacksentry}"
+REPO_URL="${REPO_URL:-https://github.com/Hijackery/stacksentry}"
 REPO_REF="${REPO_REF:-main}"
 
 # Ответы читаем с терминала: меню может быть запущено и через пайп.
@@ -159,7 +159,7 @@ die()  { printf '%s✗ %s%s\n' "$RED" "$1" "$RESET" >&2; exit 1; }
 head1(){ printf '\n%s%s%s\n' "$BOLD$BLUE" "$1" "$RESET"; }
 
 need_root() {
-    [ "$(id -u)" -eq 0 ] || die "Нужен root: sudo uisentry-menu $*"
+    [ "$(id -u)" -eq 0 ] || die "Нужен root: sudo stacksentry-menu $*"
 }
 
 need_env() {
@@ -273,7 +273,7 @@ cmd_show() {
     for key in "${EDITABLE_KEYS[@]}"; do
         show_setting "$key"
     done
-    info "Секреты показаны замаскированными. Изменить: sudo uisentry-menu set KEY VALUE"
+    info "Секреты показаны замаскированными. Изменить: sudo stacksentry-menu set KEY VALUE"
 }
 
 cmd_keys() {
@@ -283,7 +283,7 @@ cmd_keys() {
 cmd_check() {
     local key="${1:-}" value="${2:-}"
     [ -n "$key" ] || die "check: укажите ключ и значение"
-    is_editable "$key" || die "ключ $key менять нельзя (см. uisentry-menu keys)"
+    is_editable "$key" || die "ключ $key менять нельзя (см. stacksentry-menu keys)"
     check_value "$key" "$value"
     case "$key" in
         TELEGRAM_BOT_TOKEN | PANEL_API_TOKEN)
@@ -300,7 +300,7 @@ cmd_set() {
     need_root "set"
     need_env
     [ -n "$key" ] || die "set: укажите ключ и значение"
-    is_editable "$key" || die "ключ $key менять нельзя (см. uisentry-menu keys)"
+    is_editable "$key" || die "ключ $key менять нельзя (см. stacksentry-menu keys)"
     # Приводим адрес и путь к каноническому виду: без пробелов и лишних слешей,
     # иначе бот получит «https://host:5580//» и панель ответит 404.
     case "$key" in
@@ -326,7 +326,7 @@ cmd_set() {
         -m 0640 "$tmp" "$ENV_FILE"
     rm -f "$tmp"
     ok "$key обновлён"
-    info "Применится после перезапуска: sudo uisentry-menu restart"
+    info "Применится после перезапуска: sudo stacksentry-menu restart"
 }
 
 cmd_status() {
@@ -489,7 +489,7 @@ cmd_apt_logs() {
     case "$lines" in (*[!0-9]*) die "apt-logs: число строк" ;; esac
     if ! command -v journalctl >/dev/null 2>&1; then
         local log
-        for log in "${STATE_DIR:-/var/lib/uisentry}"/apt-*.log; do
+        for log in "${STATE_DIR:-/var/lib/stacksentry}"/apt-*.log; do
             [ -f "$log" ] || continue
             printf '\n== %s ==\n' "$(basename "$log")"
             tail -n "$lines" "$log" 2>/dev/null || true
@@ -498,10 +498,10 @@ cmd_apt_logs() {
     fi
     local unit
     for unit in \
-        uisentry-apt-update \
-        uisentry-apt-upgrade \
-        uisentry-apt-phased \
-        uisentry-release-upgrade; do
+        stacksentry-apt-update \
+        stacksentry-apt-upgrade \
+        stacksentry-apt-phased \
+        stacksentry-release-upgrade; do
         printf '\n== %s ==\n' "$unit"
         journalctl -u "$unit" -n "$lines" --no-pager 2>/dev/null \
             || printf '  (журнала нет)\n'
@@ -538,7 +538,7 @@ menu() {
     local max
     max="$(menu_max)"
     while true; do
-        if [ -t 1 ] && [ -z "${UISENTRY_NO_CLEAR:-}" ] && command -v clear >/dev/null 2>&1; then
+        if [ -t 1 ] && [ -z "${STACKSENTRY_NO_CLEAR:-}" ] && command -v clear >/dev/null 2>&1; then
             clear
         fi
         draw_menu "$(menu_status_line)"
@@ -567,7 +567,7 @@ menu() {
             16) menu_edit_key SERVICES ;;
             17) menu_edit_key LOG_LEVEL ;;
             18)
-                ask "Имя ключа (uisentry-menu keys — список): "
+                ask "Имя ключа (stacksentry-menu keys — список): "
                 local key=""
                 read -r key <&$READ_FD || key=""
                 [ -n "$key" ] && menu_edit_key "$key"
@@ -605,37 +605,37 @@ menu() {
 
 usage() {
     cat <<EOF
-${BOLD}uisentry-menu${RESET} — панель управления StackSentry
+${BOLD}stacksentry-menu${RESET} — панель управления StackSentry
 
-  sudo uisentry-menu                     интерактивное меню
-  sudo uisentry-menu status              состояние службы и последние ошибки
-  sudo uisentry-menu show                текущие настройки (секреты замаскированы)
-  uisentry-menu keys                     какие ключи разрешено менять
-  uisentry-menu check KEY VALUE          проверить значение (без изменений)
-  sudo uisentry-menu set KEY VALUE       изменить настройку и подсказать рестарт
-  sudo uisentry-menu restart             перезапустить бота
-  sudo uisentry-menu restart-xray        перезапустить xray в панели (через API)
-  sudo uisentry-menu apt-logs [N]        журнал фоновых apt-обновлений
-  sudo uisentry-menu totp               TOTP-секрет и otpauth (только root)
-  sudo uisentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
-  sudo uisentry-menu update              обновить бота с GitHub
-  sudo uisentry-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
+  sudo stacksentry-menu                     интерактивное меню
+  sudo stacksentry-menu status              состояние службы и последние ошибки
+  sudo stacksentry-menu show                текущие настройки (секреты замаскированы)
+  stacksentry-menu keys                     какие ключи разрешено менять
+  stacksentry-menu check KEY VALUE          проверить значение (без изменений)
+  sudo stacksentry-menu set KEY VALUE       изменить настройку и подсказать рестарт
+  sudo stacksentry-menu restart             перезапустить бота
+  sudo stacksentry-menu restart-xray        перезапустить xray в панели (через API)
+  sudo stacksentry-menu apt-logs [N]        журнал фоновых apt-обновлений
+  sudo stacksentry-menu totp               TOTP-секрет и otpauth (только root)
+  sudo stacksentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
+  sudo stacksentry-menu update              обновить бота с GitHub
+  sudo stacksentry-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
 
 Пути: PREFIX=$PREFIX, .env=$ENV_FILE
 
 ${BOLD}English${RESET}
-  sudo uisentry-menu                     interactive menu
-  sudo uisentry-menu status              service state and recent errors
-  sudo uisentry-menu show                current settings (secrets masked)
-  uisentry-menu keys                     keys that may be changed
-  uisentry-menu check KEY VALUE          validate a value (no changes)
-  sudo uisentry-menu set KEY VALUE       change a setting, then restart
-  sudo uisentry-menu restart | logs [N]  restart the bot / show the log
-  sudo uisentry-menu restart-xray        restart xray via the panel API
-  sudo uisentry-menu apt-logs [N]        log of background apt upgrades
-  sudo uisentry-menu totp               TOTP secret and otpauth (root only)
-  sudo uisentry-menu update              update the bot from GitHub
-  sudo uisentry-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
+  sudo stacksentry-menu                     interactive menu
+  sudo stacksentry-menu status              service state and recent errors
+  sudo stacksentry-menu show                current settings (secrets masked)
+  stacksentry-menu keys                     keys that may be changed
+  stacksentry-menu check KEY VALUE          validate a value (no changes)
+  sudo stacksentry-menu set KEY VALUE       change a setting, then restart
+  sudo stacksentry-menu restart | logs [N]  restart the bot / show the log
+  sudo stacksentry-menu restart-xray        restart xray via the panel API
+  sudo stacksentry-menu apt-logs [N]        log of background apt upgrades
+  sudo stacksentry-menu totp               TOTP secret and otpauth (root only)
+  sudo stacksentry-menu update              update the bot from GitHub
+  sudo stacksentry-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
 EOF
 }
@@ -655,5 +655,5 @@ case "${1:-}" in
     update) cmd_update ;;
     uninstall|remove) cmd_uninstall "${2:-}" ;;
     help|--help|-h) usage ;;
-    *) die "неизвестная команда: $1 (см. uisentry-menu --help)" ;;
+    *) die "неизвестная команда: $1 (см. stacksentry-menu --help)" ;;
 esac

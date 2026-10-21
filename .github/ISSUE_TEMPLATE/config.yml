@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Уязвимость / Security issue
-    url: https://github.com/Hijackery/3x-uisentry/security/advisories/new
+    url: https://github.com/Hijackery/stacksentry/security/advisories/new
     about: Сообщайте об уязвимостях приватно, не через публичный issue
   - name: Документация
-    url: https://github.com/Hijackery/3x-uisentry#readme
-    about: Установка, настройки, uisentry-menu, решение типовых проблем
+    url: https://github.com/Hijackery/stacksentry#readme
+    about: Установка, настройки, stacksentry-menu, решение типовых проблем
   - name: Как помочь проекту
-    url: https://github.com/Hijackery/3x-uisentry/blob/main/CONTRIBUTING.md
+    url: https://github.com/Hijackery/stacksentry/blob/main/CONTRIBUTING.md
     about: Окружение, обязательные проверки, стиль кода и PR

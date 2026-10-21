@@ -1,9 +1,9 @@
 # StackSentry
 
 > Мониторинг VPS, панелей и VPN в Telegram. Рабочее имя продукта — **StackSentry**;
-> технические идентификаторы `uisentry`/`uisentry-*` сохранены для совместимости.
+> технические идентификаторы `stacksentry`/`stacksentry-*` сохранены для совместимости.
 
-[![CI](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml)
+[![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -19,22 +19,22 @@ Shadowsocks, Tailscale), присылает понятные алерты и п�
 Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
 
 ```bash
-gh api repos/Hijackery/3x-uisentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
-sudo bash /tmp/uisentry-install.sh
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
 ```
 
 Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
 
 ```bash
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Когда репозиторий станет публичным, снова заработает короткая форма:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 ```
 
 > Одна команда: мастер сам скачает код, спросит токены, поставит зависимости,
@@ -49,7 +49,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/ins
 5. [Подключение к панели](#подключение-к-панели)
 6. [Как устроено](#как-устроено)
 7. [Команды и экраны](#команды-и-экраны)
-8. [Меню настроек `uisentry-menu`](#меню-настроек-uisentry-menu)
+8. [Меню настроек `stacksentry-menu`](#меню-настроек-stacksentry-menu)
 9. [Настройки](#настройки)
 10. [Безопасность](#безопасность)
 11. [Обновление и удаление](#обновление-и-удаление)
@@ -72,7 +72,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/ins
 | **История** | почасовые средние CPU/RAM/диска за сутки — видно, как вёл себя сервер ночью |
 | **Установка** | одна команда, вопросы с терминала (работает и через `curl \| bash`), самопроверка из 8 пунктов |
 | **Универсальность** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+ |
-| **Терминал** | `uisentry-menu` — правки настроек, рестарт, журнал, обновление; секреты маскируются |
+| **Терминал** | `stacksentry-menu` — правки настроек, рестарт, журнал, обновление; секреты маскируются |
 | **Безопасность** | отдельный непривилегированный пользователь, узкий sudoers из точных команд, всё опасное — с подтверждением и в журнале |
 
 ## Как это выглядит
@@ -136,28 +136,28 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
 
 ```bash
-gh api repos/Hijackery/3x-uisentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
-sudo bash /tmp/uisentry-install.sh
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
 ```
 
 Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
 
 ```bash
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Когда репозиторий станет публичным, снова заработает короткая форма:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 ```
 
 Или через пайп (так можно с `sudo`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | sudo bash
 ```
 
 > Не добавляйте `sudo` к форме `bash <(curl …)`: sudo закрывает файловый
@@ -179,8 +179,8 @@ curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.
 ### 3. После установки
 
 ```bash
-sudo uisentry-menu          # меню: состояние, настройки, рестарт, журнал, обновление
-systemctl status uisentry-bot
+sudo stacksentry-menu          # меню: состояние, настройки, рестарт, журнал, обновление
+systemctl status stacksentry-bot
 ```
 
 Откройте бота в Telegram, нажмите `/start` → `/status`. Если что-то не так,
@@ -211,7 +211,7 @@ sudo env \
 Установщик сам находит панели/VPN по службам, путям и портам. Если 3X-UI не
 найден, можно оставить `PANEL_URL` и `PANEL_API_TOKEN` пустыми — бот будет
 наблюдать службы, VPN-стек, железо и алерты, а разделы панели/подписок честно
-скажут, что API не настроен. Позже включить API: `sudo uisentry-menu` →
+скажут, что API не настроен. Позже включить API: `sudo stacksentry-menu` →
 адрес панели и токен (или переустановка с `--panel`).
 
 ### Токен 3X-UI
@@ -290,20 +290,20 @@ curl -fsS -H "Authorization: Bearer <токен>" \
 ## Как устроено
 
 ```text
-Telegram  ⇄  бот (непривилегированный пользователь uisentry)
+Telegram  ⇄  бот (непривилегированный пользователь stacksentry)
                  ├─ psutil / systemctl / journalctl        — метрики и службы
                  ├─ API панели (Bearer, scope node-sync)    — inbound'ы, подписки, рестарт xray
-                 └─ sudo uisentry-ctl (узкий sudoers)           — рестарт, apt, reboot, журнал
+                 └─ sudo stacksentry-ctl (узкий sudoers)           — рестарт, apt, reboot, журнал
 ```
 
-- **Код** — `/opt/uisentry`, принадлежит `root`; бот не может переписать
+- **Код** — `/opt/stacksentry`, принадлежит `root`; бот не может переписать
   сам себя.
-- **Секреты** — `.env` с правами `640 root:uisentry`.
-- **Состояние** — SQLite в `/var/lib/uisentry` (история, аудит, мьюты).
-- **Привилегии** — только через `sudo uisentry-ctl`; список разрешённых подкоманд
+- **Секреты** — `.env` с правами `640 root:stacksentry`.
+- **Состояние** — SQLite в `/var/lib/stacksentry` (история, аудит, мьюты).
+- **Привилегии** — только через `sudo stacksentry-ctl`; список разрешённых подкоманд
   перечислен точно, без шаблонов.
 - **`apt`** — выполняется отдельным systemd-юнитом
-  (`uisentry-apt-*.service`), потому что бот живёт с `ProtectSystem=strict`.
+  (`stacksentry-apt-*.service`), потому что бот живёт с `ProtectSystem=strict`.
 
 ## Команды и экраны
 
@@ -338,7 +338,7 @@ phased-обновления Ubuntu; «запустить релиз» — это
 `apt update` не проверяет новую версию ОС. Все фоновые задачи бот ведёт сам: когда
 systemd-юнит завершится, в чат придёт код возврата и хвост журнала — вводить
 `journalctl` не нужно. Одно действие — одно сообщение: «в очереди» → «запущено» →
-отчёт, без вереницы. Вручную журнал смотреть так: `sudo uisentry-menu apt-logs`.
+отчёт, без вереницы. Вручную журнал смотреть так: `sudo stacksentry-menu apt-logs`.
 
 ### Безопасные команды для диагностики
 
@@ -378,20 +378,20 @@ systemd-юнит завершится, в чат придёт код возвр�
 сразу есть `♻️ Рестарт`, `📜 Журнал` и `😴 Знаю, до утра` — мьют на 8 часов,
 хранится в SQLite и переживает перезапуск.
 
-## Меню настроек `uisentry-menu`
+## Меню настроек `stacksentry-menu`
 
 После установки доступна консольная панель:
 
 ```bash
-sudo uisentry-menu              # интерактивное меню
-sudo uisentry-menu show         # настройки (секреты замаскированы)
-sudo uisentry-menu keys         # какие ключи разрешено менять
-uisentry-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
-sudo uisentry-menu set PANEL_TIMEOUT 20
-sudo uisentry-menu restart       # применить
-sudo uisentry-menu restart-xray  # перезапустить xray через API панели
-sudo uisentry-menu apt-logs 100  # журнал фоновых apt-обновлений
-sudo uisentry-menu logs 100
+sudo stacksentry-menu              # интерактивное меню
+sudo stacksentry-menu show         # настройки (секреты замаскированы)
+sudo stacksentry-menu keys         # какие ключи разрешено менять
+stacksentry-menu check PANEL_TIMEOUT 20   # проверка без изменений (без root)
+sudo stacksentry-menu set PANEL_TIMEOUT 20
+sudo stacksentry-menu restart       # применить
+sudo stacksentry-menu restart-xray  # перезапустить xray через API панели
+sudo stacksentry-menu apt-logs 100  # журнал фоновых apt-обновлений
+sudo stacksentry-menu logs 100
 ```
 
 Интерактивное меню рисуется в рамке и сгруппировано по разделам; сверху — живое
@@ -400,7 +400,7 @@ sudo uisentry-menu logs 100
 ```text
 ╔════════════════════════════════════════════════════════╗
 │       Бот мониторинга 3X-UI — панель управления        │
-│  Служба uisentry-bot: ● работает                    │
+│  Служба stacksentry-bot: ● работает                    │
 │   Диагностика                                          │
 │    1. Состояние службы и последние ошибки              │
 │    2. Показать настройки (секреты замаскированы)       │
@@ -443,40 +443,40 @@ sudo uisentry-menu logs 100
 | 21 | обновление из `main` | — | — |
 | 22 | удаление | `yes` для подтверждения | `yes` |
 
-Пустое значение очищает настройку: `sudo uisentry-menu set PANEL_BASE_PATH ""`.
+Пустое значение очищает настройку: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
 Для пунктов 4–17 можно не ходить в меню, а сразу писать:
-`sudo uisentry-menu set KEY VALUE` (то же, что пункт 18, но одной командой).
+`sudo stacksentry-menu set KEY VALUE` (то же, что пункт 18, но одной командой).
 
 ```bash
 # примеры значений
-sudo uisentry-menu set PANEL_URL https://panel.example.com:5580
-sudo uisentry-menu set PANEL_BASE_PATH ""          # «URL панели» = /
-sudo uisentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
-sudo uisentry-menu set ALERT_CHAT_ID -1001234567890
-sudo uisentry-menu set SERVICES x-ui,fail2ban
-sudo uisentry-menu set CPU_WARN 80
-sudo uisentry-menu set LOG_LEVEL INFO
+sudo stacksentry-menu set PANEL_URL https://panel.example.com:5580
+sudo stacksentry-menu set PANEL_BASE_PATH ""          # «URL панели» = /
+sudo stacksentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
+sudo stacksentry-menu set ALERT_CHAT_ID -1001234567890
+sudo stacksentry-menu set SERVICES x-ui,fail2ban
+sudo stacksentry-menu set CPU_WARN 80
+sudo stacksentry-menu set LOG_LEVEL INFO
 
 # проверить значение, ничего не меняя
-uisentry-menu check CPU_WARN 80
+stacksentry-menu check CPU_WARN 80
 
 # журнал фоновых обновлений (apt update / upgrade / phased / release)
-sudo uisentry-menu apt-logs 100
+sudo stacksentry-menu apt-logs 100
 ```
 
 Что важно знать:
 
 - ввод проверяется: неверный номер показывает диапазон, `q` — выход;
-- менять можно только ключи из белого списка (`uisentry-menu keys`); значения
+- менять можно только ключи из белого списка (`stacksentry-menu keys`); значения
   проверяются до записи;
 - `.env` перезаписывается атомарно с правами `640 root:<сервисный пользователь>`;
 - секреты не печатаются целиком;
-- пути можно переопределить: `sudo PREFIX=/opt/бот ENV_FILE=/opt/бот/.env uisentry-menu`;
-- автоочистку экрана можно выключить: `UISENTRY_NO_CLEAR=1 sudo uisentry-menu`.
+- пути можно переопределить: `sudo PREFIX=/opt/бот ENV_FILE=/opt/бот/.env stacksentry-menu`;
+- автоочистку экрана можно выключить: `STACKSENTRY_NO_CLEAR=1 sudo stacksentry-menu`.
 
 ## Настройки
 
-Все параметры — в `/opt/uisentry/.env`; пример с комментариями —
+Все параметры — в `/opt/stacksentry/.env`; пример с комментариями —
 [`.env.example`](.env.example). Переменные окружения процесса имеют приоритет
 над файлом.
 
@@ -522,7 +522,7 @@ sudo uisentry-menu apt-logs 100
 | `STATE_PATH` | база SQLite |
 | `LOG_PATH` | файл лога |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-| `SUDO_WRAPPER` | путь к `uisentry-ctl` |
+| `SUDO_WRAPPER` | путь к `stacksentry-ctl` |
 
 ### Куда приходят алерты
 
@@ -545,7 +545,7 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 
 - вход по подписи Telegram (`initData`), без паролей; только администраторы;
 - cookie `HttpOnly`, `SameSite=Strict`, срок 1 час; CSP без сторонних скриптов;
-- сервис `uisentry-webapp` слушает `127.0.0.1:8787`, наружу — только Caddy/Nginx
+- сервис `stacksentry-webapp` слушает `127.0.0.1:8787`, наружу — только Caddy/Nginx
   с TLS; без публичного адреса доступен через
   `ssh -L 8787:127.0.0.1:8787 root@сервер` → `http://127.0.0.1:8787`;
 - при заданном `WEBAPP_PUBLIC_ORIGIN` бот добавляет кнопку «Панель» в меню
@@ -558,22 +558,22 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 Полноценный shell в браузере — отдельный сервис, не часть бота:
 
 ```bash
-sudo bash install.sh --terminal              # shell пользователя uisentry-term
+sudo bash install.sh --terminal              # shell пользователя stacksentry-term
 sudo bash install.sh --root-terminal         # + root-сессия (sudo -i)
 sudo bash install.sh --terminal --terminal-origin https://term.example.com
 ```
 
 Что происходит:
 
-- создаётся отдельный пользователь `uisentry-term` и служба `uisentry-terminal`;
+- создаётся отдельный пользователь `stacksentry-term` и служба `stacksentry-terminal`;
 - сервис слушает `127.0.0.1:8788`, наружу не выставлен;
 - вход: Telegram `initData` + код TOTP (для доступа вне Telegram — ещё и
-  access token из `/etc/uisentry/terminal-secrets.env`, `600 root`);
-- секреты терминала лежат в `/etc/uisentry/terminal-secrets.env` с правами
+  access token из `/etc/stacksentry/terminal-secrets.env`, `600 root`);
+- секреты терминала лежат в `/etc/stacksentry/terminal-secrets.env` с правами
   `600 root`; systemd передаёт их процессу, сам пользователь файл не читает;
-- обычный shell работает под отдельным пользователем `uisentry-shell` **без
+- обычный shell работает под отдельным пользователем `stacksentry-shell` **без
   sudo**; root-сессия — только через точное правило
-  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l` (флаг `--root-terminal`);
+  `stacksentry-term ALL=(root) NOPASSWD: /bin/bash -l` (флаг `--root-terminal`);
 - секреты терминала (TOTP, тикеты, access token, токен бота) **не передаются**
   в PTY: shell получает только PATH/TERM/LANG/HOME/USER.
 
@@ -613,7 +613,7 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
 
 Включение: установщик спросит при установке (или `--2fa`). Секрет показывается
 один раз: добавьте его в Google Authenticator/Aegis/1Password. Посмотреть
-секрет позже: `sudo uisentry-menu totp` (только root).
+секрет позже: `sudo stacksentry-menu totp` (только root).
 
 Защита: код одноразовый в пределах окна, 3 попытки, блокировка на 5 минут,
 все успехи/неудачи — в аудит. Секрет лежит в `.env` с правами
@@ -624,7 +624,7 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
 - Токены бота и панели — в `.env` с правами `640 root:<группа сервиса>`; сервис
   читает их, но не может переписать файл.
 - Терминал (если включён) хранит свои секреты отдельно:
-  `/etc/uisentry/terminal.env`, `600 root`, systemd передаёт их процессу через
+  `/etc/stacksentry/terminal.env`, `600 root`, systemd передаёт их процессу через
   `EnvironmentFile`. Сам сервисный пользователь файл не читает.
 - Логи чистятся форматтером: токен бота в URL, токены панели/терминала, TOTP и
   access token вырезаются; `initData` не логируется; Telegram ID маскируются.
@@ -636,12 +636,12 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
 
 ## Безопасность
 
-- Бот работает непривилегированным пользователем `uisentry`; код и venv
+- Бот работает непривилегированным пользователем `stacksentry`; код и venv
   принадлежат `root`, `.env` доступен службе только на чтение.
-- Все привилегированные операции идут через `sudo uisentry-ctl` и узкий
+- Все привилегированные операции идут через `sudo stacksentry-ctl` и узкий
   sudoers-список из **точных команд** (без шаблонов в аргументах — так требуют и
   классический sudo, и `sudo-rs`). Произвольного shell нет.
-- `apt` выполняется отдельными systemd-юнитами `uisentry-apt-*.service` — они
+- `apt` выполняется отдельными systemd-юнитами `stacksentry-apt-*.service` — они
   не наследуют песочницу бота; при недоступности transient-юнита есть фолбэк.
 - Опасные действия требуют подтверждения; токен привязан к запросившему
   администратору и одноразовый; всё пишется в `audit_log`.
@@ -653,7 +653,7 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
   (`denied`).
 - Установщик умеет проверять контрольную сумму архива (`--sha256`).
 - Секреты вырезаются из логов форматтером (включая текст исключений), Telegram
-  ID маскируются (`…789`), `uisentry-menu show/check` не печатают секреты.
+  ID маскируются (`…789`), `stacksentry-menu show/check` не печатают секреты.
 - Для самоподписанного сертификата есть `PANEL_CA_BUNDLE` — вместо отключения
   проверки TLS можно держать пиннинг.
 
@@ -664,10 +664,10 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
 
 ```bash
 # обновление (конфиг и состояние сохраняются)
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 
 # то же из меню
-sudo uisentry-menu          # пункт 21
+sudo stacksentry-menu          # пункт 21
 
 # удалить целиком: служба, sudoers, обёртка, меню, код, база и пользователь
 sudo bash install.sh --uninstall
@@ -679,7 +679,7 @@ sudo bash install.sh --uninstall --keep-state
 sudo bash install.sh --menu
 ```
 
-Удаление печатает одну строку «Бот удалён.» и закрывает `uisentry-menu`. При
+Удаление печатает одну строку «Бот удалён.» и закрывает `stacksentry-menu`. При
 `--keep-state` остаётся предупреждение о том, что база и пользователь сохранены.
 
 > Релизы и теги проект не публикует: актуальная версия всегда в ветке `main`.
@@ -689,15 +689,15 @@ sudo bash install.sh --menu
 ## Если что-то не работает
 
 ```bash
-systemctl status uisentry-bot
-journalctl -u uisentry-bot -n 50 --no-pager
+systemctl status stacksentry-bot
+journalctl -u stacksentry-bot -n 50 --no-pager
 ```
 
 | Симптом | Что делать |
 |---|---|
 | «Синтаксис sudoers невалиден» | установщик печатает строку от `visudo` — пришлите её в issue |
-| «Системные метрики недоступны: `/proc/stat`» | в старой установке остался `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/uisentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart uisentry-bot` |
-| «Токен отклонён» | проверьте `TELEGRAM_BOT_TOKEN` и `PANEL_API_TOKEN` через `sudo uisentry-menu` → «Показать настройки» |
+| «Системные метрики недоступны: `/proc/stat`» | в старой установке остался `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/stacksentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart stacksentry-bot` |
+| «Токен отклонён» | проверьте `TELEGRAM_BOT_TOKEN` и `PANEL_API_TOKEN` через `sudo stacksentry-menu` → «Показать настройки» |
 | `inbounds/list недоступен` | у токена панели нет scope `node-sync` |
 | Панель отвечает `404` на API | проверьте `PANEL_URL`/`PANEL_BASE_PATH` (частая ошибка — `/panel` в `webBasePath`) |
 | Логи сервиса не видны | проверьте правило `journal` в sudoers и запуск через `sudo` |

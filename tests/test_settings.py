@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from uisentry.settings import ConfigError, load_settings
+from stacksentry.settings import ConfigError, load_settings
 
 BASE_ENV = {
     "TELEGRAM_BOT_TOKEN": "123:ABC",

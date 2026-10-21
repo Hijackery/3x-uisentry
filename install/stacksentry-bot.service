@@ -5,25 +5,25 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=uisentry
-Group=uisentry
-WorkingDirectory=/opt/uisentry
-EnvironmentFile=/opt/uisentry/.env
+User=stacksentry
+Group=stacksentry
+WorkingDirectory=/opt/stacksentry
+EnvironmentFile=/opt/stacksentry/.env
 # Каталог состояния создаёт systemd с нужным владельцем: база и логи лежат
 # вне каталога с кодом, поэтому бот не может переписать сам себя.
-StateDirectory=uisentry
+StateDirectory=stacksentry
 StateDirectoryMode=0750
 # Без unbuffered логи в journalctl появляются с задержкой в несколько минут.
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/uisentry/.venv/bin/python -m uisentry
-SyslogIdentifier=uisentry-bot
+ExecStart=/opt/stacksentry/.venv/bin/python -m stacksentry
+SyslogIdentifier=stacksentry-bot
 Restart=always
 RestartSec=10
 TimeoutStopSec=30
 
 # Всё, кроме каталога состояния, только для чтения.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/uisentry
+ReadWritePaths=/var/lib/stacksentry
 ProtectHome=true
 PrivateTmp=true
 # Бот не должен видеть устройства, часы, hostname и чужие процессы.

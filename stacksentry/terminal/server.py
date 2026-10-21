@@ -1,6 +1,6 @@
 """Веб-терминал: FastAPI + PTY + WebSocket.
 
-Сервис запускается отдельным пользователем (uisentry-term) и по умолчанию
+Сервис запускается отдельным пользователем (stacksentry-term) и по умолчанию
 слушает только 127.0.0.1. Root-режим (`sudo -n /bin/bash -l`) выключен, пока
 явно не разрешён в terminal.env и sudoers.
 """
@@ -37,7 +37,7 @@ from .auth import (
 )
 from .config import TerminalSettings
 
-logger = logging.getLogger("uisentry.terminal")
+logger = logging.getLogger("stacksentry.terminal")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
@@ -84,7 +84,7 @@ async def _bridge(ws: WebSocket, settings: TerminalSettings, *, root: bool) -> N
         **os.environ,
         "TERM": "xterm-256color",
         "LANG": "C.UTF-8",
-        "HOME": os.environ.get("HOME", "/var/lib/uisentry-term"),
+        "HOME": os.environ.get("HOME", "/var/lib/stacksentry-term"),
     }
     process = await asyncio.create_subprocess_exec(
         *command,

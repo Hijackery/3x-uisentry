@@ -11,15 +11,15 @@ from urllib.parse import urlencode
 import pytest
 from fastapi.testclient import TestClient
 
-from uisentry.terminal.auth import (
+from stacksentry.terminal.auth import (
     AuthError,
     TicketStore,
     totp_code,
     validate_init_data,
     verify_totp,
 )
-from uisentry.terminal.config import TerminalConfigError, TerminalSettings
-from uisentry.terminal.server import create_app
+from stacksentry.terminal.config import TerminalConfigError, TerminalSettings
+from stacksentry.terminal.server import create_app
 
 TOKEN = "123456789:AAterminal-test"
 TOTP_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
@@ -148,7 +148,7 @@ def test_root_requires_flag(tmp_path) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_totp_replay_normalizes_separators(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from uisentry.totp import normalize_totp
+    from stacksentry.totp import normalize_totp
 
     settings = _settings(tmp_path)
     code = totp_code(settings.totp_secret)

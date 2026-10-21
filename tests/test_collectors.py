@@ -9,11 +9,11 @@ from collections.abc import Callable
 
 import pytest
 
-from uisentry.collectors.services import ServiceCollector, _parse_properties
-from uisentry.collectors.subscriptions import SubscriptionCollector
-from uisentry.command import run_command
-from uisentry.models import CommandResult, Subscription
-from uisentry.settings import Settings
+from stacksentry.collectors.services import ServiceCollector, _parse_properties
+from stacksentry.collectors.subscriptions import SubscriptionCollector
+from stacksentry.command import run_command
+from stacksentry.models import CommandResult, Subscription
+from stacksentry.settings import Settings
 
 
 async def test_run_command_captures_output() -> None:
@@ -83,7 +83,7 @@ def test_subscription_expiry_and_traffic_flags() -> None:
 
 
 def test_problems_lists_what_needs_attention() -> None:
-    from uisentry.models import InboundSummary
+    from stacksentry.models import InboundSummary
 
     inbounds = [
         InboundSummary("on", 443, "vless", True, 1, 0, 0, 0),
@@ -173,7 +173,9 @@ async def test_service_cpu_is_delta_between_polls(
     clock = [1000.0]
     values = [10_000_000_000, 11_000_000_000]  # +1 CPU-секунда за 1 секунду
 
-    monkeypatch.setattr("uisentry.collectors.services.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        "stacksentry.collectors.services.time.monotonic", lambda: clock[0]
+    )
 
     async def fake_run(argv: list[str], **kwargs: object) -> CommandResult:
         return CommandResult(
@@ -185,7 +187,7 @@ async def test_service_cpu_is_delta_between_polls(
             duration=0.0,
         )
 
-    monkeypatch.setattr("uisentry.collectors.services.run_command", fake_run)
+    monkeypatch.setattr("stacksentry.collectors.services.run_command", fake_run)
 
     first = await collector.status("x-ui")
     clock[0] += 1
@@ -213,7 +215,7 @@ def test_missing_unit_is_reported(
 async def test_monitor_only_panel_health(
     make_settings: Callable[..., Settings],
 ) -> None:
-    from uisentry.monitor import Monitor
+    from stacksentry.monitor import Monitor
 
     monitor = Monitor(make_settings(panel_url="", panel_api_token=""))
     try:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from uisentry import ui
-from uisentry.models import (
+from stacksentry import ui
+from stacksentry.models import (
     InboundSummary,
     MonitorSnapshot,
     PanelHealth,
@@ -13,7 +13,7 @@ from uisentry.models import (
     Subscription,
     SystemMetrics,
 )
-from uisentry.settings import Settings
+from stacksentry.settings import Settings
 
 
 def metrics() -> SystemMetrics:

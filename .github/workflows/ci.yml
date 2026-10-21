@@ -50,21 +50,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n install.sh
-          bash -n install/uisentry-ctl
-          bash -n install/uisentry-menu
-          sh -n install/uisentry-bot.init
-          shellcheck install.sh install/uisentry-ctl install/uisentry-menu
+          bash -n install/stacksentry-ctl
+          bash -n install/stacksentry-menu
+          sh -n install/stacksentry-bot.init
+          shellcheck install.sh install/stacksentry-ctl install/stacksentry-menu
 
       - name: Синтаксис sudoers
-        run: sudo visudo -cf install/uisentry-sudoers
+        run: sudo visudo -cf install/stacksentry-sudoers
 
       - name: Sudoers, который генерирует установщик
         run: |
           # Проверяем именно сгенерированные правила (с реальными именами
           # юнитов и ключами), а не только статический пример.
           set -euo pipefail
-          svc=uisentry
-          wrapper=/usr/local/bin/uisentry-ctl
+          svc=stacksentry
+          wrapper=/usr/local/bin/stacksentry-ctl
           units="x-ui fail2ban"
           keys="df_-h free_-h uptime"
           rules=""

@@ -1,6 +1,6 @@
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          uisentry-bot
+# Provides:          stacksentry-bot
 # Required-Start:    $network $remote_fs
 # Required-Stop:     $network $remote_fs
 # Default-Start:     2 3 4 5
@@ -10,16 +10,16 @@
 ### END INIT INFO
 #
 # Init-скрипт для систем без systemd (OpenRC/Alpine/Gentoo, SysVinit).
-# Ставится установщиком: /etc/init.d/uisentry-bot
+# Ставится установщиком: /etc/init.d/stacksentry-bot
 # Установщик подставляет PREFIX, пользователя и каталог состояния.
 #
 # Чего здесь нет по сравнению с systemd-юнитом: ProtectSystem/PrivateTmp и
 # прочей изоляции. Привилегированные операции всё так же ограничены sudoers и
-# обёрткой uisentry-ctl, а сервис работает непривилегированным пользователем.
+# обёрткой stacksentry-ctl, а сервис работает непривилегированным пользователем.
 set -eu
 
-NAME=uisentry-bot
-PREFIX=/opt/uisentry
+NAME=stacksentry-bot
+PREFIX=/opt/stacksentry
 SERVICE_USER=@SERVICE_USER@
 STATE_DIR=@STATE_DIR@
 
@@ -51,10 +51,10 @@ start() {
     # $$ в подоболочке = pid будущего процесса (exec заменяет shell, не форкаясь).
     if command -v setsid >/dev/null 2>&1; then
         setsid su -s /bin/sh "$SERVICE_USER" -c \
-            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m uisentry >> '$LOG_FILE' 2>&1" &
+            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m stacksentry >> '$LOG_FILE' 2>&1" &
     else
         su -s /bin/sh "$SERVICE_USER" -c \
-            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m uisentry >> '$LOG_FILE' 2>&1" &
+            "umask 077; cd '$PREFIX' && echo \$\$ > '$PID_FILE' && PYTHONUNBUFFERED=1 exec $PYTHON -m stacksentry >> '$LOG_FILE' 2>&1" &
     fi
 
     sleep 2

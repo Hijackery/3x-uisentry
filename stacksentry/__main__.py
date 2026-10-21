@@ -1,4 +1,4 @@
-"""Точка входа: ``python -m uisentry``."""
+"""Точка входа: ``python -m stacksentry``."""
 
 from __future__ import annotations
 

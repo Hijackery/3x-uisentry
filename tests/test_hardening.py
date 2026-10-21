@@ -16,16 +16,16 @@ from pathlib import Path
 import httpx
 import pytest
 
-from uisentry import ui
-from uisentry.actions import ActionError, ActionManager
-from uisentry.collectors.panel import PanelClient, PanelError
-from uisentry.models import InboundSummary
-from uisentry.settings import BASE_DIR, Settings
-from uisentry.storage import Storage
+from stacksentry import ui
+from stacksentry.actions import ActionError, ActionManager
+from stacksentry.collectors.panel import PanelClient, PanelError
+from stacksentry.models import InboundSummary
+from stacksentry.settings import BASE_DIR, Settings
+from stacksentry.storage import Storage
 
-UNIT = BASE_DIR / "install" / "uisentry-bot.service"
-SUDOERS = BASE_DIR / "install" / "uisentry-sudoers"
-WRAPPER = BASE_DIR / "install" / "uisentry-ctl"
+UNIT = BASE_DIR / "install" / "stacksentry-bot.service"
+SUDOERS = BASE_DIR / "install" / "stacksentry-sudoers"
+WRAPPER = BASE_DIR / "install" / "stacksentry-ctl"
 
 
 # ------------------------------------------------------------------ systemd
@@ -36,7 +36,7 @@ def test_unit_keeps_isolation_directives() -> None:
     text = UNIT.read_text(encoding="utf-8")
     for directive in (
         "ProtectSystem=strict",
-        "ReadWritePaths=/var/lib/uisentry",
+        "ReadWritePaths=/var/lib/stacksentry",
         "ProtectHome=true",
         "PrivateTmp=true",
         "PrivateDevices=true",
@@ -46,9 +46,9 @@ def test_unit_keeps_isolation_directives() -> None:
         "RestrictAddressFamilies=",
         "SystemCallArchitectures=native",
         "UMask=0077",
-        "StateDirectory=uisentry",
-        "User=uisentry",
-        "Group=uisentry",
+        "StateDirectory=stacksentry",
+        "User=stacksentry",
+        "Group=stacksentry",
     ):
         assert directive in text, directive
 
@@ -84,7 +84,7 @@ def test_sudoers_is_narrow() -> None:
     ]
     assert command_lines, "в sudoers не нашлось ни одной команды"
     for line in command_lines:
-        assert "uisentry-ctl" in line, line
+        assert "stacksentry-ctl" in line, line
     # Внутренняя подкоманда transient-юнита не должна становиться доступной.
     assert "_apt_worker" not in text
 
@@ -180,7 +180,7 @@ def test_logging_silences_token_leaking_libraries(
     make_settings: Callable[..., Settings],
 ) -> None:
     """telegram логирует URL с токеном — его логгер обязан быть приглушён."""
-    from uisentry.app import _setup_logging
+    from stacksentry.app import _setup_logging
 
     _setup_logging(make_settings(log_level="DEBUG"))
     for name in ("telegram", "telegram.ext", "httpx", "httpcore"):

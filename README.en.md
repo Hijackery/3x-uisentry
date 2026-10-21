@@ -1,9 +1,9 @@
 # StackSentry
 
 > VPS, panel and VPN monitoring in Telegram. The product name is **StackSentry**;
-> the technical `uisentry`/`uisentry-*` identifiers are kept for compatibility.
+> the technical `stacksentry`/`stacksentry-*` identifiers are kept for compatibility.
 
-[![CI](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml)
+[![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -21,22 +21,22 @@ The repository is **private** while the product is in development. Install via
 GitHub CLI:
 
 ```bash
-gh api repos/Hijackery/3x-uisentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
-sudo bash /tmp/uisentry-install.sh
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
 ```
 
 Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
 
 ```bash
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Once the repository is public, the short form works again:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 ```
 
 > One command: the wizard downloads the code, asks for tokens, installs
@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/ins
 5. [Connecting to the panel](#connecting-to-the-panel)
 6. [How it works](#how-it-works)
 7. [Commands and screens](#commands-and-screens)
-8. [`uisentry-menu` settings menu](#uisentry-menu-settings-menu)
+8. [`stacksentry-menu` settings menu](#stacksentry-menu-settings-menu)
 9. [Settings](#settings)
 10. [Security](#security)
 11. [Update and removal](#update-and-removal)
@@ -75,7 +75,7 @@ matters to Telegram and stays quiet when everything is fine.
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
 | **Install** | one command, terminal prompts (works through `curl \| bash` too), an 8-point self-check |
 | **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+ |
-| **Terminal** | `uisentry-menu` — edit settings, restart, read the log, update; secrets are masked |
+| **Terminal** | `stacksentry-menu` — edit settings, restart, read the log, update; secrets are masked |
 | **Security** | a dedicated unprivileged user, a narrow sudoers list of exact commands, every risky action confirmed and audited |
 
 ## What it looks like
@@ -140,28 +140,28 @@ The repository is **private** while the product is in development. Install via
 GitHub CLI:
 
 ```bash
-gh api repos/Hijackery/3x-uisentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
-sudo bash /tmp/uisentry-install.sh
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
 ```
 
 Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
 
 ```bash
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Once the repository is public, the short form works again:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 ```
 
 Or through a pipe (this form works with `sudo`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | sudo bash
 ```
 
 > Do not add `sudo` to `bash <(curl …)`: sudo closes the process-substitution
@@ -183,8 +183,8 @@ What the wizard asks:
 ### 3. After installation
 
 ```bash
-sudo uisentry-menu          # menu: state, settings, restart, log, update
-systemctl status uisentry-bot
+sudo stacksentry-menu          # menu: state, settings, restart, log, update
+systemctl status stacksentry-bot
 ```
 
 Open the bot in Telegram, press `/start` → `/status`. If something is wrong, the
@@ -215,7 +215,7 @@ missing values and offers the existing ones as defaults — no manual editing.
 The installer detects panels/VPN by services, paths and ports. If 3X-UI is not
 found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty — the bot then monitors
 services, the VPN stack, hardware and alerts, while panel/subscription screens
-honestly say the API is not configured. Enable it later via `sudo uisentry-menu`
+honestly say the API is not configured. Enable it later via `sudo stacksentry-menu`
 (panel address and token) or reinstall with `--panel`.
 
 ### 3X-UI token
@@ -294,18 +294,18 @@ The response must contain `"success":true`.
 ## How it works
 
 ```text
-Telegram  ⇄  bot (unprivileged user uisentry)
+Telegram  ⇄  bot (unprivileged user stacksentry)
                  ├─ psutil / systemctl / journalctl        — metrics and services
                  ├─ panel API (Bearer, node-sync scope)     — inbounds, subscriptions, xray restart
-                 └─ sudo uisentry-ctl (narrow sudoers)           — restart, apt, reboot, journal
+                 └─ sudo stacksentry-ctl (narrow sudoers)           — restart, apt, reboot, journal
 ```
 
-- **Code** — `/opt/uisentry`, owned by `root`; the bot cannot rewrite itself.
-- **Secrets** — `.env` with `640 root:uisentry`.
-- **State** — SQLite in `/var/lib/uisentry` (history, audit, mutes).
-- **Privileges** — only through `sudo uisentry-ctl`; the allowed subcommands are listed
+- **Code** — `/opt/stacksentry`, owned by `root`; the bot cannot rewrite itself.
+- **Secrets** — `.env` with `640 root:stacksentry`.
+- **State** — SQLite in `/var/lib/stacksentry` (history, audit, mutes).
+- **Privileges** — only through `sudo stacksentry-ctl`; the allowed subcommands are listed
   exactly, without wildcards.
-- **`apt`** — runs in dedicated systemd units (`uisentry-apt-*.service`)
+- **`apt`** — runs in dedicated systemd units (`stacksentry-apt-*.service`)
   because the bot lives with `ProtectSystem=strict`.
 
 ## Commands and screens
@@ -374,27 +374,27 @@ version and says so if there is none. These are different things: `apt update`
 does not check for a new OS version. The bot watches the background systemd unit
 and sends the exit code plus the log tail when it finishes — no `journalctl`
 needed. One action is one message: “queued” → “running” → report, no pile-up. To
-look manually: `sudo uisentry-menu apt-logs`.
+look manually: `sudo stacksentry-menu apt-logs`.
 
 `/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
 are aligned in a monospace block, and time is labelled “server time”. Alerts carry
 `♻️ Restart`, `📜 Log` and `😴 I know, until morning` — an 8-hour mute stored in
 SQLite that survives restarts.
 
-## `uisentry-menu` settings menu
+## `stacksentry-menu` settings menu
 
 A console panel is available after installation:
 
 ```bash
-sudo uisentry-menu              # interactive menu
-sudo uisentry-menu show         # settings (secrets masked)
-sudo uisentry-menu keys         # which keys may be changed
-uisentry-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
-sudo uisentry-menu set PANEL_TIMEOUT 20
-sudo uisentry-menu restart       # apply
-sudo uisentry-menu restart-xray  # restart xray via the panel API
-sudo uisentry-menu apt-logs 100  # log of background apt upgrades
-sudo uisentry-menu logs 100
+sudo stacksentry-menu              # interactive menu
+sudo stacksentry-menu show         # settings (secrets masked)
+sudo stacksentry-menu keys         # which keys may be changed
+stacksentry-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
+sudo stacksentry-menu set PANEL_TIMEOUT 20
+sudo stacksentry-menu restart       # apply
+sudo stacksentry-menu restart-xray  # restart xray via the panel API
+sudo stacksentry-menu apt-logs 100  # log of background apt upgrades
+sudo stacksentry-menu logs 100
 ```
 
 The interactive menu is drawn in a frame and grouped into sections; the live
@@ -403,7 +403,7 @@ service state is shown on top:
 ```text
 ╔════════════════════════════════════════════════════════╗
 │         3X-UI monitor bot — control panel              │
-│  Service uisentry-bot: ● running                    │
+│  Service stacksentry-bot: ● running                    │
 │   Diagnostics                                          │
 │    1. Service state and recent errors                  │
 │    2. Show settings (secrets masked)                   │
@@ -446,40 +446,40 @@ service state is shown on top:
 | 21 | update from `main` | — | — |
 | 22 | removal | `yes` to confirm | `yes` |
 
-An empty value clears a setting: `sudo uisentry-menu set PANEL_BASE_PATH ""`.
+An empty value clears a setting: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
 For items 4–17 you can skip the menu and use
-`sudo uisentry-menu set KEY VALUE` directly (same as item 18, one command).
+`sudo stacksentry-menu set KEY VALUE` directly (same as item 18, one command).
 
 ```bash
 # value examples
-sudo uisentry-menu set PANEL_URL https://panel.example.com:5580
-sudo uisentry-menu set PANEL_BASE_PATH ""          # “Panel URL” = /
-sudo uisentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
-sudo uisentry-menu set ALERT_CHAT_ID -1001234567890
-sudo uisentry-menu set SERVICES x-ui,fail2ban
-sudo uisentry-menu set CPU_WARN 80
-sudo uisentry-menu set LOG_LEVEL INFO
+sudo stacksentry-menu set PANEL_URL https://panel.example.com:5580
+sudo stacksentry-menu set PANEL_BASE_PATH ""          # “Panel URL” = /
+sudo stacksentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
+sudo stacksentry-menu set ALERT_CHAT_ID -1001234567890
+sudo stacksentry-menu set SERVICES x-ui,fail2ban
+sudo stacksentry-menu set CPU_WARN 80
+sudo stacksentry-menu set LOG_LEVEL INFO
 
 # validate a value without changing anything
-uisentry-menu check CPU_WARN 80
+stacksentry-menu check CPU_WARN 80
 
 # log of background updates (apt update / upgrade / phased / release)
-sudo uisentry-menu apt-logs 100
+sudo stacksentry-menu apt-logs 100
 ```
 
 Worth knowing:
 
 - input is validated: a wrong number prints the valid range, `q` exits;
-- only allow-listed keys can be changed (`uisentry-menu keys`); values are validated
+- only allow-listed keys can be changed (`stacksentry-menu keys`); values are validated
   before writing;
 - `.env` is rewritten atomically with `640 root:<service user>`;
 - secrets are never printed in full;
-- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env uisentry-menu`;
-- screen clearing can be disabled: `UISENTRY_NO_CLEAR=1 sudo uisentry-menu`.
+- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env stacksentry-menu`;
+- screen clearing can be disabled: `STACKSENTRY_NO_CLEAR=1 sudo stacksentry-menu`.
 
 ## Settings
 
-All parameters live in `/opt/uisentry/.env`; a commented example is in
+All parameters live in `/opt/stacksentry/.env`; a commented example is in
 [`.env.example`](.env.example). Process environment variables take precedence
 over the file.
 
@@ -525,7 +525,7 @@ over the file.
 | `STATE_PATH` | SQLite database |
 | `LOG_PATH` | log file |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-| `SUDO_WRAPPER` | path to `uisentry-ctl` |
+| `SUDO_WRAPPER` | path to `stacksentry-ctl` |
 
 ### Where alerts go
 
@@ -547,7 +547,7 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 
 - login via Telegram `initData`, no passwords; administrators only;
 - `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;
-- `uisentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
+- `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
 - with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram;
@@ -559,22 +559,22 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 A full browser shell — a separate service, not part of the bot:
 
 ```bash
-sudo bash install.sh --terminal              # shell as uisentry-term
+sudo bash install.sh --terminal              # shell as stacksentry-term
 sudo bash install.sh --root-terminal         # + root session (sudo -i)
 sudo bash install.sh --terminal --terminal-origin https://term.example.com
 ```
 
 What happens:
 
-- a dedicated `uisentry-term` user and `uisentry-terminal` service are created;
+- a dedicated `stacksentry-term` user and `stacksentry-terminal` service are created;
 - the service listens on `127.0.0.1:8788` and is not exposed publicly;
 - login: Telegram `initData` + TOTP (outside Telegram also an access token from
-  `/etc/uisentry/terminal-secrets.env`, `600 root`);
-- terminal secrets live in `/etc/uisentry/terminal-secrets.env` (`600 root`);
+  `/etc/stacksentry/terminal-secrets.env`, `600 root`);
+- terminal secrets live in `/etc/stacksentry/terminal-secrets.env` (`600 root`);
   systemd injects them, the service user never reads the file;
-- the normal shell runs as a separate `uisentry-shell` user **without sudo**;
+- the normal shell runs as a separate `stacksentry-shell` user **without sudo**;
   a root session uses only the exact
-  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule (`--root-terminal`);
+  `stacksentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule (`--root-terminal`);
 - terminal secrets (TOTP, tickets, access token, bot token) are **not passed**
   to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER.
 
@@ -608,7 +608,7 @@ message, verifies it and says “🔓 Actions unlocked until 14:35” → the us
 confirmation appears. “🔐 Security” in the menu shows status, unlock and lock.
 
 Enable: the installer asks (or `--2fa`). The secret is shown once; add it to
-Google Authenticator/Aegis/1Password. Show it later: `sudo uisentry-menu totp`
+Google Authenticator/Aegis/1Password. Show it later: `sudo stacksentry-menu totp`
 (root only). Protection: one-time code within the window, 3 attempts, 5-minute
 lockout, every success/failure is audited. The secret lives in `.env` with
 `640 root:<service group>` and is scrubbed from logs.
@@ -618,7 +618,7 @@ lockout, every success/failure is audited. The secret lives in `.env` with
 - Bot and panel tokens live in `.env` with `640 root:<service group>`; the
   service can read but not rewrite the file.
 - The terminal (if enabled) keeps its secrets separately:
-  `/etc/uisentry/terminal.env`, `600 root`; systemd passes them via
+  `/etc/stacksentry/terminal.env`, `600 root`; systemd passes them via
   `EnvironmentFile`, so the service user never reads the file.
 - Logs are scrubbed: the bot token in URLs, panel/terminal tokens, TOTP and the
   access token are removed; `initData` is never logged; Telegram IDs are masked.
@@ -630,12 +630,12 @@ lockout, every success/failure is audited. The secret lives in `.env` with
 
 ## Security
 
-- The bot runs as the unprivileged `uisentry` user; code and venv belong to
+- The bot runs as the unprivileged `stacksentry` user; code and venv belong to
   `root`, and `.env` is read-only for the service.
-- All privileged operations go through `sudo uisentry-ctl` and a narrow sudoers list of
+- All privileged operations go through `sudo stacksentry-ctl` and a narrow sudoers list of
   **exact commands** (no wildcards in arguments — required by both classic sudo
   and `sudo-rs`). There is no arbitrary shell.
-- `apt` runs in dedicated `uisentry-apt-*.service` units that do not inherit the
+- `apt` runs in dedicated `stacksentry-apt-*.service` units that do not inherit the
   bot's sandbox; a fallback exists when a transient unit is denied.
 - Risky actions require confirmation; the token is bound to the requesting
   administrator, is single-use, and everything is written to `audit_log`.
@@ -647,7 +647,7 @@ lockout, every success/failure is audited. The secret lives in `.env` with
   (`denied`).
 - The installer can verify the archive checksum (`--sha256`).
 - Secrets are stripped from logs by a formatter (including exception text),
-  Telegram IDs are masked (`…789`), and `uisentry-menu show/check` never print secrets.
+  Telegram IDs are masked (`…789`), and `stacksentry-menu show/check` never print secrets.
 - For a self-signed panel certificate use `PANEL_CA_BUNDLE` instead of disabling
   TLS verification.
 
@@ -658,10 +658,10 @@ truncated (16 KB) and has a timeout.
 
 ```bash
 # update (config and state are kept)
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 
 # same from the menu
-sudo uisentry-menu          # item 21
+sudo stacksentry-menu          # item 21
 
 # full removal: service, sudoers, wrapper, menu, code, database and user
 sudo bash install.sh --uninstall
@@ -673,7 +673,7 @@ sudo bash install.sh --uninstall --keep-state
 sudo bash install.sh --menu
 ```
 
-Removal prints a single “Bot removed.” line and closes `uisentry-menu`. With
+Removal prints a single “Bot removed.” line and closes `stacksentry-menu`. With
 `--keep-state` a warning remains that the database and user were preserved.
 
 > The project publishes no releases or tags: the current version is always the
@@ -683,15 +683,15 @@ Removal prints a single “Bot removed.” line and closes `uisentry-menu`. With
 ## Troubleshooting
 
 ```bash
-systemctl status uisentry-bot
-journalctl -u uisentry-bot -n 50 --no-pager
+systemctl status stacksentry-bot
+journalctl -u stacksentry-bot -n 50 --no-pager
 ```
 
 | Symptom | What to do |
 |---|---|
 | “Invalid sudoers syntax” | the installer prints the `visudo` line — attach it to an issue |
-| “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/uisentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart uisentry-bot` |
-| “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo uisentry-menu` → “Show settings” |
+| “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/stacksentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart stacksentry-bot` |
+| “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo stacksentry-menu` → “Show settings” |
 | `inbounds/list unavailable` | the panel token lacks the `node-sync` scope |
 | Panel returns `404` for the API | check `PANEL_URL`/`PANEL_BASE_PATH` (a common mistake is `/panel` in `webBasePath`) |
 | Service logs are not visible | check the `journal` sudoers rule and that the call goes through `sudo` |

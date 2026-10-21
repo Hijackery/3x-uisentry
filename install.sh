@@ -2,7 +2,7 @@
 #
 # StackSentry — установка на Linux-сервер одной командой.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | sudo bash
 #
 # Вопросы читаются с терминала (/dev/tty), поэтому пайп не мешает диалогу.
 # Альтернатива, как у 3X-UI:  sudo bash <(curl -fsSL .../install.sh)
@@ -42,7 +42,7 @@ elif { exec 3</dev/tty; } 2>/dev/null; then
 fi
 
 REPO_OWNER="${REPO_OWNER:-Hijackery}"
-REPO_NAME="${REPO_NAME:-3x-uisentry}"
+REPO_NAME="${REPO_NAME:-stacksentry}"
 REPO_REF="${REPO_REF:-main}"
 REPO_URL="${REPO_URL:-}"
 TARBALL_URL="${TARBALL_URL:-}"
@@ -202,14 +202,14 @@ trap cleanup EXIT
 
 # ------------------------------------------------------------------ параметры
 
-PREFIX="${PREFIX:-/opt/uisentry}"
-SERVICE_USER="${SERVICE_USER:-uisentry}"
+PREFIX="${PREFIX:-/opt/stacksentry}"
+SERVICE_USER="${SERVICE_USER:-stacksentry}"
 # Каталог состояния (база SQLite и файл лога) живёт отдельно от кода:
 # код принадлежит root, состояние — сервисному пользователю.
-STATE_DIR="${STATE_DIR:-/var/lib/uisentry}"
-SERVICE_NAME="uisentry-bot"
-WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/uisentry-ctl}"
-MENU_PATH="${MENU_PATH:-/usr/local/bin/uisentry-menu}"
+STATE_DIR="${STATE_DIR:-/var/lib/stacksentry}"
+SERVICE_NAME="stacksentry-bot"
+WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/stacksentry-ctl}"
+MENU_PATH="${MENU_PATH:-/usr/local/bin/stacksentry-menu}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
@@ -240,17 +240,17 @@ ${BOLD}Установка StackSentry${RESET}
   sudo bash install.sh [опции]
 
 Опции:
-  --prefix DIR     каталог установки (по умолчанию: /opt/uisentry)
-  --user NAME      системный пользователь бота (по умолчанию: uisentry)
+  --prefix DIR     каталог установки (по умолчанию: /opt/stacksentry)
+  --user NAME      системный пользователь бота (по умолчанию: stacksentry)
   --tarball URL    откуда скачать исходники (tar.gz), минуя репозиторий по умолчанию
   --repo OWNER/NAME  репозиторий на GitHub (краткая форма вместо REPO_OWNER/REPO_NAME)
   --ref BRANCH     ветка или тег репозитория (по умолчанию main)
   --print-source   показать, откуда будут взяты исходники, и выйти
   --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
   --menu           меню: установить/обновить, удалить, справка
-                   (после установки для правок настроек: sudo uisentry-menu)
+                   (после установки для правок настроек: sudo stacksentry-menu)
   --uninstall      удалить бота целиком: служба, sudoers, обёртка, меню, код,
-                   состояние (/var/lib/uisentry) и системный пользователь
+                   состояние (/var/lib/stacksentry) и системный пользователь
   --purge          то же самое (синоним, оставлен для совместимости)
   --keep-state     не трогать состояние и пользователя
   --yes            без вопросов: берём значения из окружения или готового .env
@@ -382,10 +382,10 @@ uninstall() {
     fi
     rm -f "$UNIT_PATH" \
         "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service" \
-        "/etc/systemd/system/uisentry-apt-update.service" \
-        "/etc/systemd/system/uisentry-apt-upgrade.service" \
-        "/etc/systemd/system/uisentry-apt-phased.service" \
-        "/etc/systemd/system/uisentry-release-upgrade.service"
+        "/etc/systemd/system/stacksentry-apt-update.service" \
+        "/etc/systemd/system/stacksentry-apt-upgrade.service" \
+        "/etc/systemd/system/stacksentry-apt-phased.service" \
+        "/etc/systemd/system/stacksentry-release-upgrade.service"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
@@ -414,15 +414,15 @@ uninstall() {
 
     # Терминал (если ставился) — отдельная служба, пользователь и секреты.
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl disable --now uisentry-terminal >/dev/null 2>&1 || true
-        systemctl disable --now uisentry-webapp >/dev/null 2>&1 || true
+        systemctl disable --now stacksentry-terminal >/dev/null 2>&1 || true
+        systemctl disable --now stacksentry-webapp >/dev/null 2>&1 || true
     fi
-    rm -f /etc/systemd/system/uisentry-terminal.service \
-        /etc/systemd/system/uisentry-webapp.service \
-        /etc/sudoers.d/uisentry-terminal \
-        /etc/uisentry/terminal.env /etc/uisentry/terminal-secrets.env
-    rm -rf /etc/uisentry /var/lib/uisentry-term /var/lib/uisentry-shell
-    for _term_user in uisentry-term uisentry-shell; do
+    rm -f /etc/systemd/system/stacksentry-terminal.service \
+        /etc/systemd/system/stacksentry-webapp.service \
+        /etc/sudoers.d/stacksentry-terminal \
+        /etc/stacksentry/terminal.env /etc/stacksentry/terminal-secrets.env
+    rm -rf /etc/stacksentry /var/lib/stacksentry-term /var/lib/stacksentry-shell
+    for _term_user in stacksentry-term stacksentry-shell; do
         if id "$_term_user" >/dev/null 2>&1; then
             userdel "$_term_user" >/dev/null 2>&1 || true
         fi
@@ -492,7 +492,7 @@ step "Проверяем систему"
 # из интернета заведомо не сработает — предупреждаем сразу, а не в конце.
 if repo_is_placeholder; then
     warn "REPO_OWNER=OWNER — это заглушка: загрузка из интернета не сработает."
-    warn "Укажите свой репозиторий: --repo ваш-логин/uisentry-bot (или REPO_OWNER/REPO_NAME)."
+    warn "Укажите свой репозиторий: --repo ваш-логин/stacksentry-bot (или REPO_OWNER/REPO_NAME)."
 fi
 
 [ "$(id -u)" -eq 0 ] || fail "Запускать от root: sudo bash install.sh"
@@ -639,7 +639,7 @@ ok "Python $("$PYTHON_BIN" -c 'import platform; print(platform.python_version())
 
 SOURCE_DIR=""
 for candidate in "$PWD" "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"; do
-    if [ -f "$candidate/uisentry/app.py" ]; then
+    if [ -f "$candidate/stacksentry/app.py" ]; then
         SOURCE_DIR="$(readlink -f "$candidate")"
         break
     fi
@@ -671,7 +671,7 @@ if [ -z "$SOURCE_DIR" ]; then
             if curl -fsSL --max-time 120 "${_auth[@]}" "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
                 && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
-                SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name uisentry \
+                SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name stacksentry \
                     -type d -exec dirname {} \; | head -1)"
                 if [ -n "$SOURCE_DIR" ]; then
                     break
@@ -696,7 +696,7 @@ EOF
         GIT_URL="${GIT_URL:-$REPO_URL}"
         info "Тарбол не подошёл — пробую git clone $GIT_URL ($REPO_REF)"
         if git clone --depth 1 --branch "$REPO_REF" "$GIT_URL" "$TMP_DIR/repo" \
-            >/dev/null 2>&1 && [ -d "$TMP_DIR/repo/uisentry" ]; then
+            >/dev/null 2>&1 && [ -d "$TMP_DIR/repo/stacksentry" ]; then
             SOURCE_DIR="$TMP_DIR/repo"
         fi
     fi
@@ -705,12 +705,12 @@ EOF
         if repo_is_placeholder; then
             fail "Исходники не найдены, а репозиторий — заглушка OWNER.
   Укажите свой репозиторий GitHub, например:
-      sudo bash install.sh --repo ваш-логин/uisentry-bot
-  (одной строкой:  sudo bash <(curl -Ls https://raw.githubusercontent.com/ваш-логин/uisentry-bot/main/install.sh))"
+      sudo bash install.sh --repo ваш-логин/stacksentry-bot
+  (одной строкой:  sudo bash <(curl -Ls https://raw.githubusercontent.com/ваш-логин/stacksentry-bot/main/install.sh))"
         fi
         fail "Не удалось получить исходники. Варианты:
       • свой репозиторий:  --repo owner/name  [--ref ветка]
-      • прямой архив:      --tarball https://host/uisentry-bot.tar.gz
+      • прямой архив:      --tarball https://host/stacksentry-bot.tar.gz
       • git:               GIT_URL=https://github.com/вас/repo.git
       • или скачайте репозиторий вручную и запустите install.sh из его каталога"
     fi
@@ -718,13 +718,13 @@ EOF
 fi
 ok "Исходники: $SOURCE_DIR"
 
-UISENTRY_PRESENT=0
+STACKSENTRY_PRESENT=0
 if systemctl is-active --quiet x-ui 2>/dev/null; then
     ok "Панель 3X-UI запущена (юнит x-ui)"
-    UISENTRY_PRESENT=1
+    STACKSENTRY_PRESENT=1
 elif systemctl list-unit-files 2>/dev/null | grep -q '^x-ui\.service'; then
     warn "Юнит x-ui есть, но панель сейчас не запущена"
-    UISENTRY_PRESENT=1
+    STACKSENTRY_PRESENT=1
 else
     warn "Юнит x-ui не найден — бот запустится, но следить за панелью не сможет"
 fi
@@ -792,65 +792,84 @@ SERVICE_GROUP="$(id -gn "$SERVICE_USER" 2>/dev/null || printf '%s' "$SERVICE_USE
 # ------------------------------------------------- миграция старой установки
 
 migrate_legacy_install() {
-    # Старые имена (xui-monitor-bot). Переносим .env и базу, затем убираем
-    # старую службу/юниты/sudoers/обёртки, чтобы не осталось двух ботов.
-    local old_prefix="/opt/xui-monitor-bot"
-    local old_state="/var/lib/xui-monitor"
-    local old_user="xui-monitor"
-    local old_service="xui-monitor-bot"
-    [ -d "$old_prefix" ] || id "$old_user" >/dev/null 2>&1 || return 0
-    # Разрешаем и новый путь, и старый (если пользователь по привычке передал
-    # --prefix /opt/xui-monitor-bot): в обоих случаях .env и база переносятся.
-    if [ "$PREFIX" != "/opt/uisentry" ] && [ "$PREFIX" != "$old_prefix" ]; then
-        warn "Найдена старая установка $old_prefix, но путь $PREFIX нестандартный — миграцию пропускаю"
-        return 0
-    fi
-    if [ "$PREFIX" = "$old_prefix" ]; then
-        warn "Установка остаётся в старом каталоге $old_prefix."
-        warn "Для полного переименования запустите установщик без --prefix: /opt/uisentry"
-    else
-        info "Найдена старая установка $old_prefix — переношу конфиг и состояние"
-    fi
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl disable --now "$old_service" >/dev/null 2>&1 || true
-    fi
-    mkdir -p "$PREFIX" "$STATE_DIR"
-    if [ -f "$old_prefix/.env" ]; then
-        [ -f "$PREFIX/.env" ] || cp -a "$old_prefix/.env" "$PREFIX/.env"
-        # Пути состояния и обёртки — уже новые.
-        sed -i "s#^STATE_PATH=.*#STATE_PATH=$STATE_DIR/state.db#; \
-                s#^LOG_PATH=.*#LOG_PATH=$STATE_DIR/bot.log#; \
-                s#^SUDO_WRAPPER=.*#SUDO_WRAPPER=$WRAPPER_PATH#" "$PREFIX/.env" 2>/dev/null || true
-    fi
-    if [ -f "$old_state/state.db" ] && [ ! -f "$STATE_DIR/state.db" ]; then
-        cp -a "$old_state"/state.db* "$STATE_DIR/" 2>/dev/null || true
-        cp -a "$old_state"/bot.log* "$STATE_DIR/" 2>/dev/null || true
-    fi
-    chown -R "$SERVICE_USER":"${SERVICE_GROUP:-$SERVICE_USER}" "$STATE_DIR" 2>/dev/null || true
-    if [ -f "$PREFIX/.env" ]; then
-        chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$PREFIX/.env" 2>/dev/null || true
-        chmod 640 "$PREFIX/.env"
-    fi
-    rm -f "/etc/systemd/system/${old_service}.service" \
-        /etc/systemd/system/xui-monitor-apt-update.service \
-        /etc/systemd/system/xui-monitor-apt-upgrade.service \
-        /etc/systemd/system/xui-monitor-apt-phased.service \
-        /etc/systemd/system/xui-monitor-release-upgrade.service \
-        "/etc/sudoers.d/${old_service}" \
-        "/etc/sudoers.d/${old_service}.invalid" \
-        /usr/local/bin/xui-ctl /usr/local/bin/xui-menu \
-        "/etc/init.d/${old_service}"
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl daemon-reload >/dev/null 2>&1 || true
-    fi
-    if [ "$old_prefix" != "$PREFIX" ] && [ -f "$PREFIX/.env" ]; then
-        rm -rf "$old_prefix"
-    fi
-    [ "$old_state" != "$STATE_DIR" ] && rm -rf "$old_state"
-    if id "$old_user" >/dev/null 2>&1; then
-        userdel "$old_user" >/dev/null 2>&1 || true
-    fi
-    ok "Старая установка перенесена и удалена"
+    # Переносим установки обоих старых имён: uisentry (предыдущий rename) и
+    # xui-monitor-bot (исходное). Конфиг/база сохраняются, старые юниты,
+    # обёртки, пользователи и каталоги удаляются.
+    local profile old_prefix old_state old_user old_service
+    for profile in \
+        "/opt/uisentry:/var/lib/uisentry:uisentry:uisentry-bot" \
+        "/opt/xui-monitor-bot:/var/lib/xui-monitor:xui-monitor:xui-monitor-bot"; do
+        IFS=: read -r old_prefix old_state old_user old_service <<<"$profile"
+        if [ ! -d "$old_prefix" ] && ! id "$old_user" >/dev/null 2>&1 \
+            && [ ! -f "/etc/systemd/system/${old_service}.service" ]; then
+            continue
+        fi
+        if [ "$PREFIX" != "/opt/stacksentry" ] && [ "$PREFIX" != "$old_prefix" ]; then
+            warn "Найдена старая установка $old_prefix, но путь $PREFIX нестандартный — миграцию пропускаю"
+            continue
+        fi
+        if [ "$PREFIX" = "$old_prefix" ]; then
+            warn "Установка остаётся в старом каталоге $old_prefix; для переезда запустите без --prefix"
+        else
+            info "Найдена старая установка $old_prefix — переношу конфиг и состояние"
+        fi
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl disable --now "$old_service" >/dev/null 2>&1 || true
+            systemctl disable --now "${old_user}-terminal" >/dev/null 2>&1 || true
+            systemctl disable --now "${old_user}-webapp" >/dev/null 2>&1 || true
+        fi
+        mkdir -p "$PREFIX" "$STATE_DIR"
+        if [ -f "$old_prefix/.env" ]; then
+            [ -f "$PREFIX/.env" ] || cp -a "$old_prefix/.env" "$PREFIX/.env"
+            sed -i "s#^STATE_PATH=.*#STATE_PATH=$STATE_DIR/state.db#; \
+                    s#^LOG_PATH=.*#LOG_PATH=$STATE_DIR/bot.log#; \
+                    s#^SUDO_WRAPPER=.*#SUDO_WRAPPER=$WRAPPER_PATH#" "$PREFIX/.env" 2>/dev/null || true
+        fi
+        if [ -f "$old_state/state.db" ] && [ ! -f "$STATE_DIR/state.db" ]; then
+            cp -a "$old_state"/state.db* "$STATE_DIR/" 2>/dev/null || true
+            cp -a "$old_state"/bot.log* "$STATE_DIR/" 2>/dev/null || true
+        fi
+        # Секреты терминала/веб-приложения старого имени.
+        if [ -d "/etc/$old_user" ] && [ ! -d "/etc/stacksentry" ]; then
+            cp -a "/etc/$old_user" "/etc/stacksentry" 2>/dev/null || true
+        fi
+        chown -R "$SERVICE_USER":"${SERVICE_GROUP:-$SERVICE_USER}" "$STATE_DIR" 2>/dev/null || true
+        if [ -f "$PREFIX/.env" ]; then
+            chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$PREFIX/.env" 2>/dev/null || true
+            chmod 640 "$PREFIX/.env"
+        fi
+        rm -f "/etc/systemd/system/${old_service}.service" \
+            /etc/systemd/system/"${old_user}"-apt-*.service \
+            /etc/systemd/system/"${old_user}"-release-upgrade.service \
+            /etc/systemd/system/"${old_user}"-terminal.service \
+            /etc/systemd/system/"${old_user}"-webapp.service \
+            "/etc/sudoers.d/${old_service}" \
+            "/etc/sudoers.d/${old_service}.invalid" \
+            "/etc/sudoers.d/${old_user}-terminal" \
+            /usr/local/bin/"${old_user}"-ctl \
+            /usr/local/bin/"${old_user}"-menu \
+            "/etc/init.d/${old_service}"
+        rm -f /usr/local/bin/xui-ctl /usr/local/bin/xui-menu 2>/dev/null || true
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        if [ "$old_prefix" != "$PREFIX" ] && [ -f "$PREFIX/.env" ]; then
+            rm -rf "$old_prefix"
+        fi
+        if [ "$old_state" != "$STATE_DIR" ]; then
+            rm -rf "$old_state"
+        fi
+        for _old_user in "$old_user" "${old_user}-term" "${old_user}-shell"; do
+            if id "$_old_user" >/dev/null 2>&1; then
+                userdel "$_old_user" >/dev/null 2>&1 || true
+            fi
+        done
+        if [ -n "$old_user" ]; then
+            rm -rf "/etc/${old_user:?}" "/var/lib/${old_user:?}-term" \
+                "/var/lib/${old_user:?}-shell" 2>/dev/null || true
+        fi
+        ok "Старая установка $old_prefix перенесена и удалена"
+    done
 }
 
 migrate_legacy_install
@@ -871,7 +890,7 @@ set_env() {
     printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.tmp"
     mv "$ENV_FILE.tmp" "$ENV_FILE"
     # umask установщика — 077: после mv .env стал бы root:root 600 и сервис
-    # (User=uisentry) не смог бы его прочитать при старте.
+    # (User=stacksentry) не смог бы его прочитать при старте.
     chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE" 2>/dev/null || true
     chmod 640 "$ENV_FILE" 2>/dev/null || true
 }
@@ -994,7 +1013,7 @@ fi
 
 if [ "$CONFIG_COMPLETE" -eq 1 ]; then
     ok "Файл .env уже есть — сохраняю ваши токены"
-    info "Изменить: sudo uisentry-menu (или nano $ENV_FILE)"
+    info "Изменить: sudo stacksentry-menu (или nano $ENV_FILE)"
 else
     if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
         warn "В $ENV_FILE не всё заполнено — дозаполняю через мастер"
@@ -1088,7 +1107,7 @@ else
         if [ -n "$(env_get PANEL_URL)" ]; then
             PANEL_MODE=1
         else
-            PANEL_MODE="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --panel 2>/dev/null || echo 0)"
+            PANEL_MODE="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m stacksentry.inventory --panel 2>/dev/null || echo 0)"
         fi
     fi
     if [ "$PANEL_MODE" = "0" ] && [ "$PANEL_MODE_EXPLICIT" -eq 0 ] \
@@ -1162,7 +1181,7 @@ else
     info "-tokenName monitor-bot -tokenScope node-sync (в v3 эта команда больше не создаёт токены)."
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
     if [ -z "$PANEL_TOKEN" ]; then
-        if [ "$UISENTRY_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
+        if [ "$STACKSENTRY_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
             warn "Выпускаю токен monitor-bot (scope node-sync) в панели."
             warn "Внимание: если такой токен уже был, старый перестанет работать."
             PANEL_TOKEN="$(detect_panel_token || true)"
@@ -1215,11 +1234,11 @@ else
         PANEL_TOKEN=""
         PROBE_URL=""
         info "API панели не настроен — режим «только мониторинг служб»."
-        info "Позже: sudo uisentry-menu → адрес панели и API-токен."
+        info "Позже: sudo stacksentry-menu → адрес панели и API-токен."
     fi
 
     # Автоопределение панелей и VPN-стека (stdlib, работает до venv).
-    DETECTED_SERVICES="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --services 2>/dev/null || true)"
+    DETECTED_SERVICES="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m stacksentry.inventory --services 2>/dev/null || true)"
     if [ -n "$DETECTED_SERVICES" ]; then
         info "Найдены службы: $DETECTED_SERVICES"
     else
@@ -1294,7 +1313,7 @@ chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS; do
-    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo uisentry-menu (или повторите установку)"
+    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo stacksentry-menu (или повторите установку)"
 done
 if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
     for key in PANEL_URL PANEL_API_TOKEN; do
@@ -1323,12 +1342,12 @@ step "Копируем бота в $PREFIX"
 mkdir -p "$PREFIX"
 if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
     info "Исходники уже в $PREFIX — копирую поверх"
-    cp -a "$SOURCE_DIR/uisentry/." "$PREFIX/uisentry/"
+    cp -a "$SOURCE_DIR/stacksentry/." "$PREFIX/stacksentry/"
     cp -a "$SOURCE_DIR/install/." "$PREFIX/install/"
 else
-    cp -a "$SOURCE_DIR/uisentry" "$SOURCE_DIR/install" "$PREFIX/"
+    cp -a "$SOURCE_DIR/stacksentry" "$SOURCE_DIR/install" "$PREFIX/"
 fi
-# Копия установщика лежит рядом с ботом: `uisentry-menu update` берёт её локально
+# Копия установщика лежит рядом с ботом: `stacksentry-menu update` берёт её локально
 # и обновляет сама себя при каждом запуске.
 cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
 cp -a "$SOURCE_DIR/requirements.txt" \
@@ -1380,10 +1399,10 @@ ok "Зависимости установлены"
 
 step "Настраиваем привилегированные операции (sudo-обёртка)"
 
-install -o root -g root -m 0755 "$PREFIX/install/uisentry-ctl" "$WRAPPER_PATH" \
+install -o root -g root -m 0755 "$PREFIX/install/stacksentry-ctl" "$WRAPPER_PATH" \
     || fail "Не удалось поставить $WRAPPER_PATH"
-# Консольная панель для быстрых правок настроек (sudo uisentry-menu).
-install -o root -g root -m 0755 "$PREFIX/install/uisentry-menu" "$MENU_PATH" \
+# Консольная панель для быстрых правок настроек (sudo stacksentry-menu).
+install -o root -g root -m 0755 "$PREFIX/install/stacksentry-menu" "$MENU_PATH" \
     || fail "Не удалось поставить $MENU_PATH"
 
 # visudo лежит в sbin и не всегда в PATH у не-login root-сессии.
@@ -1489,11 +1508,11 @@ if [ "$INIT" = systemd ]; then
     UNIT_FILE="$UNIT_PATH"
     sed -e "s#^User=.*#User=${SERVICE_USER}#" \
         -e "s#^Group=.*#Group=${SERVICE_GROUP:-$SERVICE_USER}#" \
-        -e "s#/opt/uisentry#${PREFIX}#g" \
-        -e "s#/usr/local/bin/uisentry-ctl#${WRAPPER_PATH}#g" \
-        -e "s#/var/lib/uisentry#${STATE_DIR}#g" \
+        -e "s#/opt/stacksentry#${PREFIX}#g" \
+        -e "s#/usr/local/bin/stacksentry-ctl#${WRAPPER_PATH}#g" \
+        -e "s#/var/lib/stacksentry#${STATE_DIR}#g" \
         "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
-    if [ "$STATE_DIR" != "/var/lib/uisentry" ]; then
+    if [ "$STATE_DIR" != "/var/lib/stacksentry" ]; then
         # StateDirectory умеет создавать только /var/lib/<name>; для своего
         # каталога его отключаем — каталог уже создан установщиком.
         sed -i "s#^StateDirectory=.*#\# StateDirectory отключён: каталог создан установщиком#" "$UNIT_FILE"
@@ -1504,10 +1523,10 @@ if [ "$INIT" = systemd ]; then
     # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
     # юнит с User=root запускается через systemctl и работает.
     for _pair in \
-        "uisentry-apt-update:_apt_update_worker:apt update" \
-        "uisentry-apt-upgrade:_apt_worker:apt full-upgrade" \
-        "uisentry-apt-phased:_apt_worker_phased:apt phased upgrade" \
-        "uisentry-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
+        "stacksentry-apt-update:_apt_update_worker:apt update" \
+        "stacksentry-apt-upgrade:_apt_worker:apt full-upgrade" \
+        "stacksentry-apt-phased:_apt_worker_phased:apt phased upgrade" \
+        "stacksentry-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
         _apt_unit="${_pair%%:*}"
         _rest="${_pair#*:}"
         _apt_worker="${_rest%%:*}"
@@ -1584,13 +1603,13 @@ install_terminal() {
         warn "Терминал ставится только на systemd; для $INIT пропускаю"
         return 0
     fi
-    TERM_USER="uisentry-term"
-    TERM_HOME="/var/lib/uisentry-term"
-    TERM_ENV_DIR="/etc/uisentry"
+    TERM_USER="stacksentry-term"
+    TERM_HOME="/var/lib/stacksentry-term"
+    TERM_ENV_DIR="/etc/stacksentry"
     TERM_ENV="$TERM_ENV_DIR/terminal.env"
     TERM_SECRETS="$TERM_ENV_DIR/terminal-secrets.env"
-    TERM_UNIT="/etc/systemd/system/uisentry-terminal.service"
-    TERM_SUDOERS="/etc/sudoers.d/uisentry-terminal"
+    TERM_UNIT="/etc/systemd/system/stacksentry-terminal.service"
+    TERM_SUDOERS="/etc/sudoers.d/stacksentry-terminal"
 
     if ! id "$TERM_USER" >/dev/null 2>&1; then
         useradd --system --no-create-home --home-dir "$TERM_HOME" \
@@ -1601,8 +1620,8 @@ install_terminal() {
     install -d -m 0750 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_HOME"
     # Отдельный пользователь для обычного shell: у него НЕТ sudo-правила,
     # иначе из обычного терминала можно было бы сделать sudo -i.
-    TERM_SHELL_USER="uisentry-shell"
-    TERM_SHELL_HOME="/var/lib/uisentry-shell"
+    TERM_SHELL_USER="stacksentry-shell"
+    TERM_SHELL_HOME="/var/lib/stacksentry-shell"
     if ! id "$TERM_SHELL_USER" >/dev/null 2>&1; then
         useradd --system --no-create-home --home-dir "$TERM_SHELL_HOME" \
             --shell /bin/bash --comment "StackSentry terminal shell" "$TERM_SHELL_USER" \
@@ -1684,7 +1703,7 @@ EnvironmentFile=$TERM_ENV
 EnvironmentFile=$TERM_SECRETS
 Environment=HOME=$TERM_HOME
 Environment=PYTHONUNBUFFERED=1
-ExecStart=$PREFIX/.venv/bin/uvicorn --factory uisentry.terminal.server:create_app_from_env --host 127.0.0.1 --port 8788 --no-access-log
+ExecStart=$PREFIX/.venv/bin/uvicorn --factory stacksentry.terminal.server:create_app_from_env --host 127.0.0.1 --port 8788 --no-access-log
 Restart=on-failure
 RestartSec=5
 # Это настоящий shell: ProtectSystem/ProtectHome сломали бы запись и /root,
@@ -1725,14 +1744,14 @@ EOF
         warn "root-правило не принято — root-терминал выключен"
     fi
 
-    systemctl enable uisentry-terminal >/dev/null 2>&1 || true
+    systemctl enable stacksentry-terminal >/dev/null 2>&1 || true
     if [ "$START_SERVICE" -eq 1 ]; then
-        systemctl restart uisentry-terminal || warn "Не удалось запустить uisentry-terminal"
+        systemctl restart stacksentry-terminal || warn "Не удалось запустить stacksentry-terminal"
         sleep 2
-        if systemctl is-active --quiet uisentry-terminal; then
+        if systemctl is-active --quiet stacksentry-terminal; then
             ok "Терминал запущен на 127.0.0.1:8788"
         else
-            warn "Терминал не активен: journalctl -u uisentry-terminal -n 30"
+            warn "Терминал не активен: journalctl -u stacksentry-terminal -n 30"
         fi
     else
         info "Терминал установлен, запуск пропущен (--no-start)"
@@ -1793,7 +1812,7 @@ install_webapp() {
     set_env WEBAPP_PUBLIC_ORIGIN "$WEBAPP_ORIGIN"
     set_env WEBAPP_SESSION_TTL 3600
 
-    cat > /etc/systemd/system/uisentry-webapp.service <<EOF
+    cat > /etc/systemd/system/stacksentry-webapp.service <<EOF
 [Unit]
 Description=StackSentry — read-only Mini App
 After=network-online.target
@@ -1806,7 +1825,7 @@ Group=${SERVICE_GROUP:-$SERVICE_USER}
 WorkingDirectory=$PREFIX
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
-ExecStart=$PREFIX/.venv/bin/uvicorn --factory uisentry.webapp:create_app_from_env --host 127.0.0.1 --port 8787 --no-access-log
+ExecStart=$PREFIX/.venv/bin/uvicorn --factory stacksentry.webapp:create_app_from_env --host 127.0.0.1 --port 8787 --no-access-log
 Restart=on-failure
 RestartSec=5
 ProtectSystem=strict
@@ -1821,16 +1840,16 @@ TasksMax=64
 [Install]
 WantedBy=multi-user.target
 EOF
-    chmod 644 /etc/systemd/system/uisentry-webapp.service
+    chmod 644 /etc/systemd/system/stacksentry-webapp.service
     systemctl daemon-reload
-    systemctl enable uisentry-webapp >/dev/null 2>&1 || true
+    systemctl enable stacksentry-webapp >/dev/null 2>&1 || true
     if [ "$START_SERVICE" -eq 1 ]; then
-        systemctl restart uisentry-webapp || warn "Не удалось запустить uisentry-webapp"
+        systemctl restart stacksentry-webapp || warn "Не удалось запустить stacksentry-webapp"
         sleep 2
-        if systemctl is-active --quiet uisentry-webapp; then
+        if systemctl is-active --quiet stacksentry-webapp; then
             ok "Mini App запущен на 127.0.0.1:8787"
         else
-            warn "Mini App не активен: journalctl -u uisentry-webapp -n 30"
+            warn "Mini App не активен: journalctl -u stacksentry-webapp -n 30"
         fi
     else
         info "Mini App установлен, запуск пропущен (--no-start)"
@@ -1893,7 +1912,7 @@ PY="$PREFIX/.venv/bin/python"
 CFG_OK=0
 # .env НЕ подключаем через source: значения вроде COMMAND_ALLOWLIST содержат
 # пробелы, и оболочка приняла бы хвост значения за команду. Бот читает файл сам.
-if (cd "$PREFIX" && "$PY" -c 'from uisentry.settings import load_settings; s = load_settings(); print(s.api_base, s.telegram_token[:6])' >/dev/null 2>&1); then
+if (cd "$PREFIX" && "$PY" -c 'from stacksentry.settings import load_settings; s = load_settings(); print(s.api_base, s.telegram_token[:6])' >/dev/null 2>&1); then
     check_ok "Конфигурация читается ботом без ошибок"
     CFG_OK=1
 else
@@ -1920,7 +1939,7 @@ fi
 if [ "$CFG_OK" -eq 1 ]; then
     PANEL_API="$(
         cd "$PREFIX" || exit 1
-        "$PY" -c 'from uisentry.settings import load_settings; print(load_settings().api_base)' 2>/dev/null || true
+        "$PY" -c 'from stacksentry.settings import load_settings; print(load_settings().api_base)' 2>/dev/null || true
     )"
     PANEL_TOKEN_VALUE="$(env_get PANEL_API_TOKEN)"
     if [ -z "$(env_get PANEL_URL)" ] && [ -z "$(env_get PANEL_API_TOKEN)" ]; then
@@ -1971,8 +1990,8 @@ if [ "$CFG_OK" -eq 1 ]; then
     WRITE_OUT="$(
         cd "$PREFIX" || exit 1
         sudo -u "$SERVICE_USER" "$PY" -c '
-from uisentry.settings import load_settings
-from uisentry.storage import Storage
+from stacksentry.settings import load_settings
+from stacksentry.storage import Storage
 s = load_settings()
 db = Storage(s.state_path)
 db.audit("installer_selfcheck", telegram_id=None, ok=True, result="ok")
@@ -2063,7 +2082,7 @@ cat <<EOF
   Обновление бота:
     sudo bash install.sh --prefix ${PREFIX}
   Меню настроек:
-    sudo uisentry-menu            # правки настроек, рестарт, журнал, обновление
+    sudo stacksentry-menu            # правки настроек, рестарт, журнал, обновление
 
   Удаление бота:
     sudo bash install.sh --uninstall

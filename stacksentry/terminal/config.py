@@ -1,8 +1,8 @@
 """Настройки отдельного сервиса терминала.
 
-Терминал живёт в своём процессе и под своим пользователем (uisentry-term),
+Терминал живёт в своём процессе и под своим пользователем (stacksentry-term),
 чтобы веб-слой не имел доступа к sudo-правилам бота. Конфиг лежит отдельно от
-.env бота: /etc/uisentry/terminal.env (640 root:uisentry-term).
+.env бота: /etc/stacksentry/terminal.env (640 root:stacksentry-term).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ class TerminalConfigError(RuntimeError):
     """Конфигурация терминала неполная или небезопасная."""
 
 
-DEFAULT_ENV_FILE = Path(os.environ.get("TERMINAL_ENV", "/etc/uisentry/terminal.env"))
+DEFAULT_ENV_FILE = Path(os.environ.get("TERMINAL_ENV", "/etc/stacksentry/terminal.env"))
 
 
 def _read_env(path: Path) -> dict[str, str]:
@@ -140,12 +140,12 @@ class TerminalSettings:
             access_user=access_user,
             allow_root=values.get("TERMINAL_ALLOW_ROOT", "").strip()
             in {"1", "true", "yes"},
-            shell_user=values.get("TERMINAL_SHELL_USER", "uisentry-shell").strip()
-            or "uisentry-shell",
+            shell_user=values.get("TERMINAL_SHELL_USER", "stacksentry-shell").strip()
+            or "stacksentry-shell",
             shell_home=values.get(
-                "TERMINAL_SHELL_HOME", "/var/lib/uisentry-shell"
+                "TERMINAL_SHELL_HOME", "/var/lib/stacksentry-shell"
             ).strip()
-            or "/var/lib/uisentry-shell",
+            or "/var/lib/stacksentry-shell",
             host=values.get("TERMINAL_HOST", "127.0.0.1").strip() or "127.0.0.1",
             port=_int(values, "TERMINAL_PORT", 8788, 1),
             public_origin=public_origin,

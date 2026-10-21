@@ -227,7 +227,7 @@ def render_stack(
         return (
             "\n🧩 <b>Стек сервера</b>\n"
             "Панели и VPN-службы не найдены. Проверьте, что они установлены, "
-            "или добавьте службы вручную: <code>sudo uisentry-menu</code>."
+            "или добавьте службы вручную: <code>sudo stacksentry-menu</code>."
         )
     active = {item.name: item.active for item in services}
     lines = [
@@ -264,7 +264,8 @@ def render_stack(
             lines.append(f"{icon} <code>{esc(unit)}</code>")
     lines += [
         "",
-        "Добавить в наблюдение: <code>sudo uisentry-menu</code> → «Службы» (пункт 16).",
+        "Добавить в наблюдение: <code>sudo stacksentry-menu</code> → "
+        "«Службы» (пункт 16).",
     ]
     return "\n".join(lines)
 
@@ -294,7 +295,7 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
             "\n🌐 <b>Панель</b>\n"
             "⚪ API панели не настроен — режим «только мониторинг служб».\n\n"
             "Службы и VPN-стек наблюдаются; inbound'ы и подписки недоступны.\n"
-            "Настроить API 3X-UI: <code>sudo uisentry-menu</code> → "
+            "Настроить API 3X-UI: <code>sudo stacksentry-menu</code> → "
             "адрес панели и токен."
         )
     if not panel.reachable:
@@ -327,7 +328,7 @@ def render_traffic(snapshot: MonitorSnapshot) -> str:
                 "\n📊 <b>Трафик</b>\n"
                 "API панели не настроен — inbound'ы и трафик недоступны.\n"
                 "Службы и VPN-стек наблюдаются. Настроить: "
-                "<code>sudo uisentry-menu</code>."
+                "<code>sudo stacksentry-menu</code>."
             )
         return (
             "\n📊 <b>Трафик</b>\n"
@@ -607,7 +608,7 @@ def render_security(settings: Settings, until: float) -> str:
         return (
             "🔐 <b>Безопасность</b>\n\n"
             "2FA для опасных действий выключена. Включить: "
-            "<code>sudo uisentry-menu</code> или повторный установщик с "
+            "<code>sudo stacksentry-menu</code> или повторный установщик с "
             "<code>--2fa</code>.\n\n"
             "Даже без 2FA действия требуют подтверждения и пишутся в аудит."
         )
@@ -1006,7 +1007,7 @@ def render_help(is_admin: bool) -> str:
         "• Бот работает от отдельного пользователя, привилегии — через узкий "
         "sudoers-список точных команд.",
         "",
-        "⚙️ <b>Настройки</b> — в терминале сервера: <code>sudo uisentry-menu</code>.",
+        "⚙️ <b>Настройки</b> — в терминале сервера: <code>sudo stacksentry-menu</code>.",
         "Там токены, адрес панели и webBasePath, пороги, службы, уровень логов, "
         "рестарт, журнал, обновление и удаление. Меню показывает состояние службы "
         "и маскирует секреты.",
@@ -1018,9 +1019,9 @@ def render_help(is_admin: bool) -> str:
         "<code>node-sync</code> или <code>admin</code>.",
         "4. Ошибка 404 на API — почти всегда лишний <code>/panel</code> в "
         "webBasePath: там должно быть значение из «URL панели» (обычно пусто).",
-        "5. Журнал бота: <code>journalctl -u uisentry-bot -n 50</code>.",
+        "5. Журнал бота: <code>journalctl -u stacksentry-bot -n 50</code>.",
         "",
-        "Подробная документация: github.com/Hijackery/3x-uisentry",
+        "Подробная документация: github.com/Hijackery/stacksentry",
     ]
     if not is_admin:
         return (

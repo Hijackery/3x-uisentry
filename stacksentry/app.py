@@ -354,7 +354,7 @@ class MonitorBot:
         if isinstance(message, Message):
             await message.reply_text(
                 "😔 Внутренняя ошибка. Повторите команду; если повторяется — "
-                "журнал бота:\n<code>journalctl -u uisentry-bot -n 50</code>",
+                "журнал бота:\n<code>journalctl -u stacksentry-bot -n 50</code>",
                 parse_mode=ParseMode.HTML,
             )
 
@@ -934,7 +934,7 @@ class MonitorBot:
                 "🔐 Код выдаёт приложение-аутентификатор "
                 "(Google Authenticator, Aegis, 1Password и т.п.). "
                 "Секрет выдаётся при установке или в "
-                "<code>sudo uisentry-menu</code>. Код меняется каждые 30 с.",
+                "<code>sudo stacksentry-menu</code>. Код меняется каждые 30 с.",
                 markup=ui.twofa_menu(),
             )
         else:
@@ -1488,7 +1488,7 @@ class MonitorBot:
                     message_id,
                     ok=False,
                     text="⚠️ Не удалось получить отчёт об обновлении. "
-                    "Проверьте: <code>sudo uisentry-menu apt-logs</code>\n"
+                    "Проверьте: <code>sudo stacksentry-menu apt-logs</code>\n"
                     f"<pre>{ui.esc(str(exc))}</pre>",
                 )
             return
@@ -1504,7 +1504,7 @@ class MonitorBot:
                     message_id,
                     ok=False,
                     text="⚠️ Обновление идёт слишком долго (больше 2 часов). "
-                    "Проверьте: <code>sudo uisentry-menu apt-logs</code>",
+                    "Проверьте: <code>sudo stacksentry-menu apt-logs</code>",
                 )
             else:
                 reschedule(attempts=attempts + 1, errors=errors)
@@ -1908,7 +1908,7 @@ class MonitorBot:
 
 
 def _parse_apt_status(stdout: str) -> tuple[dict[str, str], str]:
-    """Разбирает вывод `uisentry-ctl apt_status`: шапку STATE/RESULT/EXIT/LOAD и лог."""
+    """Разбирает `stacksentry-ctl apt_status`: шапку STATE/RESULT/EXIT/LOAD и лог."""
     fields: dict[str, str] = {}
     tail: list[str] = []
     header = True

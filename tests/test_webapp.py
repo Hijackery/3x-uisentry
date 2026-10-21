@@ -13,10 +13,10 @@ from urllib.parse import urlencode
 import pytest
 from fastapi.testclient import TestClient
 
-from uisentry.models import MonitorSnapshot, PanelHealth, SystemMetrics
-from uisentry.settings import ConfigError, Settings, load_settings
-from uisentry.storage import Storage
-from uisentry.webapp import (
+from stacksentry.models import MonitorSnapshot, PanelHealth, SystemMetrics
+from stacksentry.settings import ConfigError, Settings, load_settings
+from stacksentry.storage import Storage
+from stacksentry.webapp import (
     WebAppConfig,
     create_app,
     issue_cookie,
@@ -154,11 +154,11 @@ def test_config_requires_secret(tmp_path: Path) -> None:
 
 
 def test_installer_webapp_flag() -> None:
-    from uisentry.settings import BASE_DIR
+    from stacksentry.settings import BASE_DIR
 
     text = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
     assert "--webapp" in text
-    assert "uisentry-webapp.service" in text
+    assert "stacksentry-webapp.service" in text
     assert "create_app_from_env" in text
 
 

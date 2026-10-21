@@ -8,13 +8,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from uisentry.collectors.panel import (
+from stacksentry.collectors.panel import (
     PanelClient,
     PanelError,
     PanelForbidden,
     parse_inbound,
 )
-from uisentry.settings import Settings
+from stacksentry.settings import Settings
 
 
 def client_with(

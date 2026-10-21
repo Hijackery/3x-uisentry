@@ -2,22 +2,22 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 Релизы и теги проект не публикует: актуальная версия всегда в ветке `main`,
-обновление — `sudo uisentry-menu` (пункт 21) или повторный запуск установщика.
+обновление — `sudo stacksentry-menu` (пункт 21) или повторный запуск установщика.
 
 ## [Unreleased]
 
 ### Ребрендинг
 
 - Продукт называется **StackSentry** (панели + VPN + службы + сервер). Технические
-  идентификаторы `uisentry`, `uisentry-bot`, `uisentry-menu`, `uisentry-ctl`
+  идентификаторы `stacksentry`, `stacksentry-bot`, `stacksentry-menu`, `stacksentry-ctl`
   сохранены для совместимости с уже установленными ботами; полный технический
   rename — отдельным обновлением с миграцией.
 
 ### Переименование
 
-- Проект теперь **StackSentry**: репозиторий `Hijackery/3x-uisentry`,
-  Python-пакет `uisentry`, служба `uisentry-bot`, пользователь `uisentry`,
-  команды `uisentry-menu` и `uisentry-ctl`, состояние в `/var/lib/uisentry`.
+- Проект теперь **StackSentry**: репозиторий `Hijackery/stacksentry`,
+  Python-пакет `stacksentry`, служба `stacksentry-bot`, пользователь `stacksentry`,
+  команды `stacksentry-menu` и `stacksentry-ctl`, состояние в `/var/lib/stacksentry`.
   Установщик автоматически переносит `.env` и базу из старой установки
   `xui-monitor-bot`, удаляет старые юниты/sudoers/обёртки и пользователя.
   Старые ссылки GitHub перенаправляются, но установщик и README уже используют
@@ -27,17 +27,17 @@
 
 - README (ru/en) переписан по логической цепочке: зачем → как выглядит →
   совместимость → быстрый старт → подключение панели → устройство → команды →
-  `uisentry-menu` → настройки → безопасность → обновление/удаление → диагностика →
+  `stacksentry-menu` → настройки → безопасность → обновление/удаление → диагностика →
   разработка. Добавлены содержание, таблицы совместимости и симптомов, примеры
   экранов и точные команды проверки API/пути.
-- CI теперь проверяет синтаксис `uisentry-menu` и init-скрипта, `shellcheck` для меню
+- CI теперь проверяет синтаксис `stacksentry-menu` и init-скрипта, `shellcheck` для меню
   и `visudo -cf` для sudoers, сгенерированного из реальных имён юнитов и ключей.
 
 ### Возможности
 
 - Read-only Mini App: дашборд в Telegram (обзор, службы, панель, трафик,
   подписки, история), вход по initData, cookie HttpOnly, CSP, сервис
-  `uisentry-webapp` на 127.0.0.1:8787, кнопка «Панель» в Telegram. Без действий
+  `stacksentry-webapp` на 127.0.0.1:8787, кнопка «Панель» в Telegram. Без действий
   и секретов в браузере.
 
 - Monitor-only: без API 3X-UI бот наблюдает службы, VPN-стек и железо;
@@ -48,7 +48,7 @@
   apt update после кода с разблокировкой на 15 минут, обновления ОС и
   перезагрузка — только со свежим кодом. Код одноразовый, 3 попытки, блокировка
   на 5 минут, аудит; сообщение с кодом удаляется. Установщик спрашивает и
-  печатает otpauth; `sudo uisentry-menu totp` показывает секрет.
+  печатает otpauth; `sudo stacksentry-menu totp` показывает секрет.
 
 - Обновления в боте разделены и отчитываются в чат: `apt update`, `full-upgrade`,
   `phased`, проверка релиза (`do-release-upgrade --check`) и запуск
@@ -62,9 +62,9 @@
   «Подробнее»/«Свернуть», которые разворачивают тот же экран).
 - `/help` — полноценная инструкция: разделы, обновления, команды, метрики,
   безопасность, диагностика и настройки.
-- `uisentry-menu apt-logs [N]` — журнал фоновых обновлений; README описывает каждый
+- `stacksentry-menu apt-logs [N]` — журнал фоновых обновлений; README описывает каждый
   пункт меню: что вписать и пример значения.
-- Обновление через `uisentry-menu` переустанавливает код, обёртку, меню, юниты и
+- Обновление через `stacksentry-menu` переустанавливает код, обёртку, меню, юниты и
   sudoers, поэтому новые фичи применяются и при будущих обновлениях.
 
 - Telegram-бот мониторинга: система, systemd-службы, панель 3X-UI, xray,
@@ -74,13 +74,13 @@
   full/phased в transient-юните, проверка релиз-обновления, перезагрузка
   сервера, команда из allowlist.
 - Инструкция внутри бота: `/help` и кнопка «❓ Помощь» с расшифровкой метрик.
-- Консольная панель `uisentry-menu`: состояние, показ и правка настроек (безопасный
+- Консольная панель `stacksentry-menu`: состояние, показ и правка настроек (безопасный
   белый список ключей), рестарт, журнал, обновление, удаление.
-- Меню `uisentry-menu` оформлено рамкой (как в панели 3X-UI): пункты сгруппированы по
+- Меню `stacksentry-menu` оформлено рамкой (как в панели 3X-UI): пункты сгруппированы по
   разделам, сверху видно состояние службы, ширина рамки подстраивается под текст,
   неверный номер даёт подсказку с диапазоном. Добавлены подменю порогов, правка
   служб и уровня логирования и перезапуск xray в панели через API
-  (`uisentry-menu restart-xray`).
+  (`stacksentry-menu restart-xray`).
 - Установка одной командой с GitHub: мастер спрашивает токены четвёртым шагом
   (до установки зависимостей), проверяет токен бота и доступность панели,
   умеет выпустить токен панели автоматически; самопроверка из 8 проверок.
@@ -92,8 +92,8 @@
 
 ### Возможности
 
-- Терминал (опционально): отдельный сервис `uisentry-terminal`, пользователь
-  `uisentry-term`, вход по Telegram initData + TOTP, одноразовые тикеты,
+- Терминал (опционально): отдельный сервис `stacksentry-terminal`, пользователь
+  `stacksentry-term`, вход по Telegram initData + TOTP, одноразовые тикеты,
   access token для доступа вне Telegram, опциональный root через точное
   sudoers-правило `/bin/bash -l`. По умолчанию слушает 127.0.0.1.
 - Инвентарь панелей/VPN: 3X-UI, S-UI, Marzban, Hiddify, Xray, sing-box,
@@ -104,7 +104,7 @@
 ### Безопасность
 
 - Аудит терминала: секреты больше не наследуются PTY-shell; обычный shell — под
-  `uisentry-shell` без sudo, root — отдельным правилом; TOTP-код нормализуется
+  `stacksentry-shell` без sudo, root — отдельным правилом; TOTP-код нормализуется
   для replay-защиты; исправлены утечка fd, гонка карты сессий и битые cookie/
   тикеты с не-ASCII.
 - Установщик: `--2fa`/`--no-2fa`/`--no-panel` работают и на готовом `.env`;
@@ -151,7 +151,7 @@
 
 - Удаление бота: отчёт теперь короткий — одна строка «Бот удалён.» вместо
   списка того, что и где стёрто (`--keep-state` по-прежнему предупреждает об
-  оставшихся базе и пользователе). `uisentry-menu` после удаления завершается, а не
+  оставшихся базе и пользователе). `stacksentry-menu` после удаления завершается, а не
   открывает меню заново — возвращаться уже некуда.
 - Раздел «Обслуживание» больше не «зависает»: при таймауте команды в
   `run_command` переменные вывода не были инициализированы и задача падала с
@@ -167,7 +167,7 @@
 - Обновление системы: `systemd-run` в daemon-контексте новых systemd
   (Ubuntu 26.04) отбивается polkit («требуется интерактивная аутентификация»),
   и кнопка молча не работала. Установщик ставит постоянные юниты
-  `uisentry-apt-upgrade.service` и `uisentry-apt-phased.service`
+  `stacksentry-apt-upgrade.service` и `stacksentry-apt-phased.service`
   (`User=root`), обёртка запускает их через `systemctl`; при их отсутствии —
   transient-юнит, затем фоновый запуск.
 - `webBasePath`: путь `/panel` из адресной строки — не webBasePath (в 3X-UI
@@ -183,7 +183,7 @@
 - Проблемы железа и проблемы подписок разделены: раньше предупреждения о метриках
   попадали в находку «Подписки: нужна проверка», а одинаковые строки дублировались.
 
-- Установка на чистой машине: каталог `/opt/uisentry` создаётся до записи
+- Установка на чистой машине: каталог `/opt/stacksentry` создаётся до записи
   `.env` (иначе установщик падал на шаге 4).
 - Недозаполненный `.env` после прерванного запуска больше не требует правки
   руками — мастер дозаполняет недостающие значения.
@@ -216,12 +216,12 @@
 - Токен панели при проверке пишется во временный `mktemp`-файл, а не в
   предсказуемый `/tmp/.xui-mon-bot-tok`.
 
-- Секреты не попадают в логи, Telegram ID маскируются, `uisentry-menu show/check` не
+- Секреты не попадают в логи, Telegram ID маскируются, `stacksentry-menu show/check` не
   печатают значения токенов.
 - `PANEL_CA_BUNDLE` для пиннинга сертификата панели; установщик умеет сверять
   архив по `--sha256`; клиент панели не следует редиректам.
 - Команды и кнопки принимаются только в личном чате администратора; отказы
-  пишутся в журнал; обёртка `uisentry-ctl` работает только по узкому sudoers-списку.
+  пишутся в журнал; обёртка `stacksentry-ctl` работает только по узкому sudoers-списку.
 - `run_command` запускает фиксированные argv без `bash -c`; аргументы подкоманд
   валидируются (`safe_unit`, `safe_int`, запрет лишних аргументов).
 
@@ -232,28 +232,28 @@
 ### Rebrand
 
 - The product is now **StackSentry** (panels + VPN + services + server). The
-  technical `uisentry`, `uisentry-bot`, `uisentry-menu`, `uisentry-ctl`
+  technical `stacksentry`, `stacksentry-bot`, `stacksentry-menu`, `stacksentry-ctl`
   identifiers are kept for compatibility with existing installs; a full technical
   rename will be a separate update with migration.
 
 ### Rename
 
-- The project is now **StackSentry**: repository `Hijackery/3x-uisentry`,
-  Python package `uisentry`, service `uisentry-bot`, user `uisentry`, commands
-  `uisentry-menu` and `uisentry-ctl`, state in `/var/lib/uisentry`. The installer
+- The project is now **StackSentry**: repository `Hijackery/stacksentry`,
+  Python package `stacksentry`, service `stacksentry-bot`, user `stacksentry`, commands
+  `stacksentry-menu` and `stacksentry-ctl`, state in `/var/lib/stacksentry`. The installer
   migrates `.env` and the database from the old `xui-monitor-bot` installation
   and removes the old units/sudoers/wrappers and user. Old GitHub links redirect,
   but the installer and README already use the new address.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No releases or
 tags are published — the current version is always the `main` branch; update via
-`sudo uisentry-menu` (item 21) or by re-running the installer.
+`sudo stacksentry-menu` (item 21) or by re-running the installer.
 
 ### Added
 
 - Read-only Mini App: a Telegram dashboard (overview, services, panel, traffic,
   subscriptions, history), initData login, HttpOnly cookie, CSP, the
-  `uisentry-webapp` service on 127.0.0.1:8787, and a “Panel” Telegram menu
+  `stacksentry-webapp` service on 127.0.0.1:8787, and a “Panel” Telegram menu
   button. No actions and no secrets in the browser.
 
 - Monitor-only: without the 3X-UI API the bot watches services, the VPN stack and
@@ -264,7 +264,7 @@ tags are published — the current version is always the `main` branch; update v
   restarts and apt update after a code with a 15-minute unlock, OS upgrades and
   reboot require a fresh code. Codes are one-time, 3 attempts, 5-minute lockout,
   audited; the code message is deleted. The installer asks and prints otpauth;
-  `sudo uisentry-menu totp` shows the secret.
+  `sudo stacksentry-menu totp` shows the secret.
 
 - Separate, self-reporting updates: `apt update`, `full-upgrade`, `phased`,
   release check (`do-release-upgrade --check`) and the actual
@@ -277,9 +277,9 @@ tags are published — the current version is always the `main` branch; update v
   (Details and Collapse expand the same screen).
 - `/help` is now a full manual: sections, updates, commands, metrics, security,
   troubleshooting and settings.
-- `uisentry-menu apt-logs [N]` and a README section explaining every menu item, what to
+- `stacksentry-menu apt-logs [N]` and a README section explaining every menu item, what to
   enter and an example value.
-- Updating through `uisentry-menu` reinstalls code, wrapper, menu, units and sudoers,
+- Updating through `stacksentry-menu` reinstalls code, wrapper, menu, units and sudoers,
   so new features apply on future updates too.
 
 - Monitoring bot: system metrics, systemd services, 3X-UI panel, xray, inbounds,
@@ -288,12 +288,12 @@ tags are published — the current version is always the `main` branch; update v
 - Confirmed actions: service/xray restart, `apt` full and phased in a transient
   unit, release-upgrade check, server reboot, allow-listed command.
 - In-bot manual (`/help` and the “❓ Help” button) explaining every metric.
-- `uisentry-menu` terminal panel: status, masked settings view, allow-listed editing,
+- `stacksentry-menu` terminal panel: status, masked settings view, allow-listed editing,
   restart, log, update, removal.
-- `uisentry-menu` menu redrawn in a frame (like the 3X-UI panel): items grouped into
+- `stacksentry-menu` menu redrawn in a frame (like the 3X-UI panel): items grouped into
   sections, live service state on top, frame width follows the longest line, a
   wrong number prints the valid range. Added threshold submenus, services/log-level
-  editing and an xray restart via the panel API (`uisentry-menu restart-xray`).
+  editing and an xray restart via the panel API (`stacksentry-menu restart-xray`).
 - One-command GitHub install: the wizard asks for tokens as step 4 (before
   installing dependencies), verifies the bot token and panel reachability, can
   issue the panel token itself; an 8-check self-test at the end.
@@ -304,16 +304,16 @@ tags are published — the current version is always the `main` branch; update v
 ### Documentation
 
 - README (ru/en) restructured into a logical chain: why → preview → compatibility
-  → quick start → panel connection → internals → commands → `uisentry-menu` → settings
+  → quick start → panel connection → internals → commands → `stacksentry-menu` → settings
   → security → update/removal → troubleshooting → development. Added a table of
   contents, compatibility and symptom tables, screen examples and exact API/path
   checks.
-- CI now checks `uisentry-menu` and the init script syntax, runs `shellcheck` on the
+- CI now checks `stacksentry-menu` and the init script syntax, runs `shellcheck` on the
   menu, and validates the sudoers generated from real unit names and command keys.
 
 ### Added
 
-- Optional terminal: separate `uisentry-terminal` service, `uisentry-term` user,
+- Optional terminal: separate `stacksentry-terminal` service, `stacksentry-term` user,
   Telegram initData + TOTP login, one-time tickets, access token for non-Telegram
   access, optional root via the exact sudoers rule `/bin/bash -l`. Listens on
   127.0.0.1 by default.
@@ -325,7 +325,7 @@ tags are published — the current version is always the `main` branch; update v
 ### Security
 
 - Terminal audit: secrets are no longer inherited by the PTY shell; the normal
-  shell runs as `uisentry-shell` without sudo, root uses a separate rule; TOTP
+  shell runs as `stacksentry-shell` without sudo, root uses a separate rule; TOTP
   is normalized for replay protection; fixed fd leak, session-map race and
   non-ASCII cookie/ticket handling.
 - Installer: `--2fa`/`--no-2fa`/`--no-panel` work on a complete `.env`;
@@ -370,7 +370,7 @@ tags are published — the current version is always the `main` branch; update v
 
 ### Fixed (older)
 
-- Clean-machine install: `/opt/uisentry` is created before `.env` is
+- Clean-machine install: `/opt/stacksentry` is created before `.env` is
   written; an incomplete `.env` after an aborted run is completed by the wizard.
 - Panel address handling: spaces/trailing slashes stripped, a path pasted with the
   address is moved into `webBasePath`, double slashes are impossible.
@@ -384,7 +384,7 @@ tags are published — the current version is always the `main` branch; update v
   checked under lock; confirmation tokens not consumed by a foreign tap.
 - Uninstall now prints a one-line “Bot removed.” report instead of listing what
   and where was deleted (`--keep-state` still warns about the leftover database
-  and user); `uisentry-menu` exits after removal instead of re-opening the menu.
+  and user); `stacksentry-menu` exits after removal instead of re-opening the menu.
 - The Maintenance section no longer “hangs”: on a command timeout `run_command`
   left its output variables unset and the job died with `UnboundLocalError` and
   no report. Output is now pre-initialised, and on timeout the whole process
@@ -398,7 +398,7 @@ tags are published — the current version is always the `main` branch; update v
 - System upgrade: `systemd-run` goes through polkit in a daemon context on new
   systemd (Ubuntu 26.04) and is denied (“interactive authentication required”),
   so the button silently did nothing. The installer now adds persistent
-  `uisentry-apt-upgrade.service` / `uisentry-apt-phased.service`
+  `stacksentry-apt-upgrade.service` / `stacksentry-apt-phased.service`
   (`User=root`) units started via `systemctl`, with transient and detached
   fallbacks.
 
@@ -414,9 +414,9 @@ tags are published — the current version is always the `main` branch; update v
   `/tmp/.xui-mon-bot-tok`.
 
 - Secrets never reach logs (scrubbing formatter), Telegram IDs masked,
-  `uisentry-menu show/check` never print secrets.
+  `stacksentry-menu show/check` never print secrets.
 - `PANEL_CA_BUNDLE` certificate pinning, `--sha256` archive verification, no
   redirect following for the panel client.
 - Commands accepted only in the administrator's private chat, denials logged,
-  narrow sudoers allowlist for `uisentry-ctl`, `run_command` executes fixed argv
+  narrow sudoers allowlist for `stacksentry-ctl`, `run_command` executes fixed argv
   without `bash -c`.

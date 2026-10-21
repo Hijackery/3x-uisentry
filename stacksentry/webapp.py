@@ -25,7 +25,7 @@ from .settings import ConfigError, Settings, load_settings
 from .storage import Storage
 from .terminal.auth import validate_init_data
 
-COOKIE_NAME = "uisentry_session"
+COOKIE_NAME = "stacksentry_session"
 STATIC_DIR = Path(__file__).resolve().parent / "webapp_static"
 
 

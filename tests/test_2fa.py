@@ -9,15 +9,15 @@ from unittest.mock import AsyncMock
 from telegram import CallbackQuery, Chat, Message, Update, User
 from telegram.constants import ChatType
 
-from uisentry import ui
-from uisentry.actions import (
+from stacksentry import ui
+from stacksentry.actions import (
     ACTION_JOURNAL,
     ACTION_REBOOT,
     ACTION_RESTART_SERVICE,
 )
-from uisentry.app import MonitorBot
-from uisentry.settings import Settings
-from uisentry.totp import totp_code
+from stacksentry.app import MonitorBot
+from stacksentry.settings import Settings
+from stacksentry.totp import totp_code
 
 ADMIN_ID = 42
 TOTP_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"

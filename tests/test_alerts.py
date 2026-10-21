@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from uisentry.alerts import AlertEngine, Rule
-from uisentry.models import (
+from stacksentry.alerts import AlertEngine, Rule
+from stacksentry.models import (
     InboundSummary,
     MonitorSnapshot,
     PanelHealth,
@@ -13,8 +13,8 @@ from uisentry.models import (
     Subscription,
     SystemMetrics,
 )
-from uisentry.settings import Settings
-from uisentry.storage import Storage
+from stacksentry.settings import Settings
+from stacksentry.storage import Storage
 
 
 def metrics(cpu: float, mem: float = 10.0, disk: float = 10.0) -> SystemMetrics:
@@ -200,7 +200,7 @@ def test_subscription_warnings_are_passed_through(
 
 def test_system_warnings_are_not_blamed_on_subscriptions() -> None:
     """Проблемы железа и проблемы подписок — разные находки."""
-    from uisentry.alerts import _is_subscription_warning
+    from stacksentry.alerts import _is_subscription_warning
 
     assert _is_subscription_warning("подписки не собраны: HTTP 404 на inbounds/list")
     assert _is_subscription_warning("список inbound'ов недоступен: нет node-sync")
@@ -242,7 +242,7 @@ def test_unavailable_services_do_not_fake_recovery(
 def test_disabled_panel_produces_no_panel_findings(
     make_settings: Callable[..., Settings], storage: Storage
 ) -> None:
-    from uisentry.alerts import Rule
+    from stacksentry.alerts import Rule
 
     alerts = engine(make_settings, storage)
     disabled = panel(

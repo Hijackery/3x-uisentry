@@ -1,8 +1,8 @@
 """Привилегированные действия через sudo-обёртку.
 
-Бот никогда не строит shell-команды сам: он вызывает ``uisentry-ctl`` с одним из
+Бот никогда не строит shell-команды сам: он вызывает ``stacksentry-ctl`` с одним из
 фиксированных подкоманд, а белый список и проверка аргументов живут в скрипте
-(см. ``install/uisentry-ctl``). Даже если бот скомпрометирован, произвольный код
+(см. ``install/stacksentry-ctl``). Даже если бот скомпрометирован, произвольный код
 не выполнится — sudo-правило разрешает только эти подкоманды.
 """
 
@@ -210,7 +210,7 @@ class ActionManager:
 
         Напрямую ``journalctl`` сервисному пользователю обычно недоступен: он не
         входит ни в `systemd-journal`, ни в `adm`, и видел бы только свои записи.
-        Обёртка (`uisentry-ctl journal`) разрешена в sudoers и проверяет аргументы.
+        Обёртка (`stacksentry-ctl journal`) разрешена в sudoers и проверяет аргументы.
         """
         if unit not in self.settings.services:
             raise ActionError(f"Сервис {unit} не входит в список наблюдаемых")
@@ -307,7 +307,7 @@ class ActionManager:
                 allowed = "\n".join(f"• {item}" for item in allowlist)
                 raise ActionError(f"Команда не разрешена. Разрешено только:\n{allowed}")
         # Команда передаётся одним аргументом: sudo-правило разрешает
-        # ``uisentry-ctl run_command *``, а белый список проверяется уже в скрипте.
+        # ``stacksentry-ctl run_command *``, а белый список проверяется уже в скрипте.
         # В sudoers ключ (без пробелов) — там запрещены шаблоны в аргументах.
         return await self._privileged(
             [ACTION_COMMAND, command_key(command)],
@@ -328,7 +328,7 @@ class ActionManager:
     ) -> CommandResult:
         # Бот работает под непривилегированным пользователем, поэтому обёртка
         # запускается через sudo -n (без пароля). Правило в sudoers разрешает
-        # только точные подкоманды uisentry-ctl. Без sudo привилегированные действия
+        # только точные подкоманды stacksentry-ctl. Без sudo привилегированные действия
         # молча уходили бы в «Access denied» / polkit.
         argv = ["sudo", "-n", "--", self.settings.sudo_wrapper, *args]
         # Проверка и отметка внутри блокировки: иначе два одновременных нажатия

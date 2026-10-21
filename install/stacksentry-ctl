@@ -2,20 +2,20 @@
 # Единственная точка входа для привилегированных операций бота.
 #
 # Бот вызывает только подкоманды этого скрипта и никогда не передаёт
-# произвольные строки в shell: sudo-правило в install/uisentry-sudoers
+# произвольные строки в shell: sudo-правило в install/stacksentry-sudoers
 # разрешает ровно этот список. Аргументы здесь тоже проверяются — даже при
 # ошибке в коде бота выполнить что-то незапланированное не получится.
 #
 # Установка:
-#   sudo install -o root -g root -m 0755 uisentry-ctl /usr/local/bin/uisentry-ctl
+#   sudo install -o root -g root -m 0755 stacksentry-ctl /usr/local/bin/stacksentry-ctl
 set -euo pipefail
 
 log() {
-    logger -t uisentry-ctl -- "$*" 2>/dev/null || true
+    logger -t stacksentry-ctl -- "$*" 2>/dev/null || true
 }
 
 die() {
-    echo "uisentry-ctl: $*" >&2
+    echo "stacksentry-ctl: $*" >&2
     exit 2
 }
 
@@ -49,7 +49,7 @@ apt_enqueue() {
     # аутентификацию — падаем в фоновый запуск отдельной сессией. Иначе кнопка
     # «Обновить систему» молча не работала.
     local unit="$1" worker="$2" description="$3" log_name="$4" kind="$5"
-    local apt_dir="${STATE_DIR:-/var/lib/uisentry}"
+    local apt_dir="${STATE_DIR:-/var/lib/stacksentry}"
     mkdir -p "$apt_dir" 2>/dev/null || true
     rm -f "$apt_dir/apt-${kind}.status" 2>/dev/null || true
     # 1) Постоянный юнит (ставится установщиком). Это надёжнее transient-юнита:
@@ -66,7 +66,7 @@ apt_enqueue() {
     fi
     # 2) Transient-юнит.
     if command -v systemd-run >/dev/null 2>&1; then
-        local srun_err="/tmp/uisentry-ctl-systemd-run.$$"
+        local srun_err="/tmp/stacksentry-ctl-systemd-run.$$"
         if systemd-run --quiet --unit="$unit" --collect \
             --description="$description" \
             --property=Type=exec \
@@ -88,7 +88,7 @@ apt_enqueue() {
 apt_status_write() {
     # $1 — вид обновления, $2 — код возврата. Нужен для систем без systemd,
     # где нельзя спросить состояние юнита у systemctl.
-    local dir="${STATE_DIR:-/var/lib/uisentry}"
+    local dir="${STATE_DIR:-/var/lib/stacksentry}"
     mkdir -p "$dir" 2>/dev/null || true
     printf 'EXIT=%s\n' "$2" >"$dir/apt-$1.status" 2>/dev/null || true
 }
@@ -148,7 +148,7 @@ svc_log() {
         fi
         return 0
     fi
-    local file="${LOG_PATH:-/var/lib/uisentry/bot.log}"
+    local file="${LOG_PATH:-/var/lib/stacksentry/bot.log}"
     [ -f "$file" ] || die "нет journalctl и файла лога $file"
     if [ "$errors" = "1" ]; then
         grep -iE "error|critical|failed|traceback" "$file" | tail -n "$lines" || true
@@ -217,12 +217,12 @@ case "$cmd" in
         # отдельным transient-юнитом — systemd создаёт для него своё окружение,
         # а бот лишь ставит задачу в очередь и сразу получает управление.
         require_no_extra_args 0 "$@"
-        unit="uisentry-apt-upgrade"
+        unit="stacksentry-apt-upgrade"
         log "apt full-upgrade requested"
 
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
-            echo "Обновление уже выполняется. Журнал: sudo uisentry-menu apt-logs"
+            echo "Обновление уже выполняется. Журнал: sudo stacksentry-menu apt-logs"
             exit 3
         fi
 
@@ -261,12 +261,12 @@ case "$cmd" in
         # нет», хотя они есть. Отдельная подкоманда, а не флаг: бот не должен
         # уметь собирать произвольные команды apt.
         require_no_extra_args 0 "$@"
-        unit="uisentry-apt-phased"
+        unit="stacksentry-apt-phased"
         log "apt upgrade (phased) requested"
 
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
-            echo "Обновление уже выполняется. Журнал: sudo uisentry-menu apt-logs"
+            echo "Обновление уже выполняется. Журнал: sudo stacksentry-menu apt-logs"
             exit 3
         fi
 
@@ -277,7 +277,7 @@ case "$cmd" in
     apt_update)
         # Только обновление индексов пакетов: быстро и безопасно.
         require_no_extra_args 0 "$@"
-        unit="uisentry-apt-update"
+        unit="stacksentry-apt-update"
         log "apt update requested"
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
@@ -345,7 +345,7 @@ case "$cmd" in
         # У сервиса HOME=PREFIX, а он read-only (ProtectSystem=strict): python
         # внутри do-release-upgrade падал на mkdir() .cache. Даём записываемый
         # HOME/XDG_CACHE_HOME в каталоге состояния.
-        _dr_home="${STATE_DIR:-/var/lib/uisentry}/release-upgrade"
+        _dr_home="${STATE_DIR:-/var/lib/stacksentry}/release-upgrade"
         mkdir -p "$_dr_home/cache" 2>/dev/null || true
         export HOME="$_dr_home"
         export XDG_CACHE_HOME="$_dr_home/cache"
@@ -367,7 +367,7 @@ case "$cmd" in
     release_upgrade)
         # Отдельное действие: запуск самого do-release-upgrade, а не проверки.
         require_no_extra_args 0 "$@"
-        unit="uisentry-release-upgrade"
+        unit="stacksentry-release-upgrade"
         log "do-release-upgrade requested"
         if ! command -v do-release-upgrade >/dev/null 2>&1; then
             echo "do-release-upgrade не установлен (это не Ubuntu либо нет update-manager)"
@@ -387,7 +387,7 @@ case "$cmd" in
         [ -z "${SUDO_USER:-}" ] || die "_release_upgrade_worker недоступен через sudo"
         require_no_extra_args 0 "$@"
         export DEBIAN_FRONTEND=noninteractive
-        _dr_home="${STATE_DIR:-/var/lib/uisentry}/release-upgrade"
+        _dr_home="${STATE_DIR:-/var/lib/stacksentry}/release-upgrade"
         mkdir -p "$_dr_home/cache" 2>/dev/null || true
         export HOME="$_dr_home"
         export XDG_CACHE_HOME="$_dr_home/cache"
@@ -414,10 +414,10 @@ case "$cmd" in
         # произвольное имя юнита сюда передать нельзя.
         require_no_extra_args 1 "$@"
         case "$2" in
-            update)  unit="uisentry-apt-update" ;;
-            upgrade) unit="uisentry-apt-upgrade" ;;
-            phased)  unit="uisentry-apt-phased" ;;
-            release) unit="uisentry-release-upgrade" ;;
+            update)  unit="stacksentry-apt-update" ;;
+            upgrade) unit="stacksentry-apt-upgrade" ;;
+            phased)  unit="stacksentry-apt-phased" ;;
+            release) unit="stacksentry-release-upgrade" ;;
             *) die "неизвестный вид обновления: $2" ;;
         esac
         state="unknown"; result="unknown"; code="unknown"; load="unknown"
@@ -428,7 +428,7 @@ case "$cmd" in
             load="$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"
         fi
         # Фолбэк без systemd: воркер пишет файл со своим кодом возврата.
-        _status_file="${STATE_DIR:-/var/lib/uisentry}/apt-$2.status"
+        _status_file="${STATE_DIR:-/var/lib/stacksentry}/apt-$2.status"
         if [ -f "$_status_file" ]; then
             _rc="$(sed -n 's/^EXIT=//p' "$_status_file" | head -1)"
             if [ -n "$_rc" ]; then
@@ -440,8 +440,8 @@ case "$cmd" in
             "${state:-unknown}" "${result:-unknown}" "${code:-unknown}" "${load:-unknown}"
         if command -v journalctl >/dev/null 2>&1; then
             journalctl -u "$unit" -n 40 --no-pager -o cat 2>/dev/null || true
-        elif [ -f "${STATE_DIR:-/var/lib/uisentry}/apt-$2.log" ]; then
-            tail -n 40 "${STATE_DIR:-/var/lib/uisentry}/apt-$2.log" 2>/dev/null || true
+        elif [ -f "${STATE_DIR:-/var/lib/stacksentry}/apt-$2.log" ]; then
+            tail -n 40 "${STATE_DIR:-/var/lib/stacksentry}/apt-$2.log" 2>/dev/null || true
         fi
         ;;
 

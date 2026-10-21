@@ -1,0 +1,38 @@
+# Пример правил, которые установщик кладёт в /etc/sudoers.d/stacksentry-bot.
+#
+# Почему именно так: sudo-rs (Ubuntu 26.04+) запрещает шаблоны в аргументах
+# команд («wildcards are not allowed in command arguments»), не знает алиасов
+# вида User_Alias/Cmnd_Alias и части настроек Defaults. Поэтому команды
+# перечисляются точно, одним правилом.
+#
+# Юниты установщик берёт из SERVICES, ключи команд — из COMMAND_ALLOWLIST
+# (пробел заменяется на «_»).
+
+stacksentry ALL=(root) NOPASSWD: /usr/local/bin/stacksentry-ctl is_active x-ui, \
+    /usr/local/bin/stacksentry-ctl restart_service x-ui, \
+    /usr/local/bin/stacksentry-ctl journal x-ui, \
+    /usr/local/bin/stacksentry-ctl journal_more x-ui, \
+    /usr/local/bin/stacksentry-ctl journal_errors x-ui, \
+    /usr/local/bin/stacksentry-ctl apt_update, \
+    /usr/local/bin/stacksentry-ctl apt_upgrade, \
+    /usr/local/bin/stacksentry-ctl apt_upgrade_phased, \
+    /usr/local/bin/stacksentry-ctl dist_upgrade, \
+    /usr/local/bin/stacksentry-ctl release_upgrade, \
+    /usr/local/bin/stacksentry-ctl apt_status update, \
+    /usr/local/bin/stacksentry-ctl apt_status upgrade, \
+    /usr/local/bin/stacksentry-ctl apt_status phased, \
+    /usr/local/bin/stacksentry-ctl apt_status release, \
+    /usr/local/bin/stacksentry-ctl reboot, \
+    /usr/local/bin/stacksentry-ctl run_command journalctl_--disk-usage, \
+    /usr/local/bin/stacksentry-ctl run_command systemctl_list-timers_--all, \
+    /usr/local/bin/stacksentry-ctl run_command df_-h, \
+    /usr/local/bin/stacksentry-ctl run_command free_-h, \
+    /usr/local/bin/stacksentry-ctl run_command uptime, \
+    /usr/local/bin/stacksentry-ctl run_command x-ui_status, \
+    /usr/local/bin/stacksentry-ctl run_command os_logs_more, \
+    /usr/local/bin/stacksentry-ctl run_command os_logs_errors, \
+    /usr/local/bin/stacksentry-ctl run_command xui_logs_more, \
+    /usr/local/bin/stacksentry-ctl run_command xui_logs_errors, \
+    /usr/local/bin/stacksentry-ctl run_command kernel_logs_more, \
+    /usr/local/bin/stacksentry-ctl run_command kernel_logs_errors, \
+    /usr/local/bin/stacksentry-ctl run_command dmesg_errors

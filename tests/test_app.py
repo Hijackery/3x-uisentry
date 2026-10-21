@@ -14,8 +14,8 @@ import pytest
 from telegram import CallbackQuery, Update, User
 from telegram.ext import CommandHandler
 
-from uisentry.app import MonitorBot
-from uisentry.settings import Settings
+from stacksentry.app import MonitorBot
+from stacksentry.settings import Settings
 
 ADMIN_ID = 42
 GUEST_ID = 999
@@ -131,7 +131,7 @@ async def test_apt_watcher_reports_finished_job(
     bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Отчёт об apt приходит в чат сам — без journalctl и лишних команд."""
-    from uisentry.models import CommandResult
+    from stacksentry.models import CommandResult
 
     job_id = bot_app.storage.add_pending_job(
         "apt_upgrade", "upgrade", chat_id=1, user_id=ADMIN_ID
@@ -184,7 +184,7 @@ async def test_apt_watcher_reports_finished_job(
 async def test_apt_watcher_keeps_polling_while_active(
     bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from uisentry.models import CommandResult
+    from stacksentry.models import CommandResult
 
     job_id = bot_app.storage.add_pending_job(
         "apt_upgrade", "upgrade", chat_id=1, user_id=ADMIN_ID

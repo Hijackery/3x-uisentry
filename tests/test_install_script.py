@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from uisentry.settings import BASE_DIR
+from stacksentry.settings import BASE_DIR
 
 INSTALL_SH = BASE_DIR / "install.sh"
-XUI_CTL = BASE_DIR / "install" / "uisentry-ctl"
+XUI_CTL = BASE_DIR / "install" / "stacksentry-ctl"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="нужен bash")
 
@@ -94,7 +94,7 @@ def test_print_source_shows_default_repository() -> None:
     """По умолчанию источником должен быть реальный репозиторий, не заглушка."""
     result = _run("--print-source")
     assert result.returncode == 0, result.stderr
-    assert "REPO_URL=https://github.com/Hijackery/3x-uisentry" in result.stdout
+    assert "REPO_URL=https://github.com/Hijackery/stacksentry" in result.stdout
     assert "placeholder=no" in result.stdout
 
 
@@ -114,11 +114,11 @@ def test_print_source_marks_placeholder_repository() -> None:
 
 def test_print_source_resolves_repo_and_ref() -> None:
     """--repo/--ref дают ровно тот адрес, с которого пойдёт установка."""
-    result = _run("--repo", "mylogin/uisentry-bot", "--ref", "dev", "--print-source")
+    result = _run("--repo", "mylogin/stacksentry-bot", "--ref", "dev", "--print-source")
     assert result.returncode == 0, result.stderr
-    assert "REPO_URL=https://github.com/mylogin/uisentry-bot" in result.stdout
+    assert "REPO_URL=https://github.com/mylogin/stacksentry-bot" in result.stdout
     assert (
-        "TARBALL_URL=https://codeload.github.com/mylogin/uisentry-bot"
+        "TARBALL_URL=https://codeload.github.com/mylogin/stacksentry-bot"
         "/tar.gz/refs/heads/dev" in result.stdout
     )
     assert "placeholder=no" in result.stdout
@@ -231,7 +231,7 @@ def test_scripts_pass_shellcheck(script: Path) -> None:
 
 
 def test_installer_keeps_local_copy_for_xui_menu_update() -> None:
-    """`uisentry-menu update` берёт установщик рядом с ботом, а не только из сети."""
+    """`stacksentry-menu update` берёт установщик рядом с ботом, а не только из сети."""
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert '"$SOURCE_DIR/install.sh" "$PREFIX/install.sh"' in text
 
@@ -246,7 +246,7 @@ def test_installer_never_asks_to_dump_env_to_terminal() -> None:
 def test_prefix_exists_before_env_is_written() -> None:
     """Регрессия: мастер пишет .env до копирования кода.
 
-    На чистой машине каталога /opt/uisentry ещё нет, поэтому установщик
+    На чистой машине каталога /opt/stacksentry ещё нет, поэтому установщик
     обязан создать его до первого касания .env — иначе установка падает
     на `touch: cannot touch .../.env: No such file or directory`.
     """
@@ -363,7 +363,7 @@ def test_installer_shows_visudo_reason_and_falls_back() -> None:
 
 def test_sudoers_sample_has_no_defaults_line() -> None:
     """Никаких Defaults: sudo-rs не знает даже log_output и роняет разбор."""
-    text = (BASE_DIR / "install" / "uisentry-sudoers").read_text(encoding="utf-8")
+    text = (BASE_DIR / "install" / "stacksentry-sudoers").read_text(encoding="utf-8")
     defaults = [line for line in text.splitlines() if line.startswith("Defaults")]
     assert defaults == [], defaults
 
@@ -381,7 +381,7 @@ def test_generated_sudoers_has_no_wildcards_or_aliases() -> None:
     for forbidden in ("User_Alias", "Cmnd_Alias", "Defaults:"):
         assert forbidden not in text, forbidden
 
-    sample = (BASE_DIR / "install" / "uisentry-sudoers").read_text(encoding="utf-8")
+    sample = (BASE_DIR / "install" / "stacksentry-sudoers").read_text(encoding="utf-8")
     assert "*" not in sample
     assert sample.count("NOPASSWD:") == 1
 
@@ -390,7 +390,7 @@ def test_sudoers_template_still_valid_after_stripping_comments(tmp_path: Path) -
     import subprocess
 
     stripped = tmp_path / "sudoers.stripped"
-    source = (BASE_DIR / "install" / "uisentry-sudoers").read_text(encoding="utf-8")
+    source = (BASE_DIR / "install" / "stacksentry-sudoers").read_text(encoding="utf-8")
     stripped.write_text(
         "\n".join(line for line in source.splitlines() if not line.startswith("#"))
         + "\n",
@@ -467,8 +467,8 @@ def test_uninstall_removes_state_by_default() -> None:
 
 
 def test_menu_does_not_reopen_after_uninstall() -> None:
-    """После удаления uisentry-menu завершается: бота и самого меню уже нет."""
-    text = (BASE_DIR / "install" / "uisentry-menu").read_text(encoding="utf-8")
+    """После удаления stacksentry-menu завершается: бота и самого меню уже нет."""
+    text = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
     marker = "Бот и само меню удалены — возвращаться некуда."
     assert marker in text
     assert "exit 0" in text[text.index(marker) :]
@@ -557,14 +557,14 @@ def test_sha256_disables_unverified_git_fallback() -> None:
 
 def test_init_does_not_source_env() -> None:
     """Текст из .env не должен исполняться init-скриптом."""
-    text = (BASE_DIR / "install" / "uisentry-bot.init").read_text(encoding="utf-8")
+    text = (BASE_DIR / "install" / "stacksentry-bot.init").read_text(encoding="utf-8")
     assert ". '$PREFIX/.env'" not in text
     assert "set -a" not in text
 
 
 def test_unit_state_dir_is_templated() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "s#/var/lib/uisentry#${STATE_DIR}#g" in text
+    assert "s#/var/lib/stacksentry#${STATE_DIR}#g" in text
 
 
 def test_set_env_keeps_env_readable_by_service(tmp_path: Path) -> None:
@@ -600,11 +600,13 @@ def test_service_group_is_not_assumed_to_equal_user() -> None:
 def test_project_renamed_with_legacy_migration() -> None:
     """Новое имя и автоматический перенос старой установки."""
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert 'REPO_NAME="${REPO_NAME:-3x-uisentry}"' in text
+    assert 'REPO_NAME="${REPO_NAME:-stacksentry}"' in text
     assert "migrate_legacy_install()" in text
     assert "/opt/xui-monitor-bot" in text
     assert "/var/lib/xui-monitor" in text
-    assert "Старая установка перенесена и удалена" in text
+    assert "/opt/uisentry" in text
+    assert "/var/lib/uisentry" in text
+    assert "перенесена и удалена" in text
 
 
 def test_log_variant_buttons_are_allowed() -> None:
@@ -619,7 +621,7 @@ def test_log_variant_buttons_are_allowed() -> None:
         "dmesg_errors",
     )
     install = INSTALL_SH.read_text(encoding="utf-8")
-    wrapper = (BASE_DIR / "install" / "uisentry-ctl").read_text(encoding="utf-8")
+    wrapper = (BASE_DIR / "install" / "stacksentry-ctl").read_text(encoding="utf-8")
     assert "run_command $key" in install
     for key in keys:
         assert key in install, key
@@ -631,7 +633,7 @@ def test_installer_supports_2fa() -> None:
     assert "--2fa" in text
     assert "--no-2fa" in text
     assert "otpauth://totp/" in text
-    menu = (BASE_DIR / "install" / "uisentry-menu").read_text(encoding="utf-8")
+    menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
     assert "cmd_totp" in menu
     assert "TOTP secret" in menu
 
@@ -643,4 +645,4 @@ def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:
     assert "_old_totp" in text
     assert "_old_root" in text
     assert "TERMINAL_SHELL_USER" in text
-    assert "uisentry-shell" in text
+    assert "stacksentry-shell" in text
