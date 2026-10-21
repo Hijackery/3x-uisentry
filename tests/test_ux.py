@@ -529,3 +529,21 @@ def test_command_help_shows_only_allowed() -> None:
     assert "sockets" not in text
     assert "Логи" in text
     assert "Сеть" not in text
+
+
+def test_log_variants_menu_has_more_and_errors() -> None:
+    data = {
+        button.callback_data
+        for row in ui.log_variants_menu("os_logs").inline_keyboard
+        for button in row
+    }
+    assert "logmore:os_logs" in data
+    assert "logerr:os_logs" in data
+    # У dmesg нет «ещё строк», только ошибки.
+    dmesg = {
+        button.callback_data
+        for row in ui.log_variants_menu("dmesg").inline_keyboard
+        for button in row
+    }
+    assert "logerr:dmesg" in dmesg
+    assert "logmore:dmesg" not in dmesg

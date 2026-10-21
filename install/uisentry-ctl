@@ -480,10 +480,17 @@ case "$cmd" in
             "uptime")                      set -- uptime ;;
             "x-ui_status" | "x-ui status") set -- x-ui status ;;
             "os_logs")        set -- journalctl -p warning -n 100 --no-pager ;;
+            "os_logs_more")   set -- journalctl -p warning -n 300 --no-pager ;;
+            "os_logs_errors") set -- journalctl -p err -n 200 --no-pager ;;
             "os_errors")      set -- journalctl -p err -n 100 --no-pager ;;
             "kernel_logs")    set -- journalctl -k -n 100 --no-pager ;;
+            "kernel_logs_more") set -- journalctl -k -n 300 --no-pager ;;
+            "kernel_logs_errors") set -- journalctl -k -p err -n 200 --no-pager ;;
             "xui_logs")       set -- journalctl -u x-ui -n 100 --no-pager ;;
+            "xui_logs_more")  set -- journalctl -u x-ui -n 300 --no-pager ;;
+            "xui_logs_errors") set -- journalctl -u x-ui -p err -n 200 --no-pager ;;
             "dmesg")          set -- dmesg --ctime ;;
+            "dmesg_errors")   set -- dmesg --ctime --level=err ;;
             "sockets")        set -- ss -tulpn ;;
             "net_summary")    set -- ss -s ;;
             "addresses")      set -- ip -br a ;;

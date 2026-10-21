@@ -544,6 +544,27 @@ def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(buttons)
 
 
+#: У каких логов есть кнопки «Ещё 200 строк» / «Только ошибки».
+LOG_WITH_MORE = frozenset({"os_logs", "xui_logs", "kernel_logs"})
+LOG_WITH_ERRORS = frozenset({"os_logs", "xui_logs", "kernel_logs", "dmesg"})
+
+
+def log_variants_menu(base: str) -> InlineKeyboardMarkup:
+    """Кнопки для лога, запущенного через /run."""
+    row: list[InlineKeyboardButton] = []
+    if base in LOG_WITH_ERRORS:
+        row.append(
+            InlineKeyboardButton("🔎 Только ошибки", callback_data=f"logerr:{base}")
+        )
+    if base in LOG_WITH_MORE:
+        row.append(
+            InlineKeyboardButton("📜 Ещё 200 строк", callback_data=f"logmore:{base}")
+        )
+    rows = [row] if row else []
+    rows.append([home_button()])
+    return InlineKeyboardMarkup(rows)
+
+
 def logs_menu(units: tuple[str, ...]) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(f"📜 {unit}", callback_data=f"logs:{unit}")]
@@ -750,6 +771,8 @@ def render_command_help(allowlist: tuple[str, ...]) -> str:
         "💻 <b>Команда на сервер</b>",
         "Пришлите команду сообщением в любом разделе или "
         "<code>/run &lt;команда&gt;</code>. Всё только читает, shell недоступен.",
+        "У логов (os_logs, xui_logs, kernel_logs, dmesg) под выводом есть "
+        "кнопки «Ещё 200 строк» и «Только ошибки».",
     ]
     for group in _COMMAND_GROUPS:
         items = grouped.get(group) or []

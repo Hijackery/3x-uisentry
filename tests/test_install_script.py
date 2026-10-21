@@ -604,3 +604,22 @@ def test_project_renamed_with_legacy_migration() -> None:
     assert "/opt/xui-monitor-bot" in text
     assert "/var/lib/xui-monitor" in text
     assert "Старая установка перенесена и удалена" in text
+
+
+def test_log_variant_buttons_are_allowed() -> None:
+    """Кнопки «ещё строк»/«только ошибки» должны иметь правила sudoers."""
+    keys = (
+        "os_logs_more",
+        "os_logs_errors",
+        "xui_logs_more",
+        "xui_logs_errors",
+        "kernel_logs_more",
+        "kernel_logs_errors",
+        "dmesg_errors",
+    )
+    install = INSTALL_SH.read_text(encoding="utf-8")
+    wrapper = (BASE_DIR / "install" / "uisentry-ctl").read_text(encoding="utf-8")
+    assert "run_command $key" in install
+    for key in keys:
+        assert key in install, key
+        assert f'"{key}"' in wrapper, key

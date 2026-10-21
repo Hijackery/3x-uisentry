@@ -313,3 +313,17 @@ def test_mismatched_action_keeps_confirmation(
     with pytest.raises(ActionError, match="не совпадает"):
         actions.consume(pending.token, expected=ACTION_RESTART_SERVICE)
     assert actions.consume(pending.token, expected=ACTION_REBOOT) is not None
+
+
+async def test_log_variant_requires_allowed_base(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """«Ещё строк» можно, только если базовый лог разрешён в allowlist."""
+    actions = manager(make_settings, command_allowlist=("os_logs",))
+    calls = fake_runner(monkeypatch)
+
+    await actions.run_allowed_command("os_logs_more")
+    assert calls[-1][-2:] == ["run_command", "os_logs_more"]
+
+    with pytest.raises(ActionError, match="не разрешена"):
+        await actions.run_allowed_command("kernel_logs_more")

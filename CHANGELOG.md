@@ -70,6 +70,9 @@
 
 ### Исправлено
 
+- У логов из `/run` (`os_logs`, `xui_logs`, `kernel_logs`, `dmesg`) появились
+  кнопки «📜 Ещё 200 строк» и «🔎 Только ошибки», как у журналов служб. Варианты
+  логов разрешены, только если базовый лог есть в `COMMAND_ALLOWLIST`.
 - Список безопасных команд в боте (`/run` без аргументов и кнопка «Выполнить
   команду») теперь сгруппирован и снабжён описаниями, а не только алиасами.
 - После миграции `COMMAND_ALLOWLIST` файл `.env` снова получает права
@@ -243,6 +246,9 @@ tags are published — the current version is always the `main` branch; update v
 
 ### Fixed
 
+- Logs from `/run` (`os_logs`, `xui_logs`, `kernel_logs`, `dmesg`) now have
+  “📜 200 more lines” and “🔎 Errors only” buttons, like service logs. Log
+  variants are allowed only when the base log is in `COMMAND_ALLOWLIST`.
 - The safe-command list in the bot (`/run` without arguments and the “Run a
   command” button) is now grouped and described, not just aliases.
 - After the `COMMAND_ALLOWLIST` migration `.env` is restored to

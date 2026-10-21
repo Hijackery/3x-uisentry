@@ -309,7 +309,9 @@ so explicitly.
 | `journalctl --disk-usage` / `systemctl list-timers --all` | journal and timers |
 
 Examples: `/run os_logs`, `/run failed_units`, `/run sockets`. `/run` without
-arguments shows this list right in the bot, grouped and described.
+arguments shows this list right in the bot, grouped and described. For logs
+(`os_logs`, `xui_logs`, `kernel_logs`, `dmesg`) the output has “📜 200 more lines”
+and “🔎 Errors only” buttons, just like service logs.
 
 **Commands and buttons work only in the administrator's private chat.** In a group
 the bot refuses: addresses, subscriptions and traffic must not leak into a shared

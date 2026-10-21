@@ -1246,6 +1246,11 @@ sudoers_rules() {
     for key in $SUDO_KEYS; do
         rules="$rules${rules:+, }$WRAPPER_PATH run_command $key"
     done
+    # Варианты логов для кнопок «Ещё 200 строк»/«Только ошибки»: read-only.
+    for key in os_logs_more os_logs_errors xui_logs_more xui_logs_errors \
+        kernel_logs_more kernel_logs_errors dmesg_errors; do
+        rules="$rules${rules:+, }$WRAPPER_PATH run_command $key"
+    done
     printf '%s' "$rules"
 }
 {

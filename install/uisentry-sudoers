@@ -28,4 +28,11 @@ uisentry ALL=(root) NOPASSWD: /usr/local/bin/uisentry-ctl is_active x-ui, \
     /usr/local/bin/uisentry-ctl run_command df_-h, \
     /usr/local/bin/uisentry-ctl run_command free_-h, \
     /usr/local/bin/uisentry-ctl run_command uptime, \
-    /usr/local/bin/uisentry-ctl run_command x-ui_status
+    /usr/local/bin/uisentry-ctl run_command x-ui_status, \
+    /usr/local/bin/uisentry-ctl run_command os_logs_more, \
+    /usr/local/bin/uisentry-ctl run_command os_logs_errors, \
+    /usr/local/bin/uisentry-ctl run_command xui_logs_more, \
+    /usr/local/bin/uisentry-ctl run_command xui_logs_errors, \
+    /usr/local/bin/uisentry-ctl run_command kernel_logs_more, \
+    /usr/local/bin/uisentry-ctl run_command kernel_logs_errors, \
+    /usr/local/bin/uisentry-ctl run_command dmesg_errors

@@ -49,6 +49,8 @@ from .actions import (
     ACTION_UPGRADE,
     ACTION_UPGRADE_PHASED,
     APT_KINDS,
+    LOG_ERRORS,
+    LOG_MORE,
     ActionError,
     ActionManager,
 )
@@ -844,6 +846,8 @@ class MonitorBot:
             await self._show_logs(query, data[8:], lines=200)
         elif data.startswith("logs_err:"):
             await self._show_logs(query, data[9:], errors=True)
+        elif data.startswith("logmore:") or data.startswith("logerr:"):
+            await self._show_run_log(query, data, user_id)
         elif data == "command_prompt":
             await self._prompt_command(query, context)
         else:
@@ -998,11 +1002,14 @@ class MonitorBot:
                 InlineKeyboardButton(f"📜 Журнал {unit}", callback_data=f"logs:{unit}")
             )
         tail = "" if result.ok else f"\nКод возврата: {result.returncode}"
+        markup = ui.result_menu(extra)
+        if action == ACTION_COMMAND and args and args[0] in ui.LOG_WITH_ERRORS:
+            markup = ui.log_variants_menu(args[0])
         await _safe_edit(
             status,
             f"{icon} <b>{ui.esc(title)}</b> за {result.duration:.1f} с\n"
             f"<code>{ui.esc(result.command)}</code>\n\n<pre>{body}</pre>{tail}",
-            markup=ui.result_menu(extra),
+            markup=markup,
         )
         await asyncio.to_thread(
             self.storage.audit,
@@ -1494,6 +1501,46 @@ class MonitorBot:
         )
 
     # ---------------------------------------------------------- рендеринг
+
+    async def _show_run_log(
+        self, callback: CallbackQuery, data: str, user_id: int
+    ) -> None:
+        """«Ещё 200 строк»/«Только ошибки» для логов из /run."""
+        if not self.is_admin(user_id):
+            await self._edit(callback, "⛔ Только для администраторов.")
+            return
+        kind, _, base = data.partition(":")
+        variant = (LOG_MORE if kind == "logmore" else LOG_ERRORS).get(base)
+        if variant is None or base not in ui.LOG_WITH_ERRORS:
+            await self._edit(
+                callback,
+                "Неизвестный вариант журнала.",
+                markup=ui.main_menu(self.is_admin(user_id)),
+            )
+            return
+        wait = self._heavy_wait(user_id)
+        if wait > 0:
+            await self._answer(callback, f"Журнал: следующий запрос через {wait:.0f} с")
+            return
+        await self._edit(
+            callback, "📜 Читаю журнал…", markup=ui.log_variants_menu(base)
+        )
+        try:
+            result = await self.actions.run_allowed_command(variant)
+        except ActionError as exc:
+            await self._edit(
+                callback,
+                f"❌ {ui.esc(str(exc))}",
+                markup=ui.log_variants_menu(base),
+            )
+            return
+        label = "только ошибки" if kind == "logerr" else "ещё строк"
+        await self._edit(
+            callback,
+            f"📜 <b>{ui.esc(base)}</b> · {label}\n"
+            f"<pre>{ui.esc(result.summary(2500))}</pre>",
+            markup=ui.log_variants_menu(base),
+        )
 
     async def _show_logs(
         self,

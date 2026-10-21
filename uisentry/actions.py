@@ -42,6 +42,25 @@ APT_KINDS: dict[str, str] = {
 }
 
 
+#: Логи, для которых в чате есть кнопки «Ещё 200 строк» и «Только ошибки».
+LOG_MORE: dict[str, str] = {
+    "os_logs": "os_logs_more",
+    "xui_logs": "xui_logs_more",
+    "kernel_logs": "kernel_logs_more",
+}
+LOG_ERRORS: dict[str, str] = {
+    "os_logs": "os_logs_errors",
+    "xui_logs": "xui_logs_errors",
+    "kernel_logs": "kernel_logs_errors",
+    "dmesg": "dmesg_errors",
+}
+LOG_BASE_COMMANDS = frozenset(LOG_MORE) | frozenset(LOG_ERRORS)
+LOG_VARIANT_BASE: dict[str, str] = {
+    **{variant: base for base, variant in LOG_MORE.items()},
+    **{variant: base for base, variant in LOG_ERRORS.items()},
+}
+
+
 def command_key(command: str) -> str:
     """Ключ команды для sudoers: «free -h» → «free_-h».
 
@@ -280,8 +299,13 @@ class ActionManager:
         if not allowlist:
             raise ActionError("COMMAND_ALLOWLIST пуст — произвольные команды запрещены")
         if command not in allowlist:
-            allowed = "\n".join(f"• {item}" for item in allowlist)
-            raise ActionError(f"Команда не разрешена. Разрешено только:\n{allowed}")
+            # Варианты логов («ещё строк»/«только ошибки») разрешены, только
+            # если в allowlist есть их базовая команда. Сами варианты — такие
+            # же фиксированные read-only argv, как и базовые.
+            base = LOG_VARIANT_BASE.get(command)
+            if base is None or base not in allowlist:
+                allowed = "\n".join(f"• {item}" for item in allowlist)
+                raise ActionError(f"Команда не разрешена. Разрешено только:\n{allowed}")
         # Команда передаётся одним аргументом: sudo-правило разрешает
         # ``uisentry-ctl run_command *``, а белый список проверяется уже в скрипте.
         # В sudoers ключ (без пробелов) — там запрещены шаблоны в аргументах.
