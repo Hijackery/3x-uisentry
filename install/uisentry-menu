@@ -374,7 +374,10 @@ cmd_update() {
         slug="$(printf '%s' "$REPO_URL" | sed -E 's#.*github\.com/##; s#\.git$##')"
         info "Скачиваю установщик: $slug@$REPO_REF"
         installer="$(mktemp)"
-        if curl -fsSL --max-time 60 \
+        _auth=()
+        _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+        [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token")
+        if curl -fsSL --max-time 60 "${_auth[@]}" \
             "https://raw.githubusercontent.com/${slug}/${REPO_REF}/install.sh" \
             -o "$installer"; then
             trap 'rm -f "${installer:-}"' EXIT

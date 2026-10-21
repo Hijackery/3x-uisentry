@@ -55,6 +55,7 @@ from .actions import (
     ActionManager,
 )
 from .alerts import AlertEngine, Finding, Rule
+from .inventory import detect_stack
 from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
@@ -181,6 +182,7 @@ class MonitorBot:
             ("audit", self.cmd_audit),
             ("logs", self.cmd_logs),
             ("maint", self.cmd_maintenance),
+            ("stack", self.cmd_stack),
             ("traffic", self.cmd_traffic),
             ("run", self.cmd_run),
         ):
@@ -367,6 +369,22 @@ class MonitorBot:
             message,
             ui.render_overview(snapshot, self.settings, age=self._snapshot_age()),
             markup=ui.main_menu(self.is_admin(_user_id(update))),
+        )
+
+    async def cmd_stack(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        detected = await asyncio.to_thread(detect_stack)
+        snapshot = await self.snapshot()
+        await self._reply_screen(
+            message,
+            ui.render_stack(detected, self.settings.services, snapshot.services),
+            markup=ui.services_menu(
+                self.settings.services, self.is_admin(_user_id(update))
+            ),
         )
 
     async def cmd_services(
@@ -779,6 +797,14 @@ class MonitorBot:
             await self._edit(
                 query,
                 ui.render_services(await self.snapshot()),
+                markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
+            )
+        elif data == "stack":
+            detected = await asyncio.to_thread(detect_stack)
+            snapshot = await self.snapshot()
+            await self._edit(
+                query,
+                ui.render_stack(detected, self.settings.services, snapshot.services),
                 markup=ui.services_menu(self.settings.services, self.is_admin(user_id)),
             )
         elif data == "panel":

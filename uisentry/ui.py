@@ -12,9 +12,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .alerts import Finding
 from .hints import panel_token_hint
+from .inventory import Detected
 from .models import (
     InboundSummary,
     MonitorSnapshot,
+    ServiceStatus,
     Severity,
     Subscription,
     SystemMetrics,
@@ -203,6 +205,66 @@ def render_system(metrics: SystemMetrics, settings: Settings) -> str:
     )
     lines.append(f"Аптайм {fmt_uptime(metrics.uptime_seconds)}")
     return "<code>" + "\n".join(lines) + "</code>"
+
+
+_STACK_TITLES = {
+    "panel": "Панели",
+    "proxy": "Прокси и ядра",
+    "vpn": "VPN",
+    "mesh": "Mesh/VPN",
+}
+
+
+def render_stack(
+    detected: list[Detected],
+    watched: tuple[str, ...],
+    services: list[ServiceStatus],
+) -> str:
+    """Что найдено на сервере и что из этого реально наблюдается."""
+    if not detected:
+        return (
+            "\n🧩 <b>Стек сервера</b>\n"
+            "Панели и VPN-службы не найдены. Проверьте, что они установлены, "
+            "или добавьте службы вручную: <code>sudo uisentry-menu</code>."
+        )
+    active = {item.name: item.active for item in services}
+    lines = [
+        "",
+        "🧩 <b>Стек сервера</b>",
+        "Найдено на сервере; 🟢/🔴 — наблюдается и работает/лежит, "
+        "⚪ — не наблюдается.",
+    ]
+    covered: set[str] = set()
+    for kind, title in _STACK_TITLES.items():
+        items = [item for item in detected if item.item.kind == kind]
+        if not items:
+            continue
+        lines += ["", f"<b>{title}</b>"]
+        for found in items:
+            unit = found.unit
+            if unit:
+                covered.add(unit)
+            if unit and unit in watched:
+                icon = "🟢" if active.get(unit, False) else "🔴"
+                status = "наблюдается"
+            else:
+                icon = "⚪"
+                status = "не наблюдается"
+            suffix = f" · <code>{esc(unit)}</code>" if unit else ""
+            lines.append(f"{icon} {esc(found.item.title)}{suffix} — {status}")
+            if found.item.note:
+                lines.append(f"   <i>{esc(found.item.note)}</i>")
+    extras = [unit for unit in watched if unit not in covered]
+    if extras:
+        lines += ["", "<b>Другие службы</b>"]
+        for unit in extras:
+            icon = "🟢" if active.get(unit, False) else "🔴"
+            lines.append(f"{icon} <code>{esc(unit)}</code>")
+    lines += [
+        "",
+        "Добавить в наблюдение: <code>sudo uisentry-menu</code> → «Службы» (пункт 16).",
+    ]
+    return "\n".join(lines)
 
 
 def render_services(snapshot: MonitorSnapshot) -> str:
@@ -535,6 +597,7 @@ def services_menu(units: tuple[str, ...], is_admin: bool) -> InlineKeyboardMarku
         buttons.append(
             [InlineKeyboardButton("♻️ Рестарт xray", callback_data="ask:restart_xray:")]
         )
+    buttons.append([InlineKeyboardButton("🧩 Стек сервера", callback_data="stack")])
     buttons.append(
         [
             InlineKeyboardButton("🔄 Обновить", callback_data="services"),

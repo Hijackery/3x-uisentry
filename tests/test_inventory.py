@@ -1,0 +1,78 @@
+"""Инвентарь панелей/VPN и экран /stack."""
+
+from __future__ import annotations
+
+from uisentry import inventory, ui
+from uisentry.models import ServiceStatus
+
+
+def test_detects_3xui_and_extra_units(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: {"x-ui", "fail2ban"})
+    monkeypatch.setattr(inventory, "_listening_ports", lambda: set())
+
+    items = inventory.detect_stack()
+    found = next(item for item in items if item.item.key == "3x-ui")
+    assert found.unit == "x-ui"
+    assert "unit" in found.evidence
+
+    services = inventory.watched_services()
+    assert "x-ui" in services
+    assert "fail2ban" in services
+
+
+def test_detects_wildcard_units(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: {"wg-quick@wg0"})
+    monkeypatch.setattr(inventory, "_listening_ports", lambda: set())
+
+    items = inventory.detect_stack()
+    found = next(item for item in items if item.item.key == "wireguard")
+    assert found.unit == "wg-quick@wg0"
+
+
+def test_stack_marks_watched_and_unwatched() -> None:
+    detected = [
+        inventory.Detected(
+            inventory.STACK[0],
+            "x-ui",
+            ("unit",),  # 3X-UI
+        ),
+        inventory.Detected(
+            inventory.STACK[1],
+            "s-ui",
+            ("unit",),  # S-UI
+        ),
+    ]
+    services = [
+        ServiceStatus(
+            name="x-ui",
+            active=True,
+            sub_state="running",
+            active_state="active",
+            main_pid=1,
+            since="",
+            restarts=0,
+            memory_bytes=0,
+            cpu_percent=0.0,
+        )
+    ]
+    text = ui.render_stack(detected, ("x-ui",), services)
+    assert "3X-UI" in text and "наблюдается" in text
+    assert "S-UI" in text and "не наблюдается" in text
+    assert "🟢" in text and "⚪" in text
+
+
+def test_services_menu_has_stack_button() -> None:
+    data = {
+        button.callback_data
+        for row in ui.services_menu(("x-ui",), True).inline_keyboard
+        for button in row
+    }
+    assert "stack" in data
+
+
+def test_installer_uses_inventory() -> None:
+    from uisentry.settings import BASE_DIR
+
+    text = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
+    assert "-m uisentry.inventory --services" in text
+    assert "apk add --no-cache" in text

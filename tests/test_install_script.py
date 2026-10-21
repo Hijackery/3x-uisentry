@@ -345,7 +345,7 @@ def test_installer_explains_optional_alert_chat() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "Enter — админам в личку" in text
     assert "у групп оно отрицательное" in text
-    assert "systemd-юниты через запятую" in text
+    assert "Сервисы можно перечислить через запятую" in text
 
 
 def test_installer_shows_visudo_reason_and_falls_back() -> None:

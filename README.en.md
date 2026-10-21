@@ -12,6 +12,24 @@ services and the panel, sends clear alerts and shows subscriptions. Risky action
 — restart, system upgrade, reboot — happen only from a confirmed button and only
 for an administrator.
 
+The repository is **private** while the product is in development. Install via
+GitHub CLI:
+
+```bash
+gh api repos/Hijackery/3x-uisentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
+sudo bash /tmp/uisentry-install.sh
+```
+
+Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
+
+```bash
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+```
+
+Once the repository is public, the short form works again:
+
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
@@ -112,6 +130,24 @@ state is reported as unavailable (no false “crit” alerts).
   [next section](#connecting-to-the-panel).
 
 ### 2. Install
+
+The repository is **private** while the product is in development. Install via
+GitHub CLI:
+
+```bash
+gh api repos/Hijackery/3x-uisentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
+sudo bash /tmp/uisentry-install.sh
+```
+
+Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
+
+```bash
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+```
+
+Once the repository is public, the short form works again:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
@@ -475,6 +511,21 @@ private. For a shared chat, add the bot there, send a message and find the chat 
 
 Remember: alerts contain addresses, subscriptions and traffic — everyone in the
 group will see them. Commands and buttons still work only in private chat.
+
+## Secrets and storage
+
+- Bot and panel tokens live in `.env` with `640 root:<service group>`; the
+  service can read but not rewrite the file.
+- The terminal (if enabled) keeps its secrets separately:
+  `/etc/uisentry/terminal.env`, `600 root`; systemd passes them via
+  `EnvironmentFile`, so the service user never reads the file.
+- Logs are scrubbed: the bot token in URLs, panel/terminal tokens, TOTP and the
+  access token are removed; `initData` is never logged; Telegram IDs are masked.
+- `state.db` is `0600`; it contains Telegram IDs, audit and subscriptions.
+- Application-level encryption with a key on the same host adds little: a host
+  compromise reveals the key. Use LUKS/VPS disk encryption and encrypted backups.
+  For the terminal, add a second factor (TOTP is already there) and access via
+  VPN/SSH tunnel.
 
 ## Security
 

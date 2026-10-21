@@ -523,6 +523,15 @@ case "$OS_ID" in
         PKG_INSTALL="pacman -S --noconfirm --needed"
         VENV_PKGS="python"
         ;;
+    alpine)
+        PKG_INSTALL="apk add --no-cache"
+        PKG_UPDATE="apk update"
+        VENV_PKGS="python3 py3-pip py3-virtualenv"
+        ;;
+    void)
+        PKG_INSTALL="xbps-install -Sy"
+        VENV_PKGS="python3 python3-pip"
+        ;;
     *)
         # Дистрибутив не из списка — выбираем пакетный менеджер по факту наличия.
         for pair in \
@@ -530,7 +539,10 @@ case "$OS_ID" in
             "dnf:dnf install -y:python3" \
             "yum:yum install -y:python3" \
             "zypper:zypper --non-interactive install:python3" \
-            "pacman:pacman -S --noconfirm --needed:python"
+            "pacman:pacman -S --noconfirm --needed:python" \
+            "apk:apk add --no-cache:python3 py3-pip py3-virtualenv" \
+            "xbps-install:xbps-install -Sy:python3 python3-pip" \
+            "pkg:pkg install -y:python311"
         do
             _mgr="${pair%%:*}"
             _rest="${pair#*:}"
@@ -595,7 +607,10 @@ if [ -z "$SOURCE_DIR" ]; then
                     ;;
             esac
             info "Скачиваю исходники: $_candidate"
-            if curl -fsSL --max-time 120 "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
+            _auth=()
+            _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+            [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token")
+            if curl -fsSL --max-time 120 "${_auth[@]}" "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
                 && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
                 SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name uisentry \
@@ -1068,13 +1083,13 @@ else
         fi
     fi
 
-    DETECTED_SERVICES="x-ui"
-    if systemctl list-unit-files 2>/dev/null | grep -q '^fail2ban\.service'; then
-        DETECTED_SERVICES="x-ui,fail2ban"
-    fi
-    info "Сервисы — это systemd-юниты через запятую. Обычно достаточно x-ui;"
-    info "fail2ban подставится сам, если он установлен."
-    question SERVICES_LIST "Сервисы под наблюдением (Enter — оставить как есть)" \
+    # Автоопределение панелей и VPN-стека (stdlib, работает до venv).
+    DETECTED_SERVICES="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --services 2>/dev/null || true)"
+    [ -n "$DETECTED_SERVICES" ] || DETECTED_SERVICES="x-ui"
+    info "Найдены службы: $DETECTED_SERVICES"
+    info "Сервисы можно перечислить через запятую; служебные имена — из вашего"
+    info "менеджера служб (systemd/OpenRC/SysV). Enter — оставить найденные."
+    question SERVICES_LIST "Сервисы под наблюдением" \
         "${SERVICES:-${DETECTED_SERVICES}}"
 
     info "Чат для алертов — необязательное поле: Enter — алерты придут в личку"

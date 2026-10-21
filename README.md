@@ -12,6 +12,23 @@
 рестарт, обновление системы, перезагрузка — только по кнопке с подтверждением и
 только администратору.
 
+Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
+
+```bash
+gh api repos/Hijackery/3x-uisentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
+sudo bash /tmp/uisentry-install.sh
+```
+
+Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
+
+```bash
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+```
+
+Когда репозиторий станет публичным, снова заработает короткая форма:
+
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
@@ -111,6 +128,23 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
   [следующий раздел](#подключение-к-панели).
 
 ### 2. Установка
+
+Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
+
+```bash
+gh api repos/Hijackery/3x-uisentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/uisentry-install.sh
+sudo bash /tmp/uisentry-install.sh
+```
+
+Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
+
+```bash
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | bash'
+```
+
+Когда репозиторий станет публичным, снова заработает короткая форма:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
@@ -476,6 +510,21 @@ sudo uisentry-menu apt-logs 100
 
 Помните: в алертах есть адреса, подписки и трафик — в группе их увидят все
 участники. Команды и кнопки при этом всё равно работают только в личке.
+
+## Секреты и хранение
+
+- Токены бота и панели — в `.env` с правами `640 root:<группа сервиса>`; сервис
+  читает их, но не может переписать файл.
+- Терминал (если включён) хранит свои секреты отдельно:
+  `/etc/uisentry/terminal.env`, `600 root`, systemd передаёт их процессу через
+  `EnvironmentFile`. Сам сервисный пользователь файл не читает.
+- Логи чистятся форматтером: токен бота в URL, токены панели/терминала, TOTP и
+  access token вырезаются; `initData` не логируется; Telegram ID маскируются.
+- База `state.db` — `0600`; в ней есть Telegram ID, аудит и подписки.
+- Шифрование «на уровне приложения» с ключом на том же сервере даёт мало:
+  компрометация хоста всё равно раскрывает ключ. Для защиты диска используйте
+  LUKS/шифрование VPS, бэкапы — в шифрованном виде. Для терминала добавьте
+  второй фактор (TOTP уже есть) и доступ через VPN/SSH-туннель.
 
 ## Безопасность
 
