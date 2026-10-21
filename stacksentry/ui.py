@@ -1039,13 +1039,20 @@ def alert_menu(
     return InlineKeyboardMarkup(rows)
 
 
-def overview_menu(is_admin: bool, *, compact: bool) -> InlineKeyboardMarkup:
+def overview_menu(
+    is_admin: bool,
+    *,
+    compact: bool,
+    settings: Settings | None = None,
+) -> InlineKeyboardMarkup:
     """Главное меню плюс переключатель «подробнее/свернуть»."""
     toggle = InlineKeyboardButton(
         "📋 Подробнее" if compact else "🔼 Свернуть",
         callback_data="details" if compact else "refresh",
     )
-    return InlineKeyboardMarkup([[toggle], *main_menu(is_admin).inline_keyboard])
+    return InlineKeyboardMarkup(
+        [[toggle], *main_menu(is_admin, settings=settings).inline_keyboard]
+    )
 
 
 def log_view_menu(unit: str) -> InlineKeyboardMarkup:
