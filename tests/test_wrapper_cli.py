@@ -310,3 +310,10 @@ def test_safe_command_aliases_are_mapped(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     args = log.read_text(encoding="utf-8").splitlines()
     assert args == ["-p", "warning", "-n", "100", "--no-pager"]
+
+
+def test_apt_update_worker_lists_upgradable_packages() -> None:
+    """Кнопка «Обновить список пакетов» должна показать, что будет обновлено."""
+    text = WRAPPER.read_text(encoding="utf-8")
+    assert "apt list --upgradable" in text
+    assert "К обновлению (" in text

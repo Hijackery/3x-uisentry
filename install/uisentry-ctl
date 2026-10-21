@@ -295,6 +295,18 @@ case "$cmd" in
         export DEBIAN_FRONTEND=noninteractive
         rc=0
         apt-get update || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            # Показываем не только «индексы обновлены», но и что именно
+            # доступно к обновлению. Одна строка — чтобы не резать отчёт.
+            _pkgs="$(apt list --upgradable 2>/dev/null | sed -n '2,$p' \
+                | cut -d/ -f1 | sed '/^$/d')"
+            _count="$(printf '%s\n' "$_pkgs" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "${_count:-0}" -eq 0 ]; then
+                echo "Обновлений нет."
+            else
+                echo "К обновлению ($_count): $(printf '%s' "$_pkgs" | tr '\n' ' ')"
+            fi
+        fi
         apt_status_write update "$rc"
         echo "apt update завершён (код $rc)"
         exit "$rc"

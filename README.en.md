@@ -316,7 +316,7 @@ chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only — management th
 is unavailable.
 
 **Maintenance actions are separate and report to the chat.** `apt update` refreshes
-indexes only; `full-upgrade` installs everything; `phased` allows Ubuntu phased
+indexes and lists the packages available for upgrade; `full-upgrade` installs everything; `phased` allows Ubuntu phased
 updates; “run release” runs `do-release-upgrade`, which first checks for a new OS
 version and says so if there is none. These are different things: `apt update`
 does not check for a new OS version. The bot watches the background systemd unit
