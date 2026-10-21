@@ -22,6 +22,7 @@ from .models import (
     SystemMetrics,
 )
 from .settings import Settings
+from .updates import UpdateInfo
 
 BAR_WIDTH: Final = 10
 MAX_INLINE_ROWS: Final = 12
@@ -623,6 +624,78 @@ def render_audit(rows: list[sqlite3.Row]) -> str:
 # --------------------------------------------------------------- клавиатуры
 
 
+def render_update(info: UpdateInfo) -> str:
+    """Экран проверки обновлений: версия, commit и решение."""
+    lines = [
+        "🔄 <b>Обновления StackSentry</b>",
+        "",
+        f"Установлено: <b>{esc(info.current_version)}</b> · "
+        f"commit <code>{esc(info.current_short)}</code>",
+    ]
+    if info.error:
+        lines += [
+            f"⚠️ Проверка не удалась: {esc(info.error)}",
+            "",
+            "Проверьте доступ к api.github.com или повторите позже.",
+        ]
+        return "\n".join(lines)
+    lines.append(
+        f"В main: commit <code>{esc(info.remote_short)}</code>"
+        + (f" · {esc(info.remote_date)}" if info.remote_date else "")
+    )
+    if info.remote_version:
+        lines.append(f"Версия в main: {esc(info.remote_version)}")
+    if info.remote_message:
+        lines.append(f"Последнее изменение: {esc(info.remote_message)}")
+    lines.append("")
+    if info.update_available is True:
+        lines += [
+            "🟢 <b>Доступно обновление.</b>",
+            "Нажмите «⬆️ Обновить StackSentry» — потребуются подтверждение и "
+            "TOTP. Конфиг и состояние сохранятся.",
+            "Вручную: <code>sudo stacksentry-menu</code> → пункт 24.",
+        ]
+    elif info.update_available is False:
+        lines.append("✅ Обновлений нет — установлена актуальная версия main.")
+    else:
+        lines += [
+            "⚪ Не удалось сравнить commit'ы: у этой установки нет метаданных.",
+            "Запустите установщик один раз — он запишет commit, и проверка станет "
+            "точной.",
+        ]
+    return "\n".join(lines)
+
+
+def update_menu(info: UpdateInfo | None = None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if info is not None and info.update_available is True:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "⬆️ Обновить StackSentry", callback_data="ask:update_bot:"
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton("🔄 Проверить снова", callback_data="update_check")]
+    )
+    rows.append([home_button()])
+    return InlineKeyboardMarkup(rows)
+
+
+def version_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🔄 Проверить обновления", callback_data="update_check"
+                )
+            ],
+            [home_button()],
+        ]
+    )
+
+
 def home_button() -> InlineKeyboardButton:
     """Кнопка выхода в главное меню — есть на каждом экране, где её легко потерять."""
     return InlineKeyboardButton("🏠 В меню", callback_data="home")
@@ -881,6 +954,12 @@ def maintenance_menu(*, package_manager: str | None = None) -> InlineKeyboardMar
     update_label = PKG_UPDATE_LABELS.get(pm, "🔄 Обновить список пакетов")
     upgrade_label = PKG_UPGRADE_LABELS.get(pm, "📦 Обновить систему")
     rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                "🔄 Проверить обновления StackSentry",
+                callback_data="update_check",
+            )
+        ],
         [InlineKeyboardButton(update_label, callback_data="ask:apt_update:")],
         [InlineKeyboardButton(upgrade_label, callback_data="ask:apt_upgrade:")],
     ]
@@ -1129,7 +1208,7 @@ def render_help(
         "• Команды: <code>/status</code>, <code>/traffic</code>, <code>/subs</code>, "
         "<code>/stack</code>, <code>/history</code>, <code>/logs</code>, "
         "<code>/audit</code>, <code>/maint</code>, <code>/run</code>, "
-        "<code>/version</code>.",
+        "<code>/version</code>, <code>/updatecheck</code>.",
         "",
         "📊 <b>Разделы</b>",
         "🖥 <b>Сервер</b> — CPU, RAM, swap, диск, сеть, load average.",
@@ -1166,6 +1245,8 @@ def render_help(
         ),
         "• Перезагрузка — с подтверждением. Всё идёт в фоне, отчёт придёт сам; "
         "после нового ядра бот напомнит перезагрузиться.",
+        "• Обновления StackSentry: «🔄 Проверить обновления»; при наличии — "
+        "кнопка «⬆️ Обновить» (подтверждение + свежий TOTP).",
         "Примеры: <code>/run os_logs</code>, <code>/run failed_units</code>, "
         "<code>/run sockets</code>.",
         "",

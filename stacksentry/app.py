@@ -48,6 +48,7 @@ from .actions import (
     ACTION_RELEASE_UPGRADE,
     ACTION_RESTART_SERVICE,
     ACTION_RESTART_XRAY,
+    ACTION_UPDATE_BOT,
     ACTION_UPGRADE,
     ACTION_UPGRADE_PHASED,
     APT_KINDS,
@@ -63,6 +64,7 @@ from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
 from .storage import Storage, StorageError
 from .totp import ReplayGuard, normalize_totp, verify_totp
+from .updates import check_for_update
 
 #: PTB обобщает Application шестью параметрами; конкретные типы здесь не важны.
 BotApplication = Application[Any, Any, Any, Any, Any, Any]
@@ -98,6 +100,7 @@ CRITICAL_ACTIONS = frozenset(
         ACTION_UPGRADE_PHASED,
         ACTION_RELEASE_UPGRADE,
         ACTION_REBOOT,
+        ACTION_UPDATE_BOT,
     }
 )
 #: Всё, что меняет сервер, требует step-up 2FA (если она включена).
@@ -106,6 +109,7 @@ PROTECTED_ACTIONS = CRITICAL_ACTIONS | {
     ACTION_RESTART_XRAY,
     ACTION_APT_UPDATE,
     ACTION_COMMAND,
+    ACTION_UPDATE_BOT,
 }
 #: Свежий код: разблокировка должна быть не старше 2 минут.
 CRITICAL_FRESH_WINDOW = 120
@@ -132,6 +136,7 @@ ACTION_TITLES: dict[str, str] = {
     ACTION_REBOOT: "Сервер перезагружается",
     ACTION_COMMAND: "Команда выполнена",
     ACTION_JOURNAL: "Журнал прочитан",
+    ACTION_UPDATE_BOT: "Обновление StackSentry запущено",
 }
 
 
@@ -155,6 +160,10 @@ CONFIRM_DESCRIPTIONS: dict[str, str] = {
         "Запустить do-release-upgrade (обновление версии ОС; надолго)"
     ),
     ACTION_REBOOT: "Перезагрузить сервер",
+    ACTION_UPDATE_BOT: (
+        "Обновить StackSentry из main (установщик перезапустит бота; "
+        "конфиг и состояние сохранятся)"
+    ),
 }
 
 
@@ -237,6 +246,7 @@ class MonitorBot:
             ("maint", self.cmd_maintenance),
             ("stack", self.cmd_stack),
             ("version", self.cmd_version),
+            ("updatecheck", self.cmd_updatecheck),
             ("security", self.cmd_security),
             ("traffic", self.cmd_traffic),
             ("run", self.cmd_run),
@@ -477,8 +487,31 @@ class MonitorBot:
             f"init: {ui.esc(self.platform.init or '?')} · "
             f"пакеты: {ui.esc(self.platform.package_manager or '?')}\n"
             f"Панель: {ui.esc(panel)} ({panel_state})",
-            markup=self._main_menu(_user_id(update)),
+            markup=ui.version_menu(),
         )
+
+    async def cmd_updatecheck(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """`/updatecheck` — сравнить установленный commit с main."""
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        await self._send_update_check(message)
+
+    async def _send_update_check(self, message: Message) -> None:
+        status = await self._reply_screen(message, "⏳ Проверяю обновления…")
+        info = await asyncio.to_thread(check_for_update)
+        if status is not None:
+            await _safe_edit(
+                status, ui.render_update(info), markup=ui.update_menu(info)
+            )
+
+    async def _show_update_check(self, query: CallbackQuery) -> None:
+        status = _message_of(query)
+        await _safe_edit(status, "⏳ Проверяю обновления…", markup=None)
+        info = await asyncio.to_thread(check_for_update)
+        await _safe_edit(status, ui.render_update(info), markup=ui.update_menu(info))
 
     async def cmd_services(
         self, update: Update, _context: ContextTypes.DEFAULT_TYPE
@@ -971,6 +1004,8 @@ class MonitorBot:
                 ),
                 markup=self._main_menu(user_id),
             )
+        elif data == "update_check":
+            await self._show_update_check(query)
         elif data == "maintenance":
             await self._edit(
                 query,
@@ -1309,6 +1344,32 @@ class MonitorBot:
         try:
             if action == ACTION_REBOOT:
                 await self._do_reboot(status, user_id)
+                return
+            if action == ACTION_UPDATE_BOT:
+                result = await self.actions.update_bot()
+                if result.ok:
+                    await _safe_edit(
+                        status,
+                        "⬆️ <b>Обновление запущено.</b>\n"
+                        "StackSentry скачает main, сохранит .env и состояние, "
+                        "затем перезапустит бота. Через минуту проверьте "
+                        "<code>/version</code> или «Проверить обновления».",
+                        markup=ui.result_menu(),
+                    )
+                else:
+                    await _safe_edit(
+                        status,
+                        "❌ Не удалось запустить обновление: "
+                        f"<code>{ui.esc(result.summary(500))}</code>",
+                        markup=ui.result_menu(),
+                    )
+                await asyncio.to_thread(
+                    self.storage.audit,
+                    action,
+                    telegram_id=user_id,
+                    ok=result.ok,
+                    result=result.summary(500),
+                )
                 return
             if action in QUEUED_ACTIONS or action == ACTION_DIST_UPGRADE:
                 self._schedule_long_action(

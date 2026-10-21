@@ -383,6 +383,7 @@ def test_maintenance_has_separate_apt_update_and_release() -> None:
         for row in ui.maintenance_menu().inline_keyboard
         for button in row
     }
+    assert "update_check" in data
     assert "ask:apt_update:" in data
     assert "ask:apt_upgrade:" in data
     assert "ask:apt_upgrade_phased:" in data

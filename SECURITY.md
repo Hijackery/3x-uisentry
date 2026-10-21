@@ -6,13 +6,13 @@
 
 | Версия | Поддержка |
 |---|---|
-| последний релиз `vX.Y.Z` | исправления безопасности и регрессий |
-| `main` | разработка, может опережать релиз |
-| старые минорные релизы | по возможности; критическое — отдельным patch-релизом |
+| `main` | единственная поддерживаемая версия: исправления безопасности и регрессий |
+| старые установки | обновляйте из `main`; критическое исправление выходит в `main` |
 
-Ставьте релиз тегом (`install.sh --ref vX.Y.Z`) или `main`; обновляйтесь через
-`sudo stacksentry-menu` (пункт 24) или повторный установщик. GitHub может отдавать
-ветку из кэша пару минут — сверяйте коммит через `/version` или `git rev-parse`.
+GitHub Releases и теги не публикуются. Обновляйтесь кнопкой «Проверить
+обновления» в боте, через `sudo stacksentry-menu update` (пункт 24) или повторный
+установщик. GitHub может отдавать ветку из кэша пару минут — сверяйте commit
+через `/version` или `git rev-parse`.
 
 ## Как сообщить об уязвимости
 
@@ -45,12 +45,15 @@
 - Секреты панелей и Telegram не попадают в `argv`/`ps` при рестарте ядра из меню:
   меню вызывает те же Python-адаптеры, что и бот.
 
-## Зависимости и релизы
+## Зависимости и обновления
 
 - Зависимости обновляются через Dependabot; код анализируется CodeQL.
-- Релизы — семантические теги `vX.Y.Z`; заметки и порядок выпуска описаны в
+- Версии — SemVer в `stacksentry/__init__.py`; теги и GitHub Releases не
+  публикуются. Порядок обновления и откат — в
   [docs/RELEASING.md](docs/RELEASING.md).
 - Проверяйте `CHANGELOG.md` и `git log` перед обновлением продакшена.
+- Кнопка обновления запускает установщик из `main`; она требует подтверждения и
+  свежего TOTP (если 2FA включена) и сохраняет `.env`/состояние.
 - Не устанавливайте непроверенные форки и сторонние сборки `.env`/скриптов.
 
 ## Вне области рассмотрения
@@ -65,14 +68,16 @@
 
 ## English
 
-**Supported versions:** the latest `vX.Y.Z` release receives security and
-regression fixes; `main` tracks development. Install a release with
-`install.sh --ref vX.Y.Z` (or `main`) and update via `sudo stacksentry-menu`
-(item 24). GitHub may serve a cached branch for a couple of minutes — verify the
-commit with `/version` or `git rev-parse`.
+**Supported versions:** `main` is the only supported version and receives
+security and regression fixes. GitHub Releases and tags are not published; update
+via the in-bot check/update buttons, `sudo stacksentry-menu update` (item 24), or
+the installer. GitHub may serve a cached branch for a couple of minutes — verify
+the commit with `/version` or `git rev-parse`.
 
-**Dependencies and releases:** Dependabot and CodeQL are enabled; releases are
-semantic `vX.Y.Z` tags with notes (see [docs/RELEASING.md](docs/RELEASING.md)).
+**Dependencies and updates:** Dependabot and CodeQL are enabled; versions are
+SemVer in `stacksentry/__init__.py`. The self-update button runs the installer
+from `main`, requires confirmation and a fresh TOTP (when 2FA is enabled), and
+keeps `.env`/state. See [docs/RELEASING.md](docs/RELEASING.md).
 
 
 **Reporting:** use GitHub Security Advisories (“Security” → “Report a

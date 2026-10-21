@@ -20,6 +20,7 @@ read-only Mini App и отдельным терминалом. Код разде
 | `actions.py` | Очередь действий и вызов `stacksentry-ctl` |
 | `storage.py` | SQLite: история метрик, аудит, состояние алертов |
 | `webapp.py` | Read-only Mini App: initData, HttpOnly-cookie, CSP |
+| `updates.py` | Проверка обновлений по commit `main`; сравнение с `.stacksentry-install` |
 | `terminal/` | Web/root-терминал с TOTP, тикетами и отдельным пользователем |
 | `install/stacksentry-ctl` | Единственная точка привилегированных операций |
 
@@ -65,6 +66,9 @@ read-only Mini App и отдельным терминалом. Код разде
 - Секреты вырезаются из логов и сообщений; Telegram ID маскируются.
 - HTTP-клиенты панелей не следуют редиректам и поддерживают пиннинг CA.
 - Docker API намеренно не используется.
+- Self-update запускается отдельным юнитом, требует подтверждения и свежего TOTP;
+  `stacksentry-ctl update_bot` проверяет root-владельца установщика и фиксирует
+  `--ref main`, без пользовательских аргументов.
 
 ## Расширение
 

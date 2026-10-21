@@ -4,7 +4,6 @@
 > the technical `stacksentry`/`stacksentry-*` identifiers are kept for compatibility.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Hijackery/stacksentry)](https://github.com/Hijackery/stacksentry/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -18,19 +17,15 @@ Tailscale), sends clear alerts and shows subscriptions. Risky actions — restar
 system upgrade, reboot — happen only from a confirmed button and only for an
 administrator.
 
-Current version: **1.0.0**. The project is public: [releases](https://github.com/Hijackery/stacksentry/releases),
-[documentation](docs/README.md), [security policy](SECURITY.md).
+Current version: **1.0.0**. The project is public:
+[documentation](docs/README.md), [security policy](SECURITY.md). Updates come
+from `main` via the in-bot “Check for updates” button or
+`sudo stacksentry-menu update`; GitHub Releases and tags are not used.
 
 One-command install:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
-```
-
-For production, install a tag rather than `main`:
-
-```bash
-sudo bash install.sh --ref v1.0.0
 ```
 
 Alternatives without `curl | bash`:
@@ -70,7 +65,7 @@ GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
 11. [Update and removal](#update-and-removal)
 12. [Troubleshooting](#troubleshooting)
 13. [Documentation](#documentation)
-14. [Versions and releases](#versions-and-releases)
+14. [Versions and updates](#versions-and-updates)
 15. [Development](#development)
 16. [Project](#project)
 
@@ -155,12 +150,6 @@ One-command install:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
-```
-
-For production, install a tag rather than `main`:
-
-```bash
-sudo bash install.sh --ref v1.0.0
 ```
 
 Alternatives without `curl | bash`:
@@ -492,7 +481,8 @@ service state is shown on top:
 │    6. Admin IDs                                        │
 │    7. Alert chat                                       │
 │   …                                                    │
-│   25. Remove the bot                                   │
+│   25. Check for StackSentry updates                    │
+│   26. Remove the bot                                   │
 │    0. Exit                                             │
 ╚════════════════════════════════════════════════════════╝
 ```
@@ -525,7 +515,8 @@ service state is shown on top:
 | 22 | restart the bot and verify | — | — |
 | 23 | restart the panel core | `y` to confirm | `y` |
 | 24 | update from `main` | — | — |
-| 25 | removal | `yes` to confirm | `yes` |
+| 25 | check for StackSentry updates | — | — |
+| 26 | removal | `yes` to confirm | `yes` |
 
 An empty value clears a setting: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
 For items 4–17 you can skip the menu and use
@@ -544,7 +535,8 @@ sudo stacksentry-menu set LOG_LEVEL INFO
 # validate a value without changing anything
 stacksentry-menu check CPU_WARN 80
 
-# log of background updates (apt update / upgrade / phased / release)
+# check for StackSentry updates and view the package update log
+sudo stacksentry-menu update-check
 sudo stacksentry-menu apt-logs 100
 ```
 
@@ -787,7 +779,7 @@ More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — OS, init, packages, panels, protocols, restart.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, security, extension.
-- [docs/RELEASING.md](docs/RELEASING.md) — versions, tags, releases and rollback.
+- [docs/RELEASING.md](docs/RELEASING.md) — versions, checking and applying updates.
 - [ROADMAP.md](ROADMAP.md) — planned work.
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
 - [SECURITY.md](SECURITY.md) — security policy and model.
@@ -795,14 +787,17 @@ More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
 
-## Versions and releases
+## Versions and updates
 
 - SemVer; the current version lives in `stacksentry/__init__.py` and `/version`.
-- Releases are `vX.Y.Z` tags with notes; install a tag with
-  `sudo bash install.sh --ref vX.Y.Z`.
-- `main` tracks development and may be ahead of the latest release. Prefer the
-  latest tag for production.
-- Release and rollback steps: [docs/RELEASING.md](docs/RELEASING.md).
+- GitHub Releases and tags are **not published**: `main` is the current version.
+- Check for updates: the “🔄 Check for StackSentry updates” button under
+  Maintenance, `sudo stacksentry-menu update-check`, or `/updatecheck`.
+- When an update exists, the bot shows “⬆️ Update StackSentry”. It requires
+  confirmation and a fresh TOTP (when 2FA is enabled), keeps `.env` and state,
+  then restarts the bot.
+- Manual update: `sudo stacksentry-menu update` or re-run the installer. Details
+  and rollback: [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Development
 
@@ -824,7 +819,7 @@ Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
 - [ROADMAP.md](ROADMAP.md) — planned work.
-- [docs/](docs/README.md) — compatibility, architecture, releases.
+- [docs/](docs/README.md) — compatibility, architecture, updates.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
 - [`.env.example`](.env.example) — every setting with comments.
 - [Русский README](README.md).

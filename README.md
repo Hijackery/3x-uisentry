@@ -4,7 +4,6 @@
 > технические идентификаторы `stacksentry`/`stacksentry-*` сохранены для совместимости.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Hijackery/stacksentry)](https://github.com/Hijackery/stacksentry/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -18,19 +17,15 @@
 обновление системы, перезагрузка — только по кнопке с подтверждением и только
 администратору.
 
-Текущая версия — **1.0.0**. Проект публичный: [релизы](https://github.com/Hijackery/stacksentry/releases),
+Текущая версия — **1.0.0**. Проект публичный:
 [документация](docs/README.md), [политика безопасности](SECURITY.md).
+Обновления ставятся из `main` — кнопкой «Проверить обновления» в боте или через
+`sudo stacksentry-menu update`; GitHub Releases и теги не используются.
 
 Установка одной командой:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
-```
-
-Для продакшена ставьте тег, а не `main`:
-
-```bash
-sudo bash install.sh --ref v1.0.0
 ```
 
 Альтернативы без `curl | bash`:
@@ -69,7 +64,7 @@ GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
 11. [Обновление и удаление](#обновление-и-удаление)
 12. [Если что-то не работает](#если-что-то-не-работает)
 13. [Документация](#документация)
-14. [Версии и релизы](#версии-и-релизы)
+14. [Версии и обновление](#версии-и-обновление)
 15. [Разработка](#разработка)
 16. [Проект](#проект)
 
@@ -155,12 +150,6 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
-```
-
-Для продакшена ставьте тег, а не `main`:
-
-```bash
-sudo bash install.sh --ref v1.0.0
 ```
 
 Альтернативы без `curl | bash`:
@@ -398,6 +387,7 @@ Telegram  ⇄  бот (непривилегированный пользоват
 | `/maint` | обслуживание: обновления пакетов, перезагрузка, команда из allowlist |
 | `/run <команда>` | выполнить диагностическую команду из белого списка |
 | `/version` | версия StackSentry, Python, ОС, пакетный менеджер и панель |
+| `/updatecheck` | проверить обновления StackSentry в `main` |
 | `/help` | помощь простыми словами: что нажать и что значат цифры |
 
 Кнопки дублируют команды; на каждом экране есть «🏠 В меню», так что в тупике
@@ -492,7 +482,8 @@ sudo stacksentry-menu logs 100
 │    6. ID администраторов                               │
 │    7. Чат для алертов                                  │
 │   …                                                    │
-│   25. Удалить бота                                     │
+│   25. Проверить обновления StackSentry                 │
+│   26. Удалить бота                                     │
 │    0. Выход                                            │
 ╚════════════════════════════════════════════════════════╝
 ```
@@ -525,7 +516,8 @@ sudo stacksentry-menu logs 100
 | 22 | перезапуск бота с проверкой | — | — |
 | 23 | перезапуск ядра панели | подтверждение `y` | `y` |
 | 24 | обновление из `main` | — | — |
-| 25 | удаление | `yes` для подтверждения | `yes` |
+| 25 | проверка обновлений StackSentry | — | — |
+| 26 | удаление | `yes` для подтверждения | `yes` |
 
 Пустое значение очищает настройку: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
 Для пунктов 5–20 можно не ходить в меню, а сразу писать:
@@ -545,7 +537,8 @@ sudo stacksentry-menu set LOG_LEVEL INFO
 # проверить значение, ничего не меняя
 stacksentry-menu check CPU_WARN 80
 
-# журнал фоновых обновлений (apt update / upgrade / phased / release)
+# проверить обновления StackSentry и посмотреть журнал пакетных обновлений
+sudo stacksentry-menu update-check
 sudo stacksentry-menu apt-logs 100
 ```
 
@@ -797,7 +790,7 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 
 - [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — ОС, init, пакеты, панели, протоколы, рестарт.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — компоненты, поток данных, безопасность, расширение.
-- [docs/RELEASING.md](docs/RELEASING.md) — версии, теги, релизы и откат.
+- [docs/RELEASING.md](docs/RELEASING.md) — версии, проверка и установка обновлений.
 - [ROADMAP.md](ROADMAP.md) — направления развития.
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
 - [SECURITY.md](SECURITY.md) — политика и модель безопасности.
@@ -805,15 +798,17 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.
 
-## Версии и релизы
+## Версии и обновление
 
-- Версионирование — SemVer, текущая версия в `stacksentry/__init__.py` и в боте
-  (`/version`).
-- Релизы — теги `vX.Y.Z` с заметками; установка тега:
-  `sudo bash install.sh --ref vX.Y.Z`.
-- `main` — разработка и может опережать релиз. Для продакшена предпочтителен
-  последний тег.
-- Порядок выпуска и откат описаны в [docs/RELEASING.md](docs/RELEASING.md).
+- Версия — SemVer в `stacksentry/__init__.py`; видна в боте (`/version`).
+- GitHub Releases и теги **не публикуются**: актуальная версия — `main`.
+- Проверка обновлений: кнопка «🔄 Проверить обновления StackSentry» в
+  «Обслуживании», `sudo stacksentry-menu update-check` или `/updatecheck`.
+- Если обновление есть, в боте появляется кнопка «⬆️ Обновить StackSentry».
+  Она требует подтверждения и свежего TOTP (если 2FA включена), сохраняет `.env`
+  и состояние, затем перезапускает бота.
+- Ручное обновление: `sudo stacksentry-menu update` или повторный запуск
+  установщика. Подробности и откат — в [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Разработка
 
@@ -835,7 +830,7 @@ CI гоняет Python 3.10 и 3.13, `shellcheck`, `bash -n` и `visudo -cf`.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
 - [ROADMAP.md](ROADMAP.md) — направления развития.
-- [docs/](docs/README.md) — совместимость, архитектура, релизы.
+- [docs/](docs/README.md) — совместимость, архитектура, обновления.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.
 - [`.env.example`](.env.example) — все настройки с комментариями.
 - [English README](README.en.md).

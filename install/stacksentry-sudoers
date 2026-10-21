@@ -18,6 +18,7 @@ stacksentry ALL=(root) NOPASSWD: /usr/local/bin/stacksentry-ctl is_active x-ui, 
     /usr/local/bin/stacksentry-ctl apt_upgrade_phased, \
     /usr/local/bin/stacksentry-ctl dist_upgrade, \
     /usr/local/bin/stacksentry-ctl release_upgrade, \
+    /usr/local/bin/stacksentry-ctl update_bot, \
     /usr/local/bin/stacksentry-ctl apt_status update, \
     /usr/local/bin/stacksentry-ctl apt_status upgrade, \
     /usr/local/bin/stacksentry-ctl apt_status phased, \
