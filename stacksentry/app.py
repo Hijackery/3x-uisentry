@@ -18,6 +18,7 @@ from telegram import (
     Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    MenuButtonDefault,
     MenuButtonWebApp,
     Message,
     Update,
@@ -294,6 +295,12 @@ class MonitorBot:
                 )
             except TelegramError as exc:
                 logger.warning("Не удалось поставить кнопку Mini App: %s", exc)
+        else:
+            # Если Mini App выключили, убираем старую WebApp-кнопку у скрепки.
+            try:
+                await self.app.bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+            except TelegramError as exc:
+                logger.warning("Не удалось сбросить кнопку Mini App: %s", exc)
 
     async def _post_shutdown(self, _app: BotApplication) -> None:
         await self.monitor.close()
