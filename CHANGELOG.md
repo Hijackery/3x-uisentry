@@ -35,6 +35,11 @@
 
 ### Возможности
 
+- Read-only Mini App: дашборд в Telegram (обзор, службы, панель, трафик,
+  подписки, история), вход по initData, cookie HttpOnly, CSP, сервис
+  `uisentry-webapp` на 127.0.0.1:8787, кнопка «Панель» в Telegram. Без действий
+  и секретов в браузере.
+
 - Monitor-only: без API 3X-UI бот наблюдает службы, VPN-стек и железо;
   `PANEL_URL`/`PANEL_API_TOKEN` можно оставить пустыми (оба сразу), установщик
   сам определяет 3X-UI и спрашивает, настраивать ли API. `--no-panel`/`--panel`.
@@ -233,6 +238,11 @@ tags are published — the current version is always the `main` branch; update v
 `sudo uisentry-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- Read-only Mini App: a Telegram dashboard (overview, services, panel, traffic,
+  subscriptions, history), initData login, HttpOnly cookie, CSP, the
+  `uisentry-webapp` service on 127.0.0.1:8787, and a “Panel” Telegram menu
+  button. No actions and no secrets in the browser.
 
 - Monitor-only: without the 3X-UI API the bot watches services, the VPN stack and
   hardware; `PANEL_URL`/`PANEL_API_TOKEN` may both be empty, the installer detects

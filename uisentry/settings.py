@@ -167,6 +167,12 @@ class Settings:
     elevation_ttl: int = 900
     totp_max_attempts: int = 3
     totp_lockout: int = 300
+    webapp_enabled: bool = False
+    webapp_host: str = "127.0.0.1"
+    webapp_port: int = 8787
+    webapp_public_origin: str = ""
+    webapp_secret: str = ""
+    webapp_session_ttl: int = 3600
 
     extra: dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -252,6 +258,12 @@ def _build_settings() -> Settings:
         elevation_ttl=env_int("ELEVATION_TTL", 900, minimum=60),
         totp_max_attempts=env_int("TOTP_MAX_ATTEMPTS", 3, minimum=1),
         totp_lockout=env_int("TOTP_LOCKOUT", 300, minimum=30),
+        webapp_enabled=env_bool("WEBAPP_ENABLED", False),
+        webapp_host=env_str("WEBAPP_HOST", "127.0.0.1").strip() or "127.0.0.1",
+        webapp_port=env_int("WEBAPP_PORT", 8787, minimum=1),
+        webapp_public_origin=env_str("WEBAPP_PUBLIC_ORIGIN").strip().rstrip("/"),
+        webapp_secret=env_str("WEBAPP_SECRET").strip(),
+        webapp_session_ttl=env_int("WEBAPP_SESSION_TTL", 3600, minimum=300),
     )
 
     problems = _validate(settings)
@@ -314,6 +326,12 @@ def _validate(settings: Settings) -> list[str]:
             f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "
             "(нужен PEM-файл с сертификатом панели или её CA)"
         )
+    if settings.webapp_enabled and len(settings.webapp_secret) < 32:
+        problems.append("WEBAPP_ENABLED=1, но WEBAPP_SECRET короче 32 символов")
+    if settings.webapp_public_origin and not settings.webapp_public_origin.startswith(
+        "https://"
+    ):
+        problems.append("WEBAPP_PUBLIC_ORIGIN должен начинаться с https://")
     if settings.require_2fa and not settings.totp_secret:
         problems.append(
             "TOTP_REQUIRED=1, но TOTP_SECRET пуст — некому подтверждать действия"

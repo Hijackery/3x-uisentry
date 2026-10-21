@@ -219,6 +219,8 @@ TERMINAL_ORIGIN=""
 ENABLE_2FA=0
 DISABLE_2FA=0
 PANEL_MODE="auto"
+WEBAPP=0
+WEBAPP_ORIGIN=""
 INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
@@ -258,6 +260,8 @@ ${BOLD}Установка StackSentry${RESET}
   --no-2fa         выключить 2FA (секрет сохраняется)
   --panel          настроить API 3X-UI (по умолчанию — автоопределение)
   --no-panel       не настраивать API панели (только мониторинг служб)
+  --webapp         поставить read-only Mini App (127.0.0.1:8787)
+  --webapp-origin URL  публичный HTTPS-адрес Mini App (для кнопки в Telegram)
   --help           эта справка
 
 Переменные окружения (для --yes и unattended-установки):
@@ -270,7 +274,7 @@ ${BOLD}English${RESET}
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
             --terminal · --root-terminal · --terminal-origin URL · --2fa · --no-2fa
-            --panel · --no-panel
+            --panel · --no-panel · --webapp · --webapp-origin URL
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -301,6 +305,8 @@ while [ $# -gt 0 ]; do
         --no-2fa)       DISABLE_2FA=1; shift ;;
         --panel)        PANEL_MODE=1; shift ;;
         --no-panel)     PANEL_MODE=0; shift ;;
+        --webapp)       WEBAPP=1; shift ;;
+        --webapp-origin) WEBAPP=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; shift 2 ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -402,8 +408,10 @@ uninstall() {
     # Терминал (если ставился) — отдельная служба, пользователь и секреты.
     if command -v systemctl >/dev/null 2>&1; then
         systemctl disable --now uisentry-terminal >/dev/null 2>&1 || true
+        systemctl disable --now uisentry-webapp >/dev/null 2>&1 || true
     fi
     rm -f /etc/systemd/system/uisentry-terminal.service \
+        /etc/systemd/system/uisentry-webapp.service \
         /etc/sudoers.d/uisentry-terminal \
         /etc/uisentry/terminal.env /etc/uisentry/terminal-secrets.env
     rm -rf /etc/uisentry /var/lib/uisentry-term
@@ -1670,8 +1678,95 @@ EOF
     return 0
 }
 
+
+# ------------------------------------------------------------- Mini App
+
+install_webapp() {
+    step "Mini App (read-only)"
+    if [ "$INIT" != "systemd" ]; then
+        warn "Mini App ставится только на systemd; для $INIT пропускаю"
+        return 0
+    fi
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        question WEBAPP_ORIGIN \
+            "Публичный HTTPS-адрес Mini App (Enter — только localhost/SSH-туннель)" ""
+    fi
+    case "$WEBAPP_ORIGIN" in
+        "") ;;
+        https://*) WEBAPP_ORIGIN="${WEBAPP_ORIGIN%/}" ;;
+        *) warn "WEBAPP_ORIGIN должен начинаться с https:// — игнорирую"; WEBAPP_ORIGIN="" ;;
+    esac
+    WEBAPP_SECRET_VALUE="$(env_get WEBAPP_SECRET)"
+    if [ -z "$WEBAPP_SECRET_VALUE" ]; then
+        WEBAPP_SECRET_VALUE="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))')"
+    fi
+    set_env WEBAPP_ENABLED 1
+    set_env WEBAPP_SECRET "$WEBAPP_SECRET_VALUE"
+    set_env WEBAPP_HOST 127.0.0.1
+    set_env WEBAPP_PORT 8787
+    set_env WEBAPP_PUBLIC_ORIGIN "$WEBAPP_ORIGIN"
+    set_env WEBAPP_SESSION_TTL 3600
+
+    cat > /etc/systemd/system/uisentry-webapp.service <<EOF
+[Unit]
+Description=StackSentry — read-only Mini App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SERVICE_USER
+Group=${SERVICE_GROUP:-$SERVICE_USER}
+WorkingDirectory=$PREFIX
+EnvironmentFile=$ENV_FILE
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$PREFIX/.venv/bin/uvicorn --factory uisentry.webapp:create_app_from_env --host 127.0.0.1 --port 8787 --no-access-log
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ReadWritePaths=$STATE_DIR
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+UMask=0077
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 644 /etc/systemd/system/uisentry-webapp.service
+    systemctl daemon-reload
+    systemctl enable uisentry-webapp >/dev/null 2>&1 || true
+    if [ "$START_SERVICE" -eq 1 ]; then
+        systemctl restart uisentry-webapp || warn "Не удалось запустить uisentry-webapp"
+        sleep 2
+        if systemctl is-active --quiet uisentry-webapp; then
+            ok "Mini App запущен на 127.0.0.1:8787"
+        else
+            warn "Mini App не активен: journalctl -u uisentry-webapp -n 30"
+        fi
+    else
+        info "Mini App установлен, запуск пропущен (--no-start)"
+    fi
+    if [ -n "$WEBAPP_ORIGIN" ]; then
+        info "Публичный адрес Mini App: $WEBAPP_ORIGIN"
+        info "Кнопка «Панель» появится в Telegram после перезапуска бота."
+    else
+        info "Доступ только локально. С ноутбука:"
+        info "  ssh -L 8787:127.0.0.1:8787 root@<сервер>"
+        info "  затем http://127.0.0.1:8787"
+    fi
+    info "Read-only: просмотр состояния, служб, панели, трафика, подписок и истории."
+    return 0
+}
+
 if [ "$TERMINAL" -eq 1 ]; then
     install_terminal || warn "Терминал не установлен"
+fi
+
+if [ "$WEBAPP" -eq 1 ]; then
+    install_webapp || warn "Mini App не установлен"
 fi
 
 if [ "$START_SERVICE" -eq 1 ]; then

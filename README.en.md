@@ -514,6 +514,12 @@ over the file.
 | `ELEVATION_TTL` | how long an unlock lasts, seconds |
 | `TOTP_MAX_ATTEMPTS` | code attempts before lockout |
 | `TOTP_LOCKOUT` | lockout duration after too many attempts, seconds |
+| `WEBAPP_ENABLED` | `1` — enable the read-only Mini App |
+| `WEBAPP_HOST` | listen address (default `127.0.0.1`) |
+| `WEBAPP_PORT` | Mini App port (default 8787) |
+| `WEBAPP_PUBLIC_ORIGIN` | public HTTPS URL for the Telegram menu button |
+| `WEBAPP_SECRET` | cookie signing secret (≥ 32 chars) |
+| `WEBAPP_SESSION_TTL` | Mini App session lifetime, seconds |
 | `COMMAND_TIMEOUT` | allowlisted command timeout, seconds |
 | `COMMAND_ALLOWLIST` | safe diagnostic commands (aliases, see above) |
 | `STATE_PATH` | SQLite database |
@@ -529,6 +535,24 @@ private. For a shared chat, add the bot there, send a message and find the chat 
 
 Remember: alerts contain addresses, subscriptions and traffic — everyone in the
 group will see them. Commands and buttons still work only in private chat.
+
+### Mini App (optional, read-only)
+
+A dashboard in Telegram: overview, services, panel, traffic, subscriptions,
+history. Read-only — no actions and no secrets in the browser.
+
+```bash
+sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
+```
+
+- login via Telegram `initData`, no passwords; administrators only;
+- `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;
+- `uisentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
+  with TLS; without a public origin use
+  `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
+- with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram;
+- if the panel API is not configured, the dashboard shows services/VPN/hardware
+  and honestly says inbounds/subscriptions are unavailable.
 
 ### Terminal (optional)
 

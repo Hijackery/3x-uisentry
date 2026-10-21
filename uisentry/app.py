@@ -18,9 +18,11 @@ from telegram import (
     Chat,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    MenuButtonWebApp,
     Message,
     Update,
     User,
+    WebAppInfo,
 )
 from telegram.constants import ChatAction, ChatType, ParseMode
 from telegram.error import BadRequest, RetryAfter, TelegramError
@@ -247,6 +249,16 @@ class MonitorBot:
         )
         await self._verify_after_reboot()
         await self._resume_apt_watches()
+        if self.settings.webapp_public_origin:
+            try:
+                await self.app.bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(
+                        text="Панель",
+                        web_app=WebAppInfo(url=self.settings.webapp_public_origin),
+                    )
+                )
+            except TelegramError as exc:
+                logger.warning("Не удалось поставить кнопку Mini App: %s", exc)
 
     async def _post_shutdown(self, _app: BotApplication) -> None:
         await self.monitor.close()
