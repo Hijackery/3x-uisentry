@@ -80,7 +80,8 @@ MENU_ROWS=(
     "23|Перезапустить ядро панели (3X-UI/Marzban/PasarGuard/S-UI)"
     "24|Обновить бота с GitHub"
     "s|"
-    "25|Удалить бота"
+    "25|Проверить обновления StackSentry"
+    "26|Удалить бота"
     "0|Выход"
 )
 
@@ -420,6 +421,14 @@ cmd_restart() {
     fi
 }
 
+cmd_update_check() {
+    need_env
+    local py="$PREFIX/.venv/bin/python"
+    [ -x "$py" ] || py="$(command -v python3 || true)"
+    [ -n "$py" ] || die "не найден python3 (venv: $PREFIX/.venv)"
+    PYTHONPATH="$PREFIX" "$py" -m stacksentry.updates
+}
+
 cmd_update() {
     need_root "update"
     # Сначала пробуем свежий установщик из main: локальная копия в PREFIX — это
@@ -664,7 +673,8 @@ menu() {
                 case "$yes" in (y|Y|yes|да) cmd_restart_xray ;; (*) info "Отменено" ;; esac
                 ;;
             24) cmd_update ;;
-            25)
+            25) cmd_update_check ;;
+            26)
                 ask "Удалить бота? Это необратимо, введите yes: "
                 local confirm=""
                 read -r confirm <&$READ_FD || confirm=""
@@ -704,6 +714,7 @@ ${BOLD}stacksentry-menu${RESET} — панель управления StackSentr
   sudo stacksentry-menu apt-logs [N]        журнал фоновых apt-обновлений
   sudo stacksentry-menu totp               TOTP-секрет и otpauth (только root)
   sudo stacksentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
+  sudo stacksentry-menu update-check        проверить обновления StackSentry
   sudo stacksentry-menu update              обновить бота с GitHub
   sudo stacksentry-menu uninstall [--keep-state]  удалить бота целиком (без флагов — под ноль)
 
@@ -722,6 +733,7 @@ ${BOLD}English${RESET}
   sudo stacksentry-menu restart-xray        restart the panel core when supported
   sudo stacksentry-menu apt-logs [N]        log of background apt upgrades
   sudo stacksentry-menu totp               TOTP secret and otpauth (root only)
+  sudo stacksentry-menu update-check        check for StackSentry updates
   sudo stacksentry-menu update              update the bot from GitHub
   sudo stacksentry-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
   Docs: README.en.md (English) · README.md (Русский)
@@ -743,6 +755,7 @@ case "${1:-}" in
     totp) cmd_totp ;;
     logs) cmd_logs "${2:-50}" ;;
     update) cmd_update ;;
+    update-check|check-updates) cmd_update_check ;;
     uninstall|remove) cmd_uninstall "${2:-}" ;;
     help|--help|-h) usage ;;
     *) die "неизвестная команда: $1 (см. stacksentry-menu --help)" ;;

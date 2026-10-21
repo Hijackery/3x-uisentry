@@ -646,3 +646,14 @@ def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:
     assert "_old_root" in text
     assert "TERMINAL_SHELL_USER" in text
     assert "stacksentry-shell" in text
+
+
+def test_self_update_is_exposed_through_the_narrow_sudoers() -> None:
+    sample = (BASE_DIR / "install" / "stacksentry-sudoers").read_text(encoding="utf-8")
+    assert "stacksentry-ctl update_bot" in sample
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "update_bot" in text
+    # Установщик пишет PREFIX для ctl: self-update должен работать и при --prefix.
+    assert "/etc/stacksentry.conf" in text
+    # Метаданные для проверки обновлений.
+    assert ".stacksentry-install" in text

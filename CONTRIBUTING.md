@@ -45,8 +45,9 @@ sudo visudo -cf install/stacksentry-sudoers
 
 - Сообщение коммита: императив, до 72 символов в первой строке, дальше —
   подробности построчно.
-- Релизы — семантические теги `vX.Y.Z`; порядок описан в
-  [docs/RELEASING.md](docs/RELEASING.md). Не переписывайте опубликованные теги.
+- GitHub Releases и теги не публикуются: актуальная версия — `main`. Версия в
+  `stacksentry/__init__.py` отражает заметные изменения; порядок обновления и
+  откат описаны в [docs/RELEASING.md](docs/RELEASING.md).
 - В описании PR: что изменилось и **как проверено** (команды + результат).
 - Не коммитьте `.env`, токены, `state.db`, логи. Проверьте `git diff --cached`.
 
@@ -80,9 +81,9 @@ test the exact bug that was found (see `tests/test_review_fixes.py`). Installer
 scripts: `set -euo pipefail`, no `eval`/`bash -c` with user input, validate every
 argument.
 
-**Commits and PRs:** imperative subject up to 72 characters, details below;
-releases are semantic `vX.Y.Z` tags (see [docs/RELEASING.md](docs/RELEASING.md)),
-never rewrite published tags. Describe what changed and how it was verified. Never commit `.env`,
+**Commits and PRs:** imperative subject up to 72 characters, details below.
+GitHub Releases and tags are not published; `main` is the current version (see
+[docs/RELEASING.md](docs/RELEASING.md)). Describe what changed and how it was verified. Never commit `.env`,
 tokens, `state.db` or logs — check `git diff --cached`.
 
 **Especially welcome:** support for more distributions (init systems, package

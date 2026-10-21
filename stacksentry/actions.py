@@ -32,6 +32,7 @@ ACTION_DIST_UPGRADE = "dist_upgrade"
 ACTION_RELEASE_UPGRADE = "release_upgrade"
 ACTION_REBOOT = "reboot"
 ACTION_COMMAND = "run_command"
+ACTION_UPDATE_BOT = "update_bot"
 
 
 #: Какие действия идут в отдельном systemd-юните и требуют наблюдения.
@@ -279,6 +280,17 @@ class ActionManager:
         """Ставит do-release-upgrade в очередь отдельным systemd-юнитом."""
         return await self._privileged(
             [ACTION_RELEASE_UPGRADE], ACTION_RELEASE_UPGRADE, timeout=60.0
+        )
+
+    async def update_bot(self) -> CommandResult:
+        """Ставит обновление StackSentry из main в очередь.
+
+        Установщик запускается отдельным юнитом: сервис бота не может писать в
+        свой каталог из-за ProtectSystem=strict, а после обновления он сам
+        перезапустит службу.
+        """
+        return await self._privileged(
+            [ACTION_UPDATE_BOT], ACTION_UPDATE_BOT, timeout=60.0
         )
 
     async def apt_status(self, action: str) -> CommandResult:

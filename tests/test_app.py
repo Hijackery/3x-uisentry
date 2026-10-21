@@ -55,6 +55,8 @@ def test_application_is_built_and_handlers_registered(
         "logs",
         "audit",
         "maint",
+        "version",
+        "updatecheck",
     } <= commands
 
 
@@ -73,6 +75,7 @@ def test_application_is_built_and_handlers_registered(
         "logs:x-ui",
         "command_prompt",
         "ask:apt_upgrade:",
+        "update_check",
         "no:abc",
     ],
 )

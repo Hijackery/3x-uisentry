@@ -410,7 +410,7 @@ uninstall() {
         systemctl reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || true
     fi
 
-    rm -f "$SUDOERS_PATH" "$WRAPPER_PATH" "$MENU_PATH"
+    rm -f "$SUDOERS_PATH" "$WRAPPER_PATH" "$MENU_PATH" /etc/stacksentry.conf
 
     # Терминал (если ставился) — отдельная служба, пользователь и секреты.
     if command -v systemctl >/dev/null 2>&1; then
@@ -728,6 +728,28 @@ EOF
 fi
 ok "Исходники: $SOURCE_DIR"
 
+# Commit установленной версии нужен кнопке «Проверить обновления». В tar.gz
+# его нет, поэтому спрашиваем GitHub API (для git-клона достаточно rev-parse).
+source_commit() {
+    local sha=""
+    if command -v git >/dev/null 2>&1; then
+        sha="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)"
+    fi
+    [ -n "$sha" ] && { printf '%s' "$sha"; return 0; }
+    command -v curl >/dev/null 2>&1 || return 0
+    case "$REPO_OWNER" in ""|OWNER|your-name) return 0 ;; esac
+    local auth=()
+    _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+    [ -n "$_gh_token" ] && auth=(-H "Authorization: Bearer $_gh_token")
+    curl -fsSL --max-time 10 "${auth[@]}" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${REPO_REF}" \
+        2>/dev/null | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin).get("sha",""))' \
+        2>/dev/null || true
+}
+
+INSTALLED_SHA="$(source_commit)"
+
 STACKSENTRY_PRESENT=0
 if systemctl is-active --quiet x-ui 2>/dev/null; then
     ok "Панель 3X-UI запущена (юнит x-ui)"
@@ -892,6 +914,13 @@ ENV_FILE="$PREFIX/.env"
 # создать прямо здесь: иначе .env писать некуда (на чистой машине /opt пуст).
 mkdir -p "$PREFIX" || fail "Не удалось создать каталог $PREFIX"
 chmod 755 "$PREFIX"
+
+# ctl читает PREFIX отсюда: self-update должен работать и при --prefix.
+if [ -d /etc ]; then
+    printf 'PREFIX=%s\n' "$PREFIX" > /etc/stacksentry.conf 2>/dev/null || true
+    chmod 0644 /etc/stacksentry.conf 2>/dev/null || true
+    chown root:root /etc/stacksentry.conf 2>/dev/null || true
+fi
 
 env_get() { sed -n "s/^$1=//p" "$ENV_FILE" 2>/dev/null | head -1; }
 
@@ -1578,6 +1607,19 @@ chown -R root:root "$PREFIX"
 chmod -R go-w "$PREFIX"
 chmod 755 "$PREFIX"
 
+_installed_version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' \
+    "$PREFIX/stacksentry/__init__.py" 2>/dev/null | head -1)"
+{
+    printf 'VERSION=%s\n' "${_installed_version:-unknown}"
+    printf 'REF=%s\n' "$REPO_REF"
+    printf 'SHA=%s\n' "$INSTALLED_SHA"
+    printf 'INSTALLED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'REPO=%s/%s\n' "$REPO_OWNER" "$REPO_NAME"
+    printf 'ARCHIVE_SHA256=%s\n' "$SOURCE_SHA256"
+} > "$PREFIX/.stacksentry-install"
+chown root:root "$PREFIX/.stacksentry-install"
+chmod 0644 "$PREFIX/.stacksentry-install"
+
 # .env мастер пишет ещё до копирования — возвращаем ему владельца и права,
 # которые сбросил chown -R выше (сервису нужно только чтение).
 if [ -f "$ENV_FILE" ]; then
@@ -1664,7 +1706,8 @@ sudoers_rules() {
         done
     done
     for sub in \
-        apt_update apt_upgrade apt_upgrade_phased dist_upgrade release_upgrade reboot; do
+        apt_update apt_upgrade apt_upgrade_phased dist_upgrade release_upgrade \
+        update_bot reboot; do
         rules="$rules${rules:+, }$WRAPPER_PATH $sub"
     done
     for kind in update upgrade phased release; do

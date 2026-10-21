@@ -10,6 +10,10 @@
 #   sudo install -o root -g root -m 0755 stacksentry-ctl /usr/local/bin/stacksentry-ctl
 set -euo pipefail
 
+#: Каталог установки. Установщик пишет его в /etc/stacksentry.conf, чтобы
+#: self-update работал и при нестандартном --prefix.
+PREFIX_CONF="${PREFIX_CONF:-/etc/stacksentry.conf}"
+
 log() {
     logger -t stacksentry-ctl -- "$*" 2>/dev/null || true
 }
@@ -39,6 +43,29 @@ safe_int() {
     local value="$1"
     [[ "$value" =~ ^[0-9]{1,6}$ ]] || die "ожидалось число: $value"
     printf '%s' "$value"
+}
+
+install_prefix() {
+    local prefix="${STACKSENTRY_PREFIX:-}"
+    if [ -z "$prefix" ] && [ -r "$PREFIX_CONF" ]; then
+        # Файл должен принадлежать root и быть недоступен на запись другим:
+        # иначе подмена PREFIX увела бы self-update в чужой каталог.
+        [ "$(stat -c '%u' "$PREFIX_CONF" 2>/dev/null || echo '')" = "0" ] \
+            || die "$PREFIX_CONF должен принадлежать root"
+        _mode="$(stat -c '%a' "$PREFIX_CONF" 2>/dev/null || echo '')"
+        case "$_mode" in
+            *[2367]) die "$PREFIX_CONF доступен на запись группе/другим" ;;
+        esac
+        # shellcheck disable=SC1090
+        . "$PREFIX_CONF"
+        prefix="${PREFIX:-}"
+    fi
+    [ -n "$prefix" ] || prefix="/opt/stacksentry"
+    case "$prefix" in
+        /*) ;;
+        *) die "PREFIX в $PREFIX_CONF должен быть абсолютным путём" ;;
+    esac
+    printf '%s' "$prefix"
 }
 
 #: Пакетный менеджер определяется по факту наличия. PKG_BACKEND позволяет
@@ -468,6 +495,49 @@ case "$cmd" in
         fi
         apt_status_write release "$rc"
         echo "do-release-upgrade завершён (код $rc)"
+        exit "$rc"
+        ;;
+
+    update_bot)
+        # Обновление самого бота из main. Установщик запускается отдельным
+        # юнитом: сервис с ProtectSystem=strict не может писать в $PREFIX.
+        require_no_extra_args 0 "$@"
+        unit="stacksentry-self-update"
+        prefix="$(install_prefix)"
+        installer="$prefix/install.sh"
+        [ -f "$installer" ] || die "не найден $installer — переустановите бота"
+        [ "$(stat -c '%u' "$installer" 2>/dev/null || echo '')" = "0" ] \
+            || die "$installer должен принадлежать root"
+        mode="$(stat -c '%a' "$installer" 2>/dev/null || echo '')"
+        case "$mode" in
+            *[2367]) die "$installer доступен на запись группе/другим" ;;
+        esac
+        log "self-update requested ($prefix)"
+        if command -v systemctl >/dev/null 2>&1 \
+            && systemctl is-active --quiet "$unit" 2>/dev/null; then
+            echo "Обновление уже выполняется."
+            exit 3
+        fi
+        apt_enqueue "$unit" _self_update_worker \
+            "StackSentry self-update" "self-update.log" selfupdate
+        ;;
+
+    _self_update_worker)
+        # Внутренняя подкоманда для юнита; через sudo в sudoers её нет.
+        [ "$(id -u)" -eq 0 ] || die "_self_update_worker требует root"
+        [ -z "${SUDO_USER:-}" ] || die "_self_update_worker недоступен через sudo"
+        require_no_extra_args 0 "$@"
+        prefix="$(install_prefix)"
+        installer="$prefix/install.sh"
+        [ -f "$installer" ] || die "не найден $installer"
+        # Копируем установщик в пустой каталог: иначе он найдёт локальные
+        # исходники рядом с собой и «обновит» старую копию вместо main.
+        tmp="$(mktemp -d)"
+        cp -a "$installer" "$tmp/install.sh"
+        cd "$tmp"
+        rc=0
+        bash "$tmp/install.sh" --yes --prefix "$prefix" --ref main || rc=$?
+        rm -rf "$tmp"
         exit "$rc"
         ;;
 

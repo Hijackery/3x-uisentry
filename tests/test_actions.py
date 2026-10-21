@@ -334,3 +334,24 @@ async def test_log_variant_requires_allowed_base(
 
     with pytest.raises(ActionError, match="не разрешена"):
         await actions.run_allowed_command("kernel_logs_more")
+
+
+async def test_update_bot_uses_fixed_subcommand(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stacksentry.actions import ACTION_UPDATE_BOT
+
+    actions = manager(make_settings)
+    calls = fake_runner(monkeypatch)
+    result = await actions.update_bot()
+
+    assert result.ok
+    assert calls == [
+        [
+            "sudo",
+            "-n",
+            "--",
+            "/usr/local/bin/stacksentry-ctl",
+            ACTION_UPDATE_BOT,
+        ]
+    ]

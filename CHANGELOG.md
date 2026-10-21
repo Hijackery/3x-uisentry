@@ -1,17 +1,18 @@
 # История изменений / Changelog
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
-Проект использует семантические версии `vX.Y.Z`; порядок выпуска — в
-[docs/RELEASING.md](docs/RELEASING.md). Обновление — `sudo stacksentry-menu`
-(пункт 24) или повторный запуск установщика с нужным тегом (`--ref vX.Y.Z`).
+GitHub Releases и теги не публикуются: актуальная версия — `main`. Версия
+хранится в `stacksentry/__init__.py`. Обновление — кнопка «Проверить обновления»
+в боте, `sudo stacksentry-menu update` (пункт 24) или повторный запуск
+установщика; подробности — в [docs/RELEASING.md](docs/RELEASING.md).
 
 ## [1.0.0] — 2026-10-21
 
-Первый публичный релиз StackSentry. Включает всё перечисленное ниже в разделе
-`Unreleased`: мониторинг сервера/служб/VPN, восемь API-панелей, адаптивный
-установщик и меню, кроссплатформенные обновления пакетов, 2FA, аудит,
+Версия 1.0.0 (без отдельного GitHub Release). Включает всё перечисленное ниже в
+разделе `Unreleased`: мониторинг сервера/служб/VPN, восемь API-панелей,
+адаптивный установщик и меню, кроссплатформенные обновления пакетов, 2FA, аудит,
 read-only Mini App и web/root-терминал. Добавлены публичная документация,
-политика релизов и безопасности, CodeQL/Dependabot и Makefile.
+проверка и установка обновлений из интерфейса, CodeQL/Dependabot и Makefile.
 
 ## [Unreleased]
 
@@ -284,10 +285,10 @@ read-only Mini App и web/root-терминал. Добавлены публич
   and removes the old units/sudoers/wrappers and user. Old GitHub links redirect,
   but the installer and README already use the new address.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Semantic
-`vX.Y.Z` releases are published with notes (see [docs/RELEASING.md](docs/RELEASING.md));
-update via `sudo stacksentry-menu` (item 24) or by re-running the installer with
-`--ref vX.Y.Z`.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). GitHub
+Releases and tags are not published; `main` is the current version. Update via
+the in-bot check/update buttons, `sudo stacksentry-menu` (item 24), or by
+re-running the installer (see [docs/RELEASING.md](docs/RELEASING.md)).
 
 ### Added
 
