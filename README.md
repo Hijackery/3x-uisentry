@@ -794,7 +794,6 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
 - [SECURITY.md](SECURITY.md) — политика и модель безопасности.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — сборка, проверки, PR.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.
 
 ## Версии и обновление
@@ -826,7 +825,6 @@ CI гоняет Python 3.10 и 3.13, `shellcheck`, `bash -n` и `visudo -cf`.
 
 - [SECURITY.md](SECURITY.md) — как сообщить об уязвимости и что уже защищено.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, обязательные проверки, стиль.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
 - [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
 - [docs/](docs/README.md) — совместимость, архитектура, обновления.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.

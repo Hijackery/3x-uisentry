@@ -12,7 +12,6 @@
 | [../SUPPORT.md](../SUPPORT.md) | Куда обращаться и что приложить |
 | [../SECURITY.md](../SECURITY.md) | Политика безопасности и модель угроз |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Как собрать, проверить и прислать изменения |
-| [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Правила общения |
 | [../Makefile](../Makefile) | `make check` и другие команды разработки |
 | [../CHANGELOG.md](../CHANGELOG.md) | История изменений |
 
