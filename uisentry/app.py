@@ -1428,11 +1428,9 @@ class MonitorBot:
             return
         if context.user_data is not None:
             context.user_data["awaiting_command"] = True
-        allowed = ", ".join(self.settings.command_allowlist) or "—"
         await self._edit(
             callback,
-            "💻 Пришлите команду следующим сообщением. Отмена — кнопка в меню.\n"
-            f"Разрешено: <code>{ui.esc(allowed)}</code>",
+            ui.render_command_help(self.settings.command_allowlist),
             markup=ui.main_menu(True),
         )
 

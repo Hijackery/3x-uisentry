@@ -499,3 +499,33 @@ async def test_stale_callback_answer_does_not_crash(bot_app: MonitorBot) -> None
             raise BadRequest("query is too old and response timeout expired")
 
     await bot_app._answer(StaleQuery())  # type: ignore[arg-type]
+
+
+def test_command_help_is_grouped_and_described() -> None:
+    """Список /run — человеческий: группы и описания, а не голые алиасы."""
+    from uisentry.settings import BASE_DIR
+
+    line = next(
+        item
+        for item in (BASE_DIR / ".env.example").read_text(encoding="utf-8").splitlines()
+        if item.startswith("COMMAND_ALLOWLIST=")
+    )
+    commands = tuple(
+        item.strip() for item in line.split("=", 1)[1].split(",") if item.strip()
+    )
+    text = ui.render_command_help(commands)
+
+    for group in ("Логи", "Сеть", "Службы", "Система", "Обновления", "Ресурсы"):
+        assert f"<b>{group}</b>" in text, group
+    assert "журнал ОС" in text
+    assert "слушающие" in text
+    assert "пакеты, доступные к обновлению" in text
+    assert 1000 < len(text) < 4000
+
+
+def test_command_help_shows_only_allowed() -> None:
+    text = ui.render_command_help(("os_logs",))
+    assert "os_logs" in text
+    assert "sockets" not in text
+    assert "Логи" in text
+    assert "Сеть" not in text

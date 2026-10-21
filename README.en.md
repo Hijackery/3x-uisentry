@@ -308,7 +308,8 @@ so explicitly.
 | `vmstat` / `time_status` / `logged_in` / `boot_time` | load, time, sessions |
 | `journalctl --disk-usage` / `systemctl list-timers --all` | journal and timers |
 
-Examples: `/run os_logs`, `/run failed_units`, `/run sockets`.
+Examples: `/run os_logs`, `/run failed_units`, `/run sockets`. `/run` without
+arguments shows this list right in the bot, grouped and described.
 
 **Commands and buttons work only in the administrator's private chat.** In a group
 the bot refuses: addresses, subscriptions and traffic must not leak into a shared

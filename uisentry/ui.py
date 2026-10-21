@@ -688,6 +688,78 @@ def confirm_menu(action: str, token: str) -> InlineKeyboardMarkup:
     )
 
 
+#: Человеческие описания безопасных команд: (группа, что показывает).
+COMMAND_HELP: dict[str, tuple[str, str]] = {
+    "os_logs": ("Логи", "журнал ОС: предупреждения (100 строк)"),
+    "os_errors": ("Логи", "только ошибки ОС"),
+    "kernel_logs": ("Логи", "сообщения ядра"),
+    "xui_logs": ("Логи", "журнал службы x-ui"),
+    "dmesg": ("Логи", "кольцевой буфер ядра с временем"),
+    "journalctl --disk-usage": ("Логи", "сколько места занимает журнал"),
+    "sockets": ("Сеть", "слушающие TCP/UDP-порты"),
+    "net_summary": ("Сеть", "сводка сокетов"),
+    "addresses": ("Сеть", "IP-адреса интерфейсов"),
+    "routes": ("Сеть", "таблица маршрутов"),
+    "failed_units": ("Службы", "упавшие systemd-юниты"),
+    "xui_service": ("Службы", "статус службы x-ui"),
+    "x-ui status": ("Службы", "статус панели через x-ui"),
+    "systemctl list-timers --all": ("Службы", "таймеры systemd"),
+    "uname": ("Система", "версия ядра и ОС"),
+    "cpu_info": ("Система", "информация о процессоре"),
+    "block_devices": ("Система", "диски и разделы"),
+    "time_status": ("Система", "время и часовой пояс"),
+    "logged_in": ("Система", "кто сейчас вошёл"),
+    "boot_time": ("Система", "время последней загрузки"),
+    "upgradable": ("Обновления", "пакеты, доступные к обновлению"),
+    "upgrade_sim": ("Обновления", "симуляция apt upgrade"),
+    "top_cpu": ("Ресурсы", "процессы по CPU и памяти"),
+    "vmstat": ("Ресурсы", "нагрузка, память, swap"),
+    "log_size": ("Ресурсы", "размер /var/log"),
+    "inodes": ("Ресурсы", "использование inode"),
+    "df -h": ("Ресурсы", "место на дисках"),
+    "free -h": ("Ресурсы", "память и swap"),
+    "uptime": ("Ресурсы", "аптайм и load average"),
+}
+
+_COMMAND_GROUPS = (
+    "Логи",
+    "Сеть",
+    "Службы",
+    "Система",
+    "Обновления",
+    "Ресурсы",
+    "Прочее",
+)
+
+
+def render_command_help(allowlist: tuple[str, ...]) -> str:
+    """Список безопасных команд с описаниями, сгруппированный по темам."""
+    if not allowlist:
+        return (
+            "💻 <b>Команда на сервер</b>\n\n"
+            "Список команд пуст — выполнение отключено "
+            "(<code>COMMAND_ALLOWLIST</code>)."
+        )
+    grouped: dict[str, list[str]] = {group: [] for group in _COMMAND_GROUPS}
+    for command in allowlist:
+        group, description = COMMAND_HELP.get(command, ("Прочее", "без описания"))
+        grouped.setdefault(group, []).append(
+            f"• <code>/run {esc(command)}</code> — {esc(description)}"
+        )
+    lines = [
+        "💻 <b>Команда на сервер</b>",
+        "Пришлите команду сообщением в любом разделе или "
+        "<code>/run &lt;команда&gt;</code>. Всё только читает, shell недоступен.",
+    ]
+    for group in _COMMAND_GROUPS:
+        items = grouped.get(group) or []
+        if not items:
+            continue
+        lines += ["", f"<b>{group}</b>"]
+        lines += items
+    return "\n".join(lines)
+
+
 def render_help(is_admin: bool) -> str:
     """Полная инструкция простыми словами: разделы, действия, настройки."""
     lines_out = [
