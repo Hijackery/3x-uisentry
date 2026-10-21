@@ -783,7 +783,6 @@ More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
 - [SECURITY.md](SECURITY.md) — security policy and model.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, checks, PRs.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
 
 ## Versions and updates
@@ -815,7 +814,6 @@ Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is protected.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
 - [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
 - [docs/](docs/README.md) — compatibility, architecture, updates.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
