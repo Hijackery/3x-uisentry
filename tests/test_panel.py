@@ -8,13 +8,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from xui_monitor_bot.collectors.panel import (
+from uisentry.collectors.panel import (
     PanelClient,
     PanelError,
     PanelForbidden,
     parse_inbound,
 )
-from xui_monitor_bot.settings import Settings
+from uisentry.settings import Settings
 
 
 def client_with(

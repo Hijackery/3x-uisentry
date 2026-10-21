@@ -9,11 +9,11 @@ from collections.abc import Callable
 
 import pytest
 
-from xui_monitor_bot.collectors.services import ServiceCollector, _parse_properties
-from xui_monitor_bot.collectors.subscriptions import SubscriptionCollector
-from xui_monitor_bot.command import run_command
-from xui_monitor_bot.models import CommandResult, Subscription
-from xui_monitor_bot.settings import Settings
+from uisentry.collectors.services import ServiceCollector, _parse_properties
+from uisentry.collectors.subscriptions import SubscriptionCollector
+from uisentry.command import run_command
+from uisentry.models import CommandResult, Subscription
+from uisentry.settings import Settings
 
 
 async def test_run_command_captures_output() -> None:
@@ -83,7 +83,7 @@ def test_subscription_expiry_and_traffic_flags() -> None:
 
 
 def test_problems_lists_what_needs_attention() -> None:
-    from xui_monitor_bot.models import InboundSummary
+    from uisentry.models import InboundSummary
 
     inbounds = [
         InboundSummary("on", 443, "vless", True, 1, 0, 0, 0),
@@ -173,9 +173,7 @@ async def test_service_cpu_is_delta_between_polls(
     clock = [1000.0]
     values = [10_000_000_000, 11_000_000_000]  # +1 CPU-секунда за 1 секунду
 
-    monkeypatch.setattr(
-        "xui_monitor_bot.collectors.services.time.monotonic", lambda: clock[0]
-    )
+    monkeypatch.setattr("uisentry.collectors.services.time.monotonic", lambda: clock[0])
 
     async def fake_run(argv: list[str], **kwargs: object) -> CommandResult:
         return CommandResult(
@@ -187,7 +185,7 @@ async def test_service_cpu_is_delta_between_polls(
             duration=0.0,
         )
 
-    monkeypatch.setattr("xui_monitor_bot.collectors.services.run_command", fake_run)
+    monkeypatch.setattr("uisentry.collectors.services.run_command", fake_run)
 
     first = await collector.status("x-ui")
     clock[0] += 1

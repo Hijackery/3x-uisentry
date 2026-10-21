@@ -215,7 +215,7 @@ def _build_settings() -> Settings:
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),
         panel_base_path=env_str("PANEL_BASE_PATH", "").strip("/"),
         services=tuple(env_str_list("SERVICES", ["x-ui"])),
-        sudo_wrapper=env_str("SUDO_WRAPPER", "/usr/local/bin/xui-ctl"),
+        sudo_wrapper=env_str("SUDO_WRAPPER", "/usr/local/bin/uisentry-ctl"),
         command_allowlist=tuple(env_str_list("COMMAND_ALLOWLIST")),
         check_interval=env_int("CHECK_INTERVAL", 60, minimum=15),
         action_cooldown=env_int("ACTION_COOLDOWN", 30, minimum=0),

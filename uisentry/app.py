@@ -310,7 +310,7 @@ class MonitorBot:
         if isinstance(message, Message):
             await message.reply_text(
                 "😔 Внутренняя ошибка. Повторите команду; если повторяется — "
-                "журнал бота:\n<code>journalctl -u xui-monitor-bot -n 50</code>",
+                "журнал бота:\n<code>journalctl -u uisentry-bot -n 50</code>",
                 parse_mode=ParseMode.HTML,
             )
 
@@ -326,7 +326,7 @@ class MonitorBot:
         # отказом — это только вводит в заблуждение.
         await self._reply_screen(
             message,
-            "🛰 Бот мониторинга сервера и панели 3X-UI.\n\n"
+            "🛰 <b>3X-UI Sentry</b> — бот мониторинга сервера и панели 3X-UI.\n\n"
             + (
                 "Показывает состояние системы, сервисов, панели, подписок и "
                 "трафика, а также позволяет перезапускать сервисы и обновлять "
@@ -1221,7 +1221,7 @@ class MonitorBot:
                     message_id,
                     ok=False,
                     text="⚠️ Не удалось получить отчёт об обновлении. "
-                    "Проверьте: <code>sudo xui-menu apt-logs</code>\n"
+                    "Проверьте: <code>sudo uisentry-menu apt-logs</code>\n"
                     f"<pre>{ui.esc(str(exc))}</pre>",
                 )
             return
@@ -1237,7 +1237,7 @@ class MonitorBot:
                     message_id,
                     ok=False,
                     text="⚠️ Обновление идёт слишком долго (больше 2 часов). "
-                    "Проверьте: <code>sudo xui-menu apt-logs</code>",
+                    "Проверьте: <code>sudo uisentry-menu apt-logs</code>",
                 )
             else:
                 reschedule(attempts=attempts + 1, errors=errors)
@@ -1580,7 +1580,7 @@ class MonitorBot:
 
 
 def _parse_apt_status(stdout: str) -> tuple[dict[str, str], str]:
-    """Разбирает вывод `xui-ctl apt_status`: шапку STATE/RESULT/EXIT/LOAD и лог."""
+    """Разбирает вывод `uisentry-ctl apt_status`: шапку STATE/RESULT/EXIT/LOAD и лог."""
     fields: dict[str, str] = {}
     tail: list[str] = []
     header = True

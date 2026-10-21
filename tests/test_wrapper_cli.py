@@ -1,4 +1,4 @@
-"""Проверка привилегированной обёртки `install/xui-ctl`.
+"""Проверка привилегированной обёртки `install/uisentry-ctl`.
 
 Обёртка — единственная точка, где бот получает root, поэтому её входные данные
 проверяются строго. Тесты запускают скрипт напрямую: запрещённые вызовы обязаны
@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from xui_monitor_bot.settings import BASE_DIR
+from uisentry.settings import BASE_DIR
 
-WRAPPER = BASE_DIR / "install" / "xui-ctl"
+WRAPPER = BASE_DIR / "install" / "uisentry-ctl"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="нужен bash")
 
@@ -138,7 +138,7 @@ def test_apt_upgrade_is_queued_as_transient_unit(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
     args = run_log.read_text(encoding="utf-8").splitlines()
-    assert "--unit=xui-monitor-apt-upgrade" in args
+    assert "--unit=uisentry-apt-upgrade" in args
     assert "--collect" in args
     assert "--property=Type=exec" in args
     assert "--property=TimeoutStartSec=3600" in args
@@ -262,7 +262,7 @@ def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
 
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "xui-monitor-apt-upgrade.service").write_text(
+    (unit_dir / "uisentry-apt-upgrade.service").write_text(
         "[Service]\nType=oneshot\n", encoding="utf-8"
     )
 
@@ -284,7 +284,7 @@ def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
     assert "Задача запущена" in result.stdout
     log = run_log.read_text(encoding="utf-8")
     assert "start" in log.splitlines()
-    assert "xui-monitor-apt-upgrade.service" in log
+    assert "uisentry-apt-upgrade.service" in log
 
 
 def test_safe_command_aliases_are_mapped(tmp_path: Path) -> None:

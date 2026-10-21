@@ -1,19 +1,19 @@
-# xui-monitor-bot
+# 3X-UI Sentry
 
-[![CI](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/xui-monitor-bot/actions/workflows/ci.yml)
+[![CI](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 [Русский](README.md) · **English**
 
-A Telegram bot for a server running the **3X-UI** panel: it watches the hardware,
+**3X-UI Sentry** is a Telegram bot for a server running the **3X-UI** panel: it watches the hardware,
 services and the panel, sends clear alerts and shows subscriptions. Risky actions
 — restart, system upgrade, reboot — happen only from a confirmed button and only
 for an administrator.
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
 
 > One command: the wizard downloads the code, asks for tokens, installs
@@ -29,7 +29,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main
 5. [Connecting to the panel](#connecting-to-the-panel)
 6. [How it works](#how-it-works)
 7. [Commands and screens](#commands-and-screens)
-8. [`xui-menu` settings menu](#xui-menu-settings-menu)
+8. [`uisentry-menu` settings menu](#uisentry-menu-settings-menu)
 9. [Settings](#settings)
 10. [Security](#security)
 11. [Update and removal](#update-and-removal)
@@ -52,7 +52,7 @@ matters to Telegram and stays quiet when everything is fine.
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
 | **Install** | one command, terminal prompts (works through `curl \| bash` too), an 8-point self-check |
 | **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+ |
-| **Terminal** | `xui-menu` — edit settings, restart, read the log, update; secrets are masked |
+| **Terminal** | `uisentry-menu` — edit settings, restart, read the log, update; secrets are masked |
 | **Security** | a dedicated unprivileged user, a narrow sudoers list of exact commands, every risky action confirmed and audited |
 
 ## What it looks like
@@ -114,13 +114,13 @@ state is reported as unavailable (no false “crit” alerts).
 ### 2. Install
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
 
 Or through a pipe:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
 ```
 
 The wizard asks questions as **step 4, before installing dependencies**, so
@@ -137,8 +137,8 @@ What the wizard asks:
 ### 3. After installation
 
 ```bash
-sudo xui-menu          # menu: state, settings, restart, log, update
-systemctl status xui-monitor-bot
+sudo uisentry-menu          # menu: state, settings, restart, log, update
+systemctl status uisentry-bot
 ```
 
 Open the bot in Telegram, press `/start` → `/status`. If something is wrong, the
@@ -240,18 +240,18 @@ The response must contain `"success":true`.
 ## How it works
 
 ```text
-Telegram  ⇄  bot (unprivileged user xui-monitor)
+Telegram  ⇄  bot (unprivileged user uisentry)
                  ├─ psutil / systemctl / journalctl        — metrics and services
                  ├─ panel API (Bearer, node-sync scope)     — inbounds, subscriptions, xray restart
-                 └─ sudo xui-ctl (narrow sudoers)           — restart, apt, reboot, journal
+                 └─ sudo uisentry-ctl (narrow sudoers)           — restart, apt, reboot, journal
 ```
 
-- **Code** — `/opt/xui-monitor-bot`, owned by `root`; the bot cannot rewrite itself.
-- **Secrets** — `.env` with `640 root:xui-monitor`.
-- **State** — SQLite in `/var/lib/xui-monitor` (history, audit, mutes).
-- **Privileges** — only through `sudo xui-ctl`; the allowed subcommands are listed
+- **Code** — `/opt/uisentry`, owned by `root`; the bot cannot rewrite itself.
+- **Secrets** — `.env` with `640 root:uisentry`.
+- **State** — SQLite in `/var/lib/uisentry` (history, audit, mutes).
+- **Privileges** — only through `sudo uisentry-ctl`; the allowed subcommands are listed
   exactly, without wildcards.
-- **`apt`** — runs in dedicated systemd units (`xui-monitor-apt-*.service`)
+- **`apt`** — runs in dedicated systemd units (`uisentry-apt-*.service`)
   because the bot lives with `ProtectSystem=strict`.
 
 ## Commands and screens
@@ -317,27 +317,27 @@ version and says so if there is none. These are different things: `apt update`
 does not check for a new OS version. The bot watches the background systemd unit
 and sends the exit code plus the log tail when it finishes — no `journalctl`
 needed. One action is one message: “queued” → “running” → report, no pile-up. To
-look manually: `sudo xui-menu apt-logs`.
+look manually: `sudo uisentry-menu apt-logs`.
 
 `/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
 are aligned in a monospace block, and time is labelled “server time”. Alerts carry
 `♻️ Restart`, `📜 Log` and `😴 I know, until morning` — an 8-hour mute stored in
 SQLite that survives restarts.
 
-## `xui-menu` settings menu
+## `uisentry-menu` settings menu
 
 A console panel is available after installation:
 
 ```bash
-sudo xui-menu              # interactive menu
-sudo xui-menu show         # settings (secrets masked)
-sudo xui-menu keys         # which keys may be changed
-xui-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
-sudo xui-menu set PANEL_TIMEOUT 20
-sudo xui-menu restart       # apply
-sudo xui-menu restart-xray  # restart xray via the panel API
-sudo xui-menu apt-logs 100  # log of background apt upgrades
-sudo xui-menu logs 100
+sudo uisentry-menu              # interactive menu
+sudo uisentry-menu show         # settings (secrets masked)
+sudo uisentry-menu keys         # which keys may be changed
+uisentry-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
+sudo uisentry-menu set PANEL_TIMEOUT 20
+sudo uisentry-menu restart       # apply
+sudo uisentry-menu restart-xray  # restart xray via the panel API
+sudo uisentry-menu apt-logs 100  # log of background apt upgrades
+sudo uisentry-menu logs 100
 ```
 
 The interactive menu is drawn in a frame and grouped into sections; the live
@@ -346,7 +346,7 @@ service state is shown on top:
 ```text
 ╔════════════════════════════════════════════════════════╗
 │         3X-UI monitor bot — control panel              │
-│  Service xui-monitor-bot: ● running                    │
+│  Service uisentry-bot: ● running                    │
 │   Diagnostics                                          │
 │    1. Service state and recent errors                  │
 │    2. Show settings (secrets masked)                   │
@@ -389,40 +389,40 @@ service state is shown on top:
 | 21 | update from `main` | — | — |
 | 22 | removal | `yes` to confirm | `yes` |
 
-An empty value clears a setting: `sudo xui-menu set PANEL_BASE_PATH ""`.
+An empty value clears a setting: `sudo uisentry-menu set PANEL_BASE_PATH ""`.
 For items 4–17 you can skip the menu and use
-`sudo xui-menu set KEY VALUE` directly (same as item 18, one command).
+`sudo uisentry-menu set KEY VALUE` directly (same as item 18, one command).
 
 ```bash
 # value examples
-sudo xui-menu set PANEL_URL https://panel.example.com:5580
-sudo xui-menu set PANEL_BASE_PATH ""          # “Panel URL” = /
-sudo xui-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
-sudo xui-menu set ALERT_CHAT_ID -1001234567890
-sudo xui-menu set SERVICES x-ui,fail2ban
-sudo xui-menu set CPU_WARN 80
-sudo xui-menu set LOG_LEVEL INFO
+sudo uisentry-menu set PANEL_URL https://panel.example.com:5580
+sudo uisentry-menu set PANEL_BASE_PATH ""          # “Panel URL” = /
+sudo uisentry-menu set TELEGRAM_ADMIN_IDS 11111111,22222222
+sudo uisentry-menu set ALERT_CHAT_ID -1001234567890
+sudo uisentry-menu set SERVICES x-ui,fail2ban
+sudo uisentry-menu set CPU_WARN 80
+sudo uisentry-menu set LOG_LEVEL INFO
 
 # validate a value without changing anything
-xui-menu check CPU_WARN 80
+uisentry-menu check CPU_WARN 80
 
 # log of background updates (apt update / upgrade / phased / release)
-sudo xui-menu apt-logs 100
+sudo uisentry-menu apt-logs 100
 ```
 
 Worth knowing:
 
 - input is validated: a wrong number prints the valid range, `q` exits;
-- only allow-listed keys can be changed (`xui-menu keys`); values are validated
+- only allow-listed keys can be changed (`uisentry-menu keys`); values are validated
   before writing;
 - `.env` is rewritten atomically with `640 root:<service user>`;
 - secrets are never printed in full;
-- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env xui-menu`;
-- screen clearing can be disabled: `XUI_MENU_NO_CLEAR=1 sudo xui-menu`.
+- paths can be overridden: `sudo PREFIX=/opt/bot ENV_FILE=/opt/bot/.env uisentry-menu`;
+- screen clearing can be disabled: `UISENTRY_NO_CLEAR=1 sudo uisentry-menu`.
 
 ## Settings
 
-All parameters live in `/opt/xui-monitor-bot/.env`; a commented example is in
+All parameters live in `/opt/uisentry/.env`; a commented example is in
 [`.env.example`](.env.example). Process environment variables take precedence
 over the file.
 
@@ -457,7 +457,7 @@ over the file.
 | `STATE_PATH` | SQLite database |
 | `LOG_PATH` | log file |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
-| `SUDO_WRAPPER` | path to `xui-ctl` |
+| `SUDO_WRAPPER` | path to `uisentry-ctl` |
 
 ### Where alerts go
 
@@ -470,12 +470,12 @@ group will see them. Commands and buttons still work only in private chat.
 
 ## Security
 
-- The bot runs as the unprivileged `xui-monitor` user; code and venv belong to
+- The bot runs as the unprivileged `uisentry` user; code and venv belong to
   `root`, and `.env` is read-only for the service.
-- All privileged operations go through `sudo xui-ctl` and a narrow sudoers list of
+- All privileged operations go through `sudo uisentry-ctl` and a narrow sudoers list of
   **exact commands** (no wildcards in arguments — required by both classic sudo
   and `sudo-rs`). There is no arbitrary shell.
-- `apt` runs in dedicated `xui-monitor-apt-*.service` units that do not inherit the
+- `apt` runs in dedicated `uisentry-apt-*.service` units that do not inherit the
   bot's sandbox; a fallback exists when a transient unit is denied.
 - Risky actions require confirmation; the token is bound to the requesting
   administrator, is single-use, and everything is written to `audit_log`.
@@ -487,7 +487,7 @@ group will see them. Commands and buttons still work only in private chat.
   (`denied`).
 - The installer can verify the archive checksum (`--sha256`).
 - Secrets are stripped from logs by a formatter (including exception text),
-  Telegram IDs are masked (`…789`), and `xui-menu show/check` never print secrets.
+  Telegram IDs are masked (`…789`), and `uisentry-menu show/check` never print secrets.
 - For a self-signed panel certificate use `PANEL_CA_BUNDLE` instead of disabling
   TLS verification.
 
@@ -498,10 +498,10 @@ truncated (16 KB) and has a timeout.
 
 ```bash
 # update (config and state are kept)
-bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 
 # same from the menu
-sudo xui-menu          # item 21
+sudo uisentry-menu          # item 21
 
 # full removal: service, sudoers, wrapper, menu, code, database and user
 sudo bash install.sh --uninstall
@@ -513,7 +513,7 @@ sudo bash install.sh --uninstall --keep-state
 sudo bash install.sh --menu
 ```
 
-Removal prints a single “Bot removed.” line and closes `xui-menu`. With
+Removal prints a single “Bot removed.” line and closes `uisentry-menu`. With
 `--keep-state` a warning remains that the database and user were preserved.
 
 > The project publishes no releases or tags: the current version is always the
@@ -523,15 +523,15 @@ Removal prints a single “Bot removed.” line and closes `xui-menu`. With
 ## Troubleshooting
 
 ```bash
-systemctl status xui-monitor-bot
-journalctl -u xui-monitor-bot -n 50 --no-pager
+systemctl status uisentry-bot
+journalctl -u uisentry-bot -n 50 --no-pager
 ```
 
 | Symptom | What to do |
 |---|---|
 | “Invalid sudoers syntax” | the installer prints the `visudo` line — attach it to an issue |
-| “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/xui-monitor-bot.service && sudo systemctl daemon-reload && sudo systemctl restart xui-monitor-bot` |
-| “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo xui-menu` → “Show settings” |
+| “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/uisentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart uisentry-bot` |
+| “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo uisentry-menu` → “Show settings” |
 | `inbounds/list unavailable` | the panel token lacks the `node-sync` scope |
 | Panel returns `404` for the API | check `PANEL_URL`/`PANEL_BASE_PATH` (a common mistake is `/panel` in `webBasePath`) |
 | Service logs are not visible | check the `journal` sudoers rule and that the call goes through `sudo` |

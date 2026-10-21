@@ -50,21 +50,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends shellcheck
           bash -n install.sh
-          bash -n install/xui-ctl
-          bash -n install/xui-menu
-          sh -n install/xui-monitor-bot.init
-          shellcheck install.sh install/xui-ctl install/xui-menu
+          bash -n install/uisentry-ctl
+          bash -n install/uisentry-menu
+          sh -n install/uisentry-bot.init
+          shellcheck install.sh install/uisentry-ctl install/uisentry-menu
 
       - name: Синтаксис sudoers
-        run: sudo visudo -cf install/xui-monitor-sudoers
+        run: sudo visudo -cf install/uisentry-sudoers
 
       - name: Sudoers, который генерирует установщик
         run: |
           # Проверяем именно сгенерированные правила (с реальными именами
           # юнитов и ключами), а не только статический пример.
           set -euo pipefail
-          svc=xui-monitor
-          wrapper=/usr/local/bin/xui-ctl
+          svc=uisentry
+          wrapper=/usr/local/bin/uisentry-ctl
           units="x-ui fail2ban"
           keys="df_-h free_-h uptime"
           rules=""

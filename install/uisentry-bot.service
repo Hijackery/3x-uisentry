@@ -1,29 +1,29 @@
 [Unit]
-Description=Telegram monitor bot for 3X-UI panel and server
+Description=3X-UI Sentry — Telegram monitor bot
 After=network-online.target x-ui.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=xui-monitor
-Group=xui-monitor
-WorkingDirectory=/opt/xui-monitor-bot
-EnvironmentFile=/opt/xui-monitor-bot/.env
+User=uisentry
+Group=uisentry
+WorkingDirectory=/opt/uisentry
+EnvironmentFile=/opt/uisentry/.env
 # Каталог состояния создаёт systemd с нужным владельцем: база и логи лежат
 # вне каталога с кодом, поэтому бот не может переписать сам себя.
-StateDirectory=xui-monitor
+StateDirectory=uisentry
 StateDirectoryMode=0750
 # Без unbuffered логи в journalctl появляются с задержкой в несколько минут.
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/xui-monitor-bot/.venv/bin/python -m xui_monitor_bot
-SyslogIdentifier=xui-monitor-bot
+ExecStart=/opt/uisentry/.venv/bin/python -m uisentry
+SyslogIdentifier=uisentry-bot
 Restart=always
 RestartSec=10
 TimeoutStopSec=30
 
 # Всё, кроме каталога состояния, только для чтения.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/xui-monitor
+ReadWritePaths=/var/lib/uisentry
 ProtectHome=true
 PrivateTmp=true
 # Бот не должен видеть устройства, часы, hostname и чужие процессы.

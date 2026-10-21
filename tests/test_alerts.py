@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from xui_monitor_bot.alerts import AlertEngine, Rule
-from xui_monitor_bot.models import (
+from uisentry.alerts import AlertEngine, Rule
+from uisentry.models import (
     InboundSummary,
     MonitorSnapshot,
     PanelHealth,
@@ -13,8 +13,8 @@ from xui_monitor_bot.models import (
     Subscription,
     SystemMetrics,
 )
-from xui_monitor_bot.settings import Settings
-from xui_monitor_bot.storage import Storage
+from uisentry.settings import Settings
+from uisentry.storage import Storage
 
 
 def metrics(cpu: float, mem: float = 10.0, disk: float = 10.0) -> SystemMetrics:
@@ -200,7 +200,7 @@ def test_subscription_warnings_are_passed_through(
 
 def test_system_warnings_are_not_blamed_on_subscriptions() -> None:
     """Проблемы железа и проблемы подписок — разные находки."""
-    from xui_monitor_bot.alerts import _is_subscription_warning
+    from uisentry.alerts import _is_subscription_warning
 
     assert _is_subscription_warning("подписки не собраны: HTTP 404 на inbounds/list")
     assert _is_subscription_warning("список inbound'ов недоступен: нет node-sync")

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Установка бота мониторинга 3X-UI на Linux-сервер одной командой.
+# 3X-UI Sentry — установка на Linux-сервер одной командой.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Hijackery/xui-monitor-bot/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
 #
 # Вопросы читаются с терминала (/dev/tty), поэтому пайп не мешает диалогу.
 # Альтернатива, как у 3X-UI:  sudo bash <(curl -fsSL .../install.sh)
@@ -42,7 +42,7 @@ elif { exec 3</dev/tty; } 2>/dev/null; then
 fi
 
 REPO_OWNER="${REPO_OWNER:-Hijackery}"
-REPO_NAME="${REPO_NAME:-xui-monitor-bot}"
+REPO_NAME="${REPO_NAME:-3x-uisentry}"
 REPO_REF="${REPO_REF:-main}"
 REPO_URL="${REPO_URL:-}"
 TARBALL_URL="${TARBALL_URL:-}"
@@ -202,14 +202,14 @@ trap cleanup EXIT
 
 # ------------------------------------------------------------------ параметры
 
-PREFIX="${PREFIX:-/opt/xui-monitor-bot}"
-SERVICE_USER="${SERVICE_USER:-xui-monitor}"
+PREFIX="${PREFIX:-/opt/uisentry}"
+SERVICE_USER="${SERVICE_USER:-uisentry}"
 # Каталог состояния (база SQLite и файл лога) живёт отдельно от кода:
 # код принадлежит root, состояние — сервисному пользователю.
-STATE_DIR="${STATE_DIR:-/var/lib/xui-monitor}"
-SERVICE_NAME="xui-monitor-bot"
-WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/xui-ctl}"
-MENU_PATH="${MENU_PATH:-/usr/local/bin/xui-menu}"
+STATE_DIR="${STATE_DIR:-/var/lib/uisentry}"
+SERVICE_NAME="uisentry-bot"
+WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/uisentry-ctl}"
+MENU_PATH="${MENU_PATH:-/usr/local/bin/uisentry-menu}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
@@ -223,22 +223,22 @@ PRINT_SOURCE=0
 
 usage() {
     cat <<EOF
-${BOLD}Установка бота мониторинга 3X-UI${RESET}
+${BOLD}Установка 3X-UI Sentry${RESET}
 
   sudo bash install.sh [опции]
 
 Опции:
-  --prefix DIR     каталог установки (по умолчанию: /opt/xui-monitor-bot)
-  --user NAME      системный пользователь бота (по умолчанию: xui-monitor)
+  --prefix DIR     каталог установки (по умолчанию: /opt/uisentry)
+  --user NAME      системный пользователь бота (по умолчанию: uisentry)
   --tarball URL    откуда скачать исходники (tar.gz), минуя репозиторий по умолчанию
   --repo OWNER/NAME  репозиторий на GitHub (краткая форма вместо REPO_OWNER/REPO_NAME)
   --ref BRANCH     ветка или тег репозитория (по умолчанию main)
   --print-source   показать, откуда будут взяты исходники, и выйти
   --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
   --menu           меню: установить/обновить, удалить, справка
-                   (после установки для правок настроек: sudo xui-menu)
+                   (после установки для правок настроек: sudo uisentry-menu)
   --uninstall      удалить бота целиком: служба, sudoers, обёртка, меню, код,
-                   состояние (/var/lib/xui-monitor) и системный пользователь
+                   состояние (/var/lib/uisentry) и системный пользователь
   --purge          то же самое (синоним, оставлен для совместимости)
   --keep-state     не трогать состояние и пользователя
   --yes            без вопросов: берём значения из окружения или готового .env
@@ -347,10 +347,10 @@ uninstall() {
     fi
     rm -f "$UNIT_PATH" \
         "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service" \
-        "/etc/systemd/system/xui-monitor-apt-update.service" \
-        "/etc/systemd/system/xui-monitor-apt-upgrade.service" \
-        "/etc/systemd/system/xui-monitor-apt-phased.service" \
-        "/etc/systemd/system/xui-monitor-release-upgrade.service"
+        "/etc/systemd/system/uisentry-apt-update.service" \
+        "/etc/systemd/system/uisentry-apt-upgrade.service" \
+        "/etc/systemd/system/uisentry-apt-phased.service" \
+        "/etc/systemd/system/uisentry-release-upgrade.service"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
@@ -396,7 +396,7 @@ interactive_menu() {
     if [ "$INTERACTIVE" -eq 0 ]; then
         fail "--menu требует терминал. Без него: --yes (установка) или --uninstall."
     fi
-    printf '\n%sБот мониторинга 3X-UI — установка%s\n\n' "$BOLD" "$RESET"
+    printf '\n%s3X-UI Sentry — установка%s\n\n' "$BOLD" "$RESET"
     printf '  1) Установить или обновить бота\n'
     printf '  2) Удалить бота целиком (код, база, пользователь)\n'
     printf '  3) Удалить бота, оставив базу и пользователя\n'
@@ -437,7 +437,7 @@ step "Проверяем систему"
 # из интернета заведомо не сработает — предупреждаем сразу, а не в конце.
 if repo_is_placeholder; then
     warn "REPO_OWNER=OWNER — это заглушка: загрузка из интернета не сработает."
-    warn "Укажите свой репозиторий: --repo ваш-логин/xui-monitor-bot (или REPO_OWNER/REPO_NAME)."
+    warn "Укажите свой репозиторий: --repo ваш-логин/uisentry-bot (или REPO_OWNER/REPO_NAME)."
 fi
 
 [ "$(id -u)" -eq 0 ] || fail "Запускать от root: sudo bash install.sh"
@@ -572,7 +572,7 @@ ok "Python $("$PYTHON_BIN" -c 'import platform; print(platform.python_version())
 
 SOURCE_DIR=""
 for candidate in "$PWD" "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"; do
-    if [ -f "$candidate/xui_monitor_bot/app.py" ]; then
+    if [ -f "$candidate/uisentry/app.py" ]; then
         SOURCE_DIR="$(readlink -f "$candidate")"
         break
     fi
@@ -598,7 +598,7 @@ if [ -z "$SOURCE_DIR" ]; then
             if curl -fsSL --max-time 120 "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
                 && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
-                SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name xui_monitor_bot \
+                SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name uisentry \
                     -type d -exec dirname {} \; | head -1)"
                 if [ -n "$SOURCE_DIR" ]; then
                     break
@@ -623,7 +623,7 @@ EOF
         GIT_URL="${GIT_URL:-$REPO_URL}"
         info "Тарбол не подошёл — пробую git clone $GIT_URL ($REPO_REF)"
         if git clone --depth 1 --branch "$REPO_REF" "$GIT_URL" "$TMP_DIR/repo" \
-            >/dev/null 2>&1 && [ -d "$TMP_DIR/repo/xui_monitor_bot" ]; then
+            >/dev/null 2>&1 && [ -d "$TMP_DIR/repo/uisentry" ]; then
             SOURCE_DIR="$TMP_DIR/repo"
         fi
     fi
@@ -632,12 +632,12 @@ EOF
         if repo_is_placeholder; then
             fail "Исходники не найдены, а репозиторий — заглушка OWNER.
   Укажите свой репозиторий GitHub, например:
-      sudo bash install.sh --repo ваш-логин/xui-monitor-bot
-  (одной строкой:  sudo bash <(curl -Ls https://raw.githubusercontent.com/ваш-логин/xui-monitor-bot/main/install.sh))"
+      sudo bash install.sh --repo ваш-логин/uisentry-bot
+  (одной строкой:  sudo bash <(curl -Ls https://raw.githubusercontent.com/ваш-логин/uisentry-bot/main/install.sh))"
         fi
         fail "Не удалось получить исходники. Варианты:
       • свой репозиторий:  --repo owner/name  [--ref ветка]
-      • прямой архив:      --tarball https://host/xui-monitor-bot.tar.gz
+      • прямой архив:      --tarball https://host/uisentry-bot.tar.gz
       • git:               GIT_URL=https://github.com/вас/repo.git
       • или скачайте репозиторий вручную и запустите install.sh из его каталога"
     fi
@@ -645,13 +645,13 @@ EOF
 fi
 ok "Исходники: $SOURCE_DIR"
 
-XUI_PRESENT=0
+UISENTRY_PRESENT=0
 if systemctl is-active --quiet x-ui 2>/dev/null; then
     ok "Панель 3X-UI запущена (юнит x-ui)"
-    XUI_PRESENT=1
+    UISENTRY_PRESENT=1
 elif systemctl list-unit-files 2>/dev/null | grep -q '^x-ui\.service'; then
     warn "Юнит x-ui есть, но панель сейчас не запущена"
-    XUI_PRESENT=1
+    UISENTRY_PRESENT=1
 else
     warn "Юнит x-ui не найден — бот запустится, но следить за панелью не сможет"
 fi
@@ -716,6 +716,64 @@ fi
 # с другой основной группой): права на .env и unit Group= берём из неё.
 SERVICE_GROUP="$(id -gn "$SERVICE_USER" 2>/dev/null || printf '%s' "$SERVICE_USER")"
 
+# ------------------------------------------------- миграция старой установки
+
+migrate_legacy_install() {
+    # Старые имена (xui-monitor-bot). Переносим .env и базу, затем убираем
+    # старую службу/юниты/sudoers/обёртки, чтобы не осталось двух ботов.
+    local old_prefix="/opt/xui-monitor-bot"
+    local old_state="/var/lib/xui-monitor"
+    local old_user="xui-monitor"
+    local old_service="xui-monitor-bot"
+    [ -d "$old_prefix" ] || id "$old_user" >/dev/null 2>&1 || return 0
+    # Разрешаем и новый путь, и старый (если пользователь по привычке передал
+    # --prefix /opt/xui-monitor-bot): в обоих случаях .env и база переносятся.
+    if [ "$PREFIX" != "/opt/uisentry" ] && [ "$PREFIX" != "$old_prefix" ]; then
+        warn "Найдена старая установка $old_prefix, но путь $PREFIX нестандартный — миграцию пропускаю"
+        return 0
+    fi
+    info "Найдена старая установка $old_prefix — переношу конфиг и состояние"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable --now "$old_service" >/dev/null 2>&1 || true
+    fi
+    mkdir -p "$PREFIX" "$STATE_DIR"
+    if [ -f "$old_prefix/.env" ]; then
+        [ -f "$PREFIX/.env" ] || cp -a "$old_prefix/.env" "$PREFIX/.env"
+        # Пути состояния и обёртки — уже новые.
+        sed -i "s#^STATE_PATH=.*#STATE_PATH=$STATE_DIR/state.db#; \
+                s#^LOG_PATH=.*#LOG_PATH=$STATE_DIR/bot.log#; \
+                s#^SUDO_WRAPPER=.*#SUDO_WRAPPER=$WRAPPER_PATH#" "$PREFIX/.env" 2>/dev/null || true
+    fi
+    if [ -f "$old_state/state.db" ] && [ ! -f "$STATE_DIR/state.db" ]; then
+        cp -a "$old_state"/state.db* "$STATE_DIR/" 2>/dev/null || true
+        cp -a "$old_state"/bot.log* "$STATE_DIR/" 2>/dev/null || true
+    fi
+    chown -R "$SERVICE_USER":"${SERVICE_GROUP:-$SERVICE_USER}" "$STATE_DIR" 2>/dev/null || true
+    if [ -f "$PREFIX/.env" ]; then
+        chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$PREFIX/.env" 2>/dev/null || true
+        chmod 640 "$PREFIX/.env"
+    fi
+    rm -f "/etc/systemd/system/${old_service}.service" \
+        /etc/systemd/system/xui-monitor-apt-update.service \
+        /etc/systemd/system/xui-monitor-apt-upgrade.service \
+        /etc/systemd/system/xui-monitor-apt-phased.service \
+        /etc/systemd/system/xui-monitor-release-upgrade.service \
+        "/etc/sudoers.d/${old_service}" \
+        /usr/local/bin/xui-ctl /usr/local/bin/xui-menu \
+        "/etc/init.d/${old_service}"
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+    [ "$old_prefix" != "$PREFIX" ] && rm -rf "$old_prefix"
+    [ "$old_state" != "$STATE_DIR" ] && rm -rf "$old_state"
+    if id "$old_user" >/dev/null 2>&1; then
+        userdel "$old_user" >/dev/null 2>&1 || true
+    fi
+    ok "Старая установка перенесена и удалена"
+}
+
+migrate_legacy_install
+
 step "Настраиваем бота (.env)"
 
 ENV_FILE="$PREFIX/.env"
@@ -732,7 +790,7 @@ set_env() {
     printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.tmp"
     mv "$ENV_FILE.tmp" "$ENV_FILE"
     # umask установщика — 077: после mv .env стал бы root:root 600 и сервис
-    # (User=xui-monitor) не смог бы его прочитать при старте.
+    # (User=uisentry) не смог бы его прочитать при старте.
     chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE" 2>/dev/null || true
     chmod 640 "$ENV_FILE" 2>/dev/null || true
 }
@@ -845,7 +903,7 @@ fi
 
 if [ "$CONFIG_COMPLETE" -eq 1 ]; then
     ok "Файл .env уже есть — сохраняю ваши токены"
-    info "Изменить: sudo xui-menu (или nano $ENV_FILE)"
+    info "Изменить: sudo uisentry-menu (или nano $ENV_FILE)"
 else
     if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
         warn "В $ENV_FILE не всё заполнено — дозаполняю через мастер"
@@ -955,7 +1013,7 @@ else
     info "-tokenName monitor-bot -tokenScope node-sync (в v3 эта команда больше не создаёт токены)."
     question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
     if [ -z "$PANEL_TOKEN" ]; then
-        if [ "$XUI_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
+        if [ "$UISENTRY_PRESENT" -eq 1 ] && { [ "$ASSUME_YES" -eq 0 ] || [ -n "${ALLOW_TOKEN_GEN:-}" ]; }; then
             warn "Выпускаю токен monitor-bot (scope node-sync) в панели."
             warn "Внимание: если такой токен уже был, старый перестанет работать."
             PANEL_TOKEN="$(detect_panel_token || true)"
@@ -1043,7 +1101,7 @@ chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
-    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo xui-menu (или повторите установку)"
+    [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo uisentry-menu (или повторите установку)"
 done
 
 # Заглушка из .env.example: с ней бот стартует, но Telegram отвечает 401.
@@ -1067,12 +1125,12 @@ step "Копируем бота в $PREFIX"
 mkdir -p "$PREFIX"
 if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
     info "Исходники уже в $PREFIX — копирую поверх"
-    cp -a "$SOURCE_DIR/xui_monitor_bot/." "$PREFIX/xui_monitor_bot/"
+    cp -a "$SOURCE_DIR/uisentry/." "$PREFIX/uisentry/"
     cp -a "$SOURCE_DIR/install/." "$PREFIX/install/"
 else
-    cp -a "$SOURCE_DIR/xui_monitor_bot" "$SOURCE_DIR/install" "$PREFIX/"
+    cp -a "$SOURCE_DIR/uisentry" "$SOURCE_DIR/install" "$PREFIX/"
 fi
-# Копия установщика лежит рядом с ботом: `xui-menu update` берёт её локально
+# Копия установщика лежит рядом с ботом: `uisentry-menu update` берёт её локально
 # и обновляет сама себя при каждом запуске.
 cp -a "$SOURCE_DIR/install.sh" "$PREFIX/install.sh" 2>/dev/null || true
 cp -a "$SOURCE_DIR/requirements.txt" \
@@ -1124,10 +1182,10 @@ ok "Зависимости установлены"
 
 step "Настраиваем привилегированные операции (sudo-обёртка)"
 
-install -o root -g root -m 0755 "$PREFIX/install/xui-ctl" "$WRAPPER_PATH" \
+install -o root -g root -m 0755 "$PREFIX/install/uisentry-ctl" "$WRAPPER_PATH" \
     || fail "Не удалось поставить $WRAPPER_PATH"
-# Консольная панель для быстрых правок настроек (sudo xui-menu).
-install -o root -g root -m 0755 "$PREFIX/install/xui-menu" "$MENU_PATH" \
+# Консольная панель для быстрых правок настроек (sudo uisentry-menu).
+install -o root -g root -m 0755 "$PREFIX/install/uisentry-menu" "$MENU_PATH" \
     || fail "Не удалось поставить $MENU_PATH"
 
 # visudo лежит в sbin и не всегда в PATH у не-login root-сессии.
@@ -1228,11 +1286,11 @@ if [ "$INIT" = systemd ]; then
     UNIT_FILE="$UNIT_PATH"
     sed -e "s#^User=.*#User=${SERVICE_USER}#" \
         -e "s#^Group=.*#Group=${SERVICE_GROUP:-$SERVICE_USER}#" \
-        -e "s#/opt/xui-monitor-bot#${PREFIX}#g" \
-        -e "s#/usr/local/bin/xui-ctl#${WRAPPER_PATH}#g" \
-        -e "s#/var/lib/xui-monitor#${STATE_DIR}#g" \
+        -e "s#/opt/uisentry#${PREFIX}#g" \
+        -e "s#/usr/local/bin/uisentry-ctl#${WRAPPER_PATH}#g" \
+        -e "s#/var/lib/uisentry#${STATE_DIR}#g" \
         "$PREFIX/install/${SERVICE_NAME}.service" > "$UNIT_FILE"
-    if [ "$STATE_DIR" != "/var/lib/xui-monitor" ]; then
+    if [ "$STATE_DIR" != "/var/lib/uisentry" ]; then
         # StateDirectory умеет создавать только /var/lib/<name>; для своего
         # каталога его отключаем — каталог уже создан установщиком.
         sed -i "s#^StateDirectory=.*#\# StateDirectory отключён: каталог создан установщиком#" "$UNIT_FILE"
@@ -1243,10 +1301,10 @@ if [ "$INIT" = systemd ]; then
     # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
     # юнит с User=root запускается через systemctl и работает.
     for _pair in \
-        "xui-monitor-apt-update:_apt_update_worker:apt update" \
-        "xui-monitor-apt-upgrade:_apt_worker:apt full-upgrade" \
-        "xui-monitor-apt-phased:_apt_worker_phased:apt phased upgrade" \
-        "xui-monitor-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
+        "uisentry-apt-update:_apt_update_worker:apt update" \
+        "uisentry-apt-upgrade:_apt_worker:apt full-upgrade" \
+        "uisentry-apt-phased:_apt_worker_phased:apt phased upgrade" \
+        "uisentry-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
         _apt_unit="${_pair%%:*}"
         _rest="${_pair#*:}"
         _apt_worker="${_rest%%:*}"
@@ -1352,7 +1410,7 @@ PY="$PREFIX/.venv/bin/python"
 CFG_OK=0
 # .env НЕ подключаем через source: значения вроде COMMAND_ALLOWLIST содержат
 # пробелы, и оболочка приняла бы хвост значения за команду. Бот читает файл сам.
-if (cd "$PREFIX" && "$PY" -c 'from xui_monitor_bot.settings import load_settings; s = load_settings(); print(s.api_base, s.telegram_token[:6])' >/dev/null 2>&1); then
+if (cd "$PREFIX" && "$PY" -c 'from uisentry.settings import load_settings; s = load_settings(); print(s.api_base, s.telegram_token[:6])' >/dev/null 2>&1); then
     check_ok "Конфигурация читается ботом без ошибок"
     CFG_OK=1
 else
@@ -1379,7 +1437,7 @@ fi
 if [ "$CFG_OK" -eq 1 ]; then
     PANEL_API="$(
         cd "$PREFIX" || exit 1
-        "$PY" -c 'from xui_monitor_bot.settings import load_settings; print(load_settings().api_base)' 2>/dev/null || true
+        "$PY" -c 'from uisentry.settings import load_settings; print(load_settings().api_base)' 2>/dev/null || true
     )"
     PANEL_TOKEN_VALUE="$(env_get PANEL_API_TOKEN)"
     if [ -n "$PANEL_API" ] && [ -n "$PANEL_TOKEN_VALUE" ]; then
@@ -1428,8 +1486,8 @@ if [ "$CFG_OK" -eq 1 ]; then
     WRITE_OUT="$(
         cd "$PREFIX" || exit 1
         sudo -u "$SERVICE_USER" "$PY" -c '
-from xui_monitor_bot.settings import load_settings
-from xui_monitor_bot.storage import Storage
+from uisentry.settings import load_settings
+from uisentry.storage import Storage
 s = load_settings()
 db = Storage(s.state_path)
 db.audit("installer_selfcheck", telegram_id=None, ok=True, result="ok")
@@ -1520,7 +1578,7 @@ cat <<EOF
   Обновление бота:
     sudo bash install.sh --prefix ${PREFIX}
   Меню настроек:
-    sudo xui-menu            # правки настроек, рестарт, журнал, обновление
+    sudo uisentry-menu            # правки настроек, рестарт, журнал, обновление
 
   Удаление бота:
     sudo bash install.sh --uninstall

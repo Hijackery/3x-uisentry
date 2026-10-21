@@ -25,13 +25,13 @@ from telegram import (
 )
 from telegram.constants import ChatType
 
-from xui_monitor_bot import ui
-from xui_monitor_bot.app import MonitorBot
-from xui_monitor_bot.settings import BASE_DIR, ConfigError, Settings, load_settings
+from uisentry import ui
+from uisentry.app import MonitorBot
+from uisentry.settings import BASE_DIR, ConfigError, Settings, load_settings
 
 ADMIN_ID = 42
-UI_SRC = (BASE_DIR / "xui_monitor_bot" / "ui.py").read_text(encoding="utf-8")
-APP_SRC = (BASE_DIR / "xui_monitor_bot" / "app.py").read_text(encoding="utf-8")
+UI_SRC = (BASE_DIR / "uisentry" / "ui.py").read_text(encoding="utf-8")
+APP_SRC = (BASE_DIR / "uisentry" / "app.py").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------- статическая проверка
@@ -63,7 +63,7 @@ def test_every_button_callback_is_handled() -> None:
 
 def test_every_confirm_button_has_description() -> None:
     """Кнопка подтверждения без описания = «Неизвестное действие» у админа."""
-    from xui_monitor_bot.app import CONFIRM_DESCRIPTIONS
+    from uisentry.app import CONFIRM_DESCRIPTIONS
 
     for data in sorted(_all_callback_data()):
         if not data.startswith("ask:"):
@@ -294,7 +294,7 @@ def test_heavy_commands_are_rate_limited(bot_app: MonitorBot) -> None:
 
 def test_split_keeps_html_tags_whole() -> None:
     """Нарезка длинных сообщений не должна рвать теги Telegram."""
-    from xui_monitor_bot.app import _split
+    from uisentry.app import _split
 
     lines = [f"<b>Строка {i}</b> — значение {i}" for i in range(400)]
     text = "\n".join(lines)
@@ -313,7 +313,7 @@ def test_split_keeps_html_tags_whole() -> None:
 
 
 def test_split_short_text_is_untouched() -> None:
-    from xui_monitor_bot.app import _split
+    from uisentry.app import _split
 
     assert _split("короткий <b>текст</b>", 100) == ["короткий <b>текст</b>"]
 
@@ -359,7 +359,13 @@ def test_help_manual_explains_metrics() -> None:
     """Инструкция внутри бота должна объяснять метрики, а не только команды."""
     text = ui.render_help(True)
 
-    for marker in ("Сервисы", "Панель", "Подписки", "Что значат цифры", "xui-menu"):
+    for marker in (
+        "Сервисы",
+        "Панель",
+        "Подписки",
+        "Что значат цифры",
+        "uisentry-menu",
+    ):
         assert marker in text, marker
     assert "/services" in text
     assert len(text) < 4000, "помощь должна укладываться в одно сообщение Telegram"
@@ -403,7 +409,7 @@ def test_help_is_a_full_presentational_manual() -> None:
 
 
 def test_apt_status_header_is_parsed() -> None:
-    from xui_monitor_bot.app import _parse_apt_status
+    from uisentry.app import _parse_apt_status
 
     fields, tail = _parse_apt_status(
         "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"

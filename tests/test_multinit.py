@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from xui_monitor_bot.settings import BASE_DIR
+from uisentry.settings import BASE_DIR
 
-WRAPPER = BASE_DIR / "install" / "xui-ctl"
-INIT_TEMPLATE = BASE_DIR / "install" / "xui-monitor-bot.init"
+WRAPPER = BASE_DIR / "install" / "uisentry-ctl"
+INIT_TEMPLATE = BASE_DIR / "install" / "uisentry-bot.init"
 INSTALL_SH = BASE_DIR / "install.sh"
 
 pytestmark = pytest.mark.skipif(
@@ -169,7 +169,7 @@ async def test_service_metrics_degrade_without_systemd(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Без systemd бот не падает: он честно сообщает, что метрик служб нет."""
-    from xui_monitor_bot.collectors import services as services_module
+    from uisentry.collectors import services as services_module
 
     monkeypatch.setattr(shutil, "which", lambda _name: None)
     collector = services_module.ServiceCollector(("x-ui",))

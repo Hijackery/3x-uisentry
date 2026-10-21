@@ -1,4 +1,4 @@
-"""Точка входа: ``python -m xui_monitor_bot``."""
+"""Точка входа: ``python -m uisentry``."""
 
 from __future__ import annotations
 

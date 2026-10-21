@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from xui_monitor_bot.settings import Settings
-from xui_monitor_bot.storage import Storage
+from uisentry.settings import Settings
+from uisentry.storage import Storage
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def make_settings(tmp_path: Path) -> Callable[..., Settings]:
             "panel_timeout": 5.0,
             "panel_base_path": "",
             "services": ("x-ui",),
-            "sudo_wrapper": "/usr/local/bin/xui-ctl",
+            "sudo_wrapper": "/usr/local/bin/uisentry-ctl",
             "command_allowlist": ("free -h",),
             "check_interval": 60,
             "action_cooldown": 0,

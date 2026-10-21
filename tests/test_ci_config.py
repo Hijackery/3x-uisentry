@@ -6,7 +6,7 @@ CI перестаёт что-либо гарантировать.
 
 from __future__ import annotations
 
-from xui_monitor_bot.settings import BASE_DIR
+from uisentry.settings import BASE_DIR
 
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "ci.yml"
 
@@ -30,9 +30,9 @@ def test_ci_checks_install_scripts() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     for command in (
         "bash -n install.sh",
-        "bash -n install/xui-ctl",
-        "shellcheck install.sh install/xui-ctl",
-        "visudo -cf install/xui-monitor-sudoers",
+        "bash -n install/uisentry-ctl",
+        "shellcheck install.sh install/uisentry-ctl",
+        "visudo -cf install/uisentry-sudoers",
     ):
         assert command in text, f"CI не проверяет: {command}"
 

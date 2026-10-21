@@ -5,7 +5,7 @@
 ## Поддерживаемые версии
 
 Релизы (теги) не публикуются: актуальная и единственная поддерживаемая версия —
-ветка `main`. Ставьте её командой из README, обновляйтесь через `sudo xui-menu`
+ветка `main`. Ставьте её командой из README, обновляйтесь через `sudo uisentry-menu`
 (пункт 11) и не забывайте, что GitHub отдаёт ветку из кэша пару минут.
 
 ## Как сообщить об уязвимости
@@ -19,9 +19,9 @@
 
 ## Модель безопасности (что уже защищено)
 
-- Сервис работает непривилегированным пользователем `xui-monitor`; код и venv
-  принадлежат `root`, `.env` — `640 root:xui-monitor`.
-- Привилегированные операции — только через `/usr/local/bin/xui-ctl` и узкий
+- Сервис работает непривилегированным пользователем `uisentry`; код и venv
+  принадлежат `root`, `.env` — `640 root:uisentry`.
+- Привилегированные операции — только через `/usr/local/bin/uisentry-ctl` и узкий
   sudoers-список: 9 фиксированных подкоманд, аргументы проверяются (`safe_unit`,
   `safe_int`, запрет лишних аргументов). Произвольного shell нет: `run_command`
   — шесть литералов из белого списка, запуск через `exec "$@"` без `bash -c`.
@@ -49,7 +49,7 @@
 
 **Supported version:** there are no published releases; the single supported
 version is the `main` branch. Install it with the command from the README and
-update via `sudo xui-menu` (item 11).
+update via `sudo uisentry-menu` (item 11).
 
 **Reporting:** use GitHub Security Advisories (“Security” → “Report a
 vulnerability”) or email the repository owner — do not open a public issue.
@@ -58,7 +58,7 @@ logs with **tokens and IDs masked** (never share `.env`). We acknowledge reports
 within 72 hours.
 
 **Already protected:** unprivileged service user, code owned by root, `.env` with
-`640 root:xui-monitor`; privileged operations only through `xui-ctl` with a narrow
+`640 root:uisentry`; privileged operations only through `uisentry-ctl` with a narrow
 sudoers allowlist and argument validation (no arbitrary shell); confirmations,
 cooldowns and an audit log for dangerous actions; commands accepted only in the
 administrator's private chat with denials logged; secrets masked out of logs and

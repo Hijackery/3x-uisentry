@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from xui_monitor_bot.models import SystemMetrics
-from xui_monitor_bot.storage import Storage
+from uisentry.models import SystemMetrics
+from uisentry.storage import Storage
 
 
 def make_metrics(cpu: float, mem: float, *, ts: float) -> SystemMetrics:

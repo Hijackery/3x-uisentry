@@ -12,7 +12,7 @@ from io import StringIO
 
 import pytest
 
-from xui_monitor_bot.app import _mask_id, _ScrubbingFormatter
+from uisentry.app import _mask_id, _ScrubbingFormatter
 
 BOT_TOKEN = "123456789:AASECRETvalue1234567890"
 PANEL_TOKEN = "panel-secret-token-1234"

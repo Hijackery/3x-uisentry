@@ -8,15 +8,15 @@ from collections.abc import Callable
 
 import pytest
 
-from xui_monitor_bot.actions import (
+from uisentry.actions import (
     ACTION_REBOOT,
     ACTION_RESTART_SERVICE,
     ActionError,
     ActionManager,
 )
-from xui_monitor_bot.collectors.panel import PanelClient
-from xui_monitor_bot.models import CommandResult
-from xui_monitor_bot.settings import Settings
+from uisentry.collectors.panel import PanelClient
+from uisentry.models import CommandResult
+from uisentry.settings import Settings
 
 
 def ok_result(action: str = "test") -> CommandResult:
@@ -44,7 +44,7 @@ def fake_runner(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
         calls.append(argv)
         return ok_result(argv[1] if len(argv) > 1 else "test")
 
-    monkeypatch.setattr("xui_monitor_bot.actions.run_command", _run)
+    monkeypatch.setattr("uisentry.actions.run_command", _run)
     return calls
 
 
@@ -115,25 +115,27 @@ async def test_cooldown_blocks_repeated_action(
         await actions.restart_service("x-ui")
 
     assert calls == [
-        ["sudo", "-n", "--", "/usr/local/bin/xui-ctl", "restart_service", "x-ui"]
+        ["sudo", "-n", "--", "/usr/local/bin/uisentry-ctl", "restart_service", "x-ui"]
     ]
 
 
 async def test_wrapper_argv_and_custom_prefix(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    actions = manager(make_settings, sudo_wrapper="/opt/xui-ctl")
+    actions = manager(make_settings, sudo_wrapper="/opt/uisentry-ctl")
     calls = fake_runner(monkeypatch)
     result = await actions.restart_service("x-ui")
 
-    assert calls == [["sudo", "-n", "--", "/opt/xui-ctl", "restart_service", "x-ui"]]
+    assert calls == [
+        ["sudo", "-n", "--", "/opt/uisentry-ctl", "restart_service", "x-ui"]
+    ]
     assert result.ok
 
 
 async def test_allowlisted_command_is_one_argv_element(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sudo-правило разрешает ``xui-ctl run_command *``, поэтому команда с
+    """sudo-правило разрешает ``uisentry-ctl run_command *``, поэтому команда с
     пробелами должна приходить одним аргументом, а не распыляться по argv."""
     actions = manager(make_settings, command_allowlist=("journalctl --disk-usage",))
     calls = fake_runner(monkeypatch)
@@ -144,7 +146,7 @@ async def test_allowlisted_command_is_one_argv_element(
             "sudo",
             "-n",
             "--",
-            "/usr/local/bin/xui-ctl",
+            "/usr/local/bin/uisentry-ctl",
             "run_command",
             "journalctl_--disk-usage",
         ]
@@ -188,14 +190,14 @@ async def test_journal_goes_through_privileged_wrapper(
         "sudo",
         "-n",
         "--",
-        "/usr/local/bin/xui-ctl",
+        "/usr/local/bin/uisentry-ctl",
         "journal",
     ]
     assert calls[0] == [
         "sudo",
         "-n",
         "--",
-        "/usr/local/bin/xui-ctl",
+        "/usr/local/bin/uisentry-ctl",
         "journal",
         "x-ui",
     ]  # без аргумента-числа
@@ -245,11 +247,9 @@ async def test_restart_xray_goes_through_panel_api(
         return None
 
     monkeypatch.setattr(
-        "xui_monitor_bot.collectors.panel.PanelClient.restart_xray", fake_restart
+        "uisentry.collectors.panel.PanelClient.restart_xray", fake_restart
     )
-    monkeypatch.setattr(
-        "xui_monitor_bot.collectors.panel.PanelClient.close", fake_close
-    )
+    monkeypatch.setattr("uisentry.collectors.panel.PanelClient.close", fake_close)
 
     result = await actions.restart_xray()
     assert called
@@ -261,7 +261,7 @@ async def test_apt_status_uses_exact_kind(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Статус запрашивается точной подкомандой: в sudoers нет шаблонов."""
-    from xui_monitor_bot.actions import ACTION_UPGRADE
+    from uisentry.actions import ACTION_UPGRADE
 
     actions = manager(make_settings)
     calls = fake_runner(monkeypatch)
@@ -272,7 +272,7 @@ async def test_apt_status_uses_exact_kind(
             "sudo",
             "-n",
             "--",
-            "/usr/local/bin/xui-ctl",
+            "/usr/local/bin/uisentry-ctl",
             "apt_status",
             "upgrade",
         ]

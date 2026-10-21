@@ -1,4 +1,4 @@
-"""Консольная панель `xui-menu`: показ настроек, проверки, белый список.
+"""Консольная панель `uisentry-menu`: показ настроек, проверки, белый список.
 
 Меню — точка, где админ правит `.env` руками терминала, поэтому проверяем
 и маскировку секретов, и отказы на «мусорные» значения, и совпадение списка
@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from xui_monitor_bot.settings import BASE_DIR
+from uisentry.settings import BASE_DIR
 
-MENU = BASE_DIR / "install" / "xui-menu"
+MENU = BASE_DIR / "install" / "uisentry-menu"
 ENV_EXAMPLE = BASE_DIR / ".env.example"
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="нужен bash")
@@ -154,7 +154,7 @@ def test_show_masks_short_secret_entirely(tmp_path: Path) -> None:
 
 
 def test_check_masks_secret_values() -> None:
-    """`xui-menu check TELEGRAM_BOT_TOKEN <токен>` не должен печатать токен."""
+    """`uisentry-menu check TELEGRAM_BOT_TOKEN <токен>` не должен печатать токен."""
     result = _run("check", "TELEGRAM_BOT_TOKEN", "123456789:AASECRETvalue1234567890")
 
     assert result.returncode == 0, result.stderr

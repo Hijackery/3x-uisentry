@@ -691,7 +691,7 @@ def confirm_menu(action: str, token: str) -> InlineKeyboardMarkup:
 def render_help(is_admin: bool) -> str:
     """Полная инструкция простыми словами: разделы, действия, настройки."""
     lines_out = [
-        "🛰 <b>Бот мониторинга 3X-UI</b>",
+        "🛰 <b>3X-UI Sentry</b>",
         "Следит за сервером и панелью и пишет, когда что-то сломалось. "
         "Всё управление — кнопками; команды можно не помнить.",
         "",
@@ -750,7 +750,7 @@ def render_help(is_admin: bool) -> str:
         "• Бот работает от отдельного пользователя, привилегии — через узкий "
         "sudoers-список точных команд.",
         "",
-        "⚙️ <b>Настройки</b> — в терминале сервера: <code>sudo xui-menu</code>.",
+        "⚙️ <b>Настройки</b> — в терминале сервера: <code>sudo uisentry-menu</code>.",
         "Там токены, адрес панели и webBasePath, пороги, службы, уровень логов, "
         "рестарт, журнал, обновление и удаление. Меню показывает состояние службы "
         "и маскирует секреты.",
@@ -762,9 +762,9 @@ def render_help(is_admin: bool) -> str:
         "<code>node-sync</code> или <code>admin</code>.",
         "4. Ошибка 404 на API — почти всегда лишний <code>/panel</code> в "
         "webBasePath: там должно быть значение из «URL панели» (обычно пусто).",
-        "5. Журнал бота: <code>journalctl -u xui-monitor-bot -n 50</code>.",
+        "5. Журнал бота: <code>journalctl -u uisentry-bot -n 50</code>.",
         "",
-        "Подробная документация: github.com/Hijackery/xui-monitor-bot",
+        "Подробная документация: github.com/Hijackery/3x-uisentry",
     ]
     if not is_admin:
         return (

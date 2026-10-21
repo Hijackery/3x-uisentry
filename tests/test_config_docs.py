@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from xui_monitor_bot.settings import BASE_DIR, ConfigError, load_settings
+from uisentry.settings import BASE_DIR, ConfigError, load_settings
 
 ENV_EXAMPLE = BASE_DIR / ".env.example"
-SETTINGS_PY = BASE_DIR / "xui_monitor_bot" / "settings.py"
+SETTINGS_PY = BASE_DIR / "uisentry" / "settings.py"
 README = BASE_DIR / "README.md"
-XUI_CTL = BASE_DIR / "install" / "xui-ctl"
+XUI_CTL = BASE_DIR / "install" / "uisentry-ctl"
 
 
 def _example_keys() -> set[str]:
@@ -76,7 +76,7 @@ def test_filled_example_passes_validation(tmp_path: Path) -> None:
     assert settings.admin_ids == (42,)
     assert settings.services == ("x-ui", "fail2ban")
     # Каталог состояния по умолчанию — вне каталога с кодом.
-    assert str(settings.state_path) == "/var/lib/xui-monitor/state.db"
+    assert str(settings.state_path) == "/var/lib/uisentry/state.db"
 
 
 def test_example_placeholder_token_is_rejected(tmp_path: Path) -> None:
@@ -139,7 +139,7 @@ def test_command_allowlist_matches_wrapper_whitelist() -> None:
     )
     unknown = sorted(command for command in configured if command not in wrapper)
     assert not unknown, (
-        f"COMMAND_ALLOWLIST разрешает то, что xui-ctl запрещает: {unknown}"
+        f"COMMAND_ALLOWLIST разрешает то, что uisentry-ctl запрещает: {unknown}"
     )
 
 
@@ -148,8 +148,8 @@ def test_wrapper_subcommands_match_sudoers() -> None:
 
     Иначе бот получает «sudo: command not allowed» вместо ожидаемой ошибки.
     """
-    sudoers = (BASE_DIR / "install" / "xui-monitor-sudoers").read_text(encoding="utf-8")
-    allowed = set(re.findall(r"xui-ctl (\w+)", sudoers))
+    sudoers = (BASE_DIR / "install" / "uisentry-sudoers").read_text(encoding="utf-8")
+    allowed = set(re.findall(r"uisentry-ctl (\w+)", sudoers))
     subcommands = set(
         re.findall(r"^    (\w+)\)$", XUI_CTL.read_text(encoding="utf-8"), re.M)
     )
@@ -180,5 +180,5 @@ def test_every_safe_command_has_a_wrapper_mapping() -> None:
         key = command.replace(" ", "_")
         if f'"{key}"' not in wrapper and f'"{command}"' not in wrapper:
             missing.append(command)
-    assert not missing, f"нет ветки в xui-ctl run_command: {missing}"
+    assert not missing, f"нет ветки в uisentry-ctl run_command: {missing}"
     assert len(commands) >= 20

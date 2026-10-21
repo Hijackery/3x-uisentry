@@ -18,15 +18,15 @@ import httpx
 import pytest
 from telegram.error import RetryAfter
 
-from xui_monitor_bot import ui
-from xui_monitor_bot.actions import ActionError, ActionManager
-from xui_monitor_bot.alerts import Finding, Rule
-from xui_monitor_bot.app import _send_with_retry
-from xui_monitor_bot.collectors.panel import PanelClient
-from xui_monitor_bot.command import run_command
-from xui_monitor_bot.models import CommandResult, Severity, SystemMetrics
-from xui_monitor_bot.settings import ConfigError, Settings, load_settings
-from xui_monitor_bot.storage import Storage, StorageError
+from uisentry import ui
+from uisentry.actions import ActionError, ActionManager
+from uisentry.alerts import Finding, Rule
+from uisentry.app import _send_with_retry
+from uisentry.collectors.panel import PanelClient
+from uisentry.command import run_command
+from uisentry.models import CommandResult, Severity, SystemMetrics
+from uisentry.settings import ConfigError, Settings, load_settings
+from uisentry.storage import Storage, StorageError
 
 # ------------------------------------------------------ подтверждения
 
@@ -69,7 +69,7 @@ async def test_restart_xray_respects_cooldown(
         async def close(self) -> None:
             return None
 
-    monkeypatch.setattr("xui_monitor_bot.actions.PanelClient", FakePanel)
+    monkeypatch.setattr("uisentry.actions.PanelClient", FakePanel)
     actions = ActionManager(make_settings(action_cooldown=3600))
 
     await actions.restart_xray()
@@ -96,7 +96,7 @@ async def test_command_uses_configured_timeout(
             duration=0.0,
         )
 
-    monkeypatch.setattr("xui_monitor_bot.actions.run_command", fake_run)
+    monkeypatch.setattr("uisentry.actions.run_command", fake_run)
     actions = ActionManager(
         make_settings(command_allowlist=("free -h",), command_timeout=42)
     )
@@ -322,10 +322,10 @@ def test_nonstandard_bot_api_is_warned(
     make_settings: Callable[..., Settings], caplog: pytest.LogCaptureFixture
 ) -> None:
     """Подменённый TELEGRAM_API_URL уводит токен бота — это должно быть видно."""
-    from xui_monitor_bot.app import _warn_on_unusual_api
+    from uisentry.app import _warn_on_unusual_api
 
     settings = make_settings(telegram_api_url="http://127.0.0.1:8081")
-    with caplog.at_level(logging.WARNING, logger="xui_monitor_bot.app"):
+    with caplog.at_level(logging.WARNING, logger="uisentry.app"):
         _warn_on_unusual_api(settings)
 
     assert "неофициальный Bot API" in caplog.text
@@ -334,9 +334,9 @@ def test_nonstandard_bot_api_is_warned(
 def test_official_bot_api_is_not_warned(
     make_settings: Callable[..., Settings], caplog: pytest.LogCaptureFixture
 ) -> None:
-    from xui_monitor_bot.app import _warn_on_unusual_api
+    from uisentry.app import _warn_on_unusual_api
 
-    with caplog.at_level(logging.WARNING, logger="xui_monitor_bot.app"):
+    with caplog.at_level(logging.WARNING, logger="uisentry.app"):
         _warn_on_unusual_api(make_settings())
 
     assert "неофициальный" not in caplog.text
@@ -364,13 +364,13 @@ async def test_phased_upgrade_goes_through_privileged_wrapper(
             duration=0.0,
         )
 
-    monkeypatch.setattr("xui_monitor_bot.actions.run_command", fake_run)
+    monkeypatch.setattr("uisentry.actions.run_command", fake_run)
     actions = ActionManager(make_settings())
 
     await actions.apt_upgrade_phased()
 
     assert seen[0][0] == "sudo"
-    assert seen[0][3] == "/usr/local/bin/xui-ctl"
+    assert seen[0][3] == "/usr/local/bin/uisentry-ctl"
     assert seen[0][4] == "apt_upgrade_phased"
 
 
@@ -455,7 +455,7 @@ def test_alert_actions_offer_restart_for_service_finding(
     make_settings: Callable[..., Settings],
 ) -> None:
     """Сигнал без действия заставляет ночью искать раздел руками."""
-    from xui_monitor_bot.app import _alert_actions
+    from uisentry.app import _alert_actions
 
     finding = Finding(
         rule=Rule.service,
@@ -592,12 +592,12 @@ def test_repeated_collector_errors_are_logged_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Пропавший /proc/stat раньше писал полный трейсбек каждую минуту."""
-    from xui_monitor_bot import monitor as monitor_module
+    from uisentry import monitor as monitor_module
 
     monitor_module._LOGGED_ERRORS.clear()
     error = FileNotFoundError("[Errno 2] No such file or directory: '/proc/stat'")
 
-    with caplog.at_level(logging.DEBUG, logger="xui_monitor_bot.monitor"):
+    with caplog.at_level(logging.DEBUG, logger="uisentry.monitor"):
         for _ in range(3):
             monitor_module._log_collector_error(
                 "metrics", "Не удалось снять системные метрики", error
@@ -609,7 +609,7 @@ def test_repeated_collector_errors_are_logged_once(
 
 def test_proc_stat_error_gets_a_hint() -> None:
     """Пользователь должен сразу понять, что дело в юните службы."""
-    from xui_monitor_bot.monitor import _proc_hint
+    from uisentry.monitor import _proc_hint
 
     hint = _proc_hint(
         FileNotFoundError("[Errno 2] No such file or directory: '/proc/stat'")
@@ -633,7 +633,7 @@ def test_proc_stat_error_gets_a_hint() -> None:
 )
 def test_token_hint_matches_panel_version(version: str, expected: str) -> None:
     """Интерфейс v3 и 2.x отличается: подсказка должна соответствовать версии."""
-    from xui_monitor_bot.hints import UNKNOWN_PANEL_HINT, panel_token_hint
+    from uisentry.hints import UNKNOWN_PANEL_HINT, panel_token_hint
 
     hint = panel_token_hint(version)
     if version in ("", "неизвестно"):

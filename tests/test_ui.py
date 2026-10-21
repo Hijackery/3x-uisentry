@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from xui_monitor_bot import ui
-from xui_monitor_bot.models import (
+from uisentry import ui
+from uisentry.models import (
     InboundSummary,
     MonitorSnapshot,
     PanelHealth,
@@ -13,7 +13,7 @@ from xui_monitor_bot.models import (
     Subscription,
     SystemMetrics,
 )
-from xui_monitor_bot.settings import Settings
+from uisentry.settings import Settings
 
 
 def metrics() -> SystemMetrics:

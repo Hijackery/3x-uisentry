@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from xui_monitor_bot.settings import ConfigError, load_settings
+from uisentry.settings import ConfigError, load_settings
 
 BASE_ENV = {
     "TELEGRAM_BOT_TOKEN": "123:ABC",
