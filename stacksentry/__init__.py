@@ -1,4 +1,4 @@
-"""Мониторинг-бот для панели 3X-UI и её сервера."""
+"""StackSentry — мониторинг сервера, панелей и VPN-стека в Telegram."""
 
 from __future__ import annotations
 

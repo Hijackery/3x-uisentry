@@ -4,37 +4,51 @@
 > технические идентификаторы `stacksentry`/`stacksentry-*` сохранены для совместимости.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+[![Release](https://img.shields.io/github/v/release/Hijackery/stacksentry)](https://github.com/Hijackery/stacksentry/releases)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 **Русский** · [English](README.en.md)
 
-**StackSentry** — Telegram-бот для VPS: следит за железом, службами, панелями (3X-UI, S-UI,
-Marzban, Hiddify) и VPN (WireGuard, OpenVPN, AmneziaWG, sing-box, Xray,
-Shadowsocks, Tailscale), присылает понятные алерты и показывает подписки. Опасные действия —
-рестарт, обновление системы, перезагрузка — только по кнопке с подтверждением и
-только администратору.
+**StackSentry** — Telegram-бот для VPS: следит за железом, службами, панелями
+(3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline) и VPN
+(WireGuard, OpenVPN, AmneziaWG, sing-box, Xray, Shadowsocks, Tailscale),
+присылает понятные алерты и показывает подписки. Опасные действия — рестарт,
+обновление системы, перезагрузка — только по кнопке с подтверждением и только
+администратору.
 
-Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
+Текущая версия — **1.0.0**. Проект публичный: [релизы](https://github.com/Hijackery/stacksentry/releases),
+[документация](docs/README.md), [политика безопасности](SECURITY.md).
 
-```bash
-gh api repos/Hijackery/stacksentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
-sudo bash /tmp/stacksentry-install.sh
-```
-
-Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
-
-```bash
-GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
-```
-
-Когда репозиторий станет публичным, снова заработает короткая форма:
+Установка одной командой:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
+```
+
+Для продакшена ставьте тег, а не `main`:
+
+```bash
+sudo bash install.sh --ref v1.0.0
+```
+
+Альтернативы без `curl | bash`:
+
+```bash
+# скачать и проверить установщик отдельно
+curl -fsSLo /tmp/stacksentry-install.sh \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# GitHub CLI
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# приватный форк или корпоративный GitHub — с токеном
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 > Одна команда: мастер сам скачает код, спросит токены, поставит зависимости,
@@ -54,8 +68,10 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/ins
 10. [Безопасность](#безопасность)
 11. [Обновление и удаление](#обновление-и-удаление)
 12. [Если что-то не работает](#если-что-то-не-работает)
-13. [Разработка](#разработка)
-14. [Проект](#проект)
+13. [Документация](#документация)
+14. [Версии и релизы](#версии-и-релизы)
+15. [Разработка](#разработка)
+16. [Проект](#проект)
 
 ---
 
@@ -113,7 +129,8 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 | **Службы** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
 | **Пакеты** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` — определяются автоматически |
 | **Python** | 3.10 и новее; установщик подбирает интерпретатор сам |
-| **Панель** | API 3X-UI 2.x/3.x; остальные панели/VPN — детект и мониторинг службы/порта/процесса |
+| **Панели** | API: 3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline. Остальные VPN/прокси — детект и мониторинг службы/порта/процесса |
+| **Рестарт ядра** | 3X-UI, Marzban, Marzneshin, PasarGuard, S-UI — через API; Remnawave/Hiddify/Outline — только служба/контейнер |
 | **sudo** | классический sudo и `sudo-rs` (Ubuntu 26.04+): правила генерируются без шаблонов и алиасов |
 | **Архитектуры** | x86_64, ARM — всё, где есть Python и поддерживаемая инициализация |
 
@@ -125,33 +142,43 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 
 ### 1. Что понадобится
 
-- сервер с Linux и панелью 3X-UI;
+- сервер с Linux (любой поддерживаемый дистрибутив) и, по желанию, панелью;
 - токен Telegram-бота от [@BotFather](https://t.me/BotFather);
 - ваш numeric ID (например, [@userinfobot](https://t.me/userinfobot));
-- API-токен панели со scope `node-sync` или `admin` — о нём
-  [следующий раздел](#подключение-к-панели).
+- доступ к панели: токен (3X-UI/Remnawave/S-UI/Hiddify), логин/пароль
+  (Marzban/Marzneshin/PasarGuard) или секретный путь (Outline). Полная матрица —
+  в [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ### 2. Установка
 
-Репозиторий пока **приватный** (продукт в разработке). Установка с GitHub CLI:
-
-```bash
-gh api repos/Hijackery/stacksentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
-sudo bash /tmp/stacksentry-install.sh
-```
-
-Или с токеном (`GH_TOKEN`/`GITHUB_TOKEN`):
-
-```bash
-GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
-```
-
-Когда репозиторий станет публичным, снова заработает короткая форма:
+Установка одной командой:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
+```
+
+Для продакшена ставьте тег, а не `main`:
+
+```bash
+sudo bash install.sh --ref v1.0.0
+```
+
+Альтернативы без `curl | bash`:
+
+```bash
+# скачать и проверить установщик отдельно
+curl -fsSLo /tmp/stacksentry-install.sh \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# GitHub CLI
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# приватный форк или корпоративный GitHub — с токеном
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Или через пайп (так можно с `sudo`):
@@ -234,11 +261,12 @@ sudo env \
 
 Установщик, меню и бот подстраиваются под сервер. Мастер определяет ОС,
 пакетный менеджер, службы и тип панели, затем спрашивает только нужное:
-токен для 3X-UI/Remnawave/S-UI/Hiddify или логин/пароль для Marzban, с
-проверкой API. `stacksentry-menu detect` показывает найденное, в меню есть
-пункт «Тип панели», а рестарт ядра сам выбирает endpoint. Главное меню бота
-не показывает «Трафик»/«Подписки», пока API не настроен, и скрывает
-apt-обновления на не-Debian системах.
+токен для 3X-UI/Remnawave/S-UI/Hiddify, логин/пароль для
+Marzban/Marzneshin/PasarGuard или секретный путь для Outline, с проверкой API.
+`stacksentry-menu detect` показывает найденное, в меню есть пункт «Тип панели»,
+а рестарт ядра сам выбирает endpoint. Главное меню бота не показывает
+«Трафик»/«Подписки», пока API не настроен, и показывает команды обновления для
+фактического пакетного менеджера (APT-специфичные — только на APT).
 
 ### Что детектируется
 
@@ -250,15 +278,15 @@ NetBird, Headscale, Nebula.
 
 Определение — по юнитам (systemd/OpenRC/SysV), путям конфигов и именам
 процессов (`ps`). API-интеграция есть у 3X-UI (inbound'ы, подписки, рестарт
-xray), Marzban, Remnawave, S-UI и Hiddify (пользователи/клиенты, трафик);
-остальные показываются как службы/порты и честно помечаются «API не
-поддерживается». Docker-контейнеры видны как служба `docker`, но не
+xray), Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify и Outline
+(пользователи/клиенты, трафик); остальные показываются как службы/порты и
+честно помечаются «API не поддерживается». Docker-контейнеры видны как служба `docker`, но не
 опрашиваются через Docker API (это дало бы боту root-эквивалентные права).
 
-### Если 3X-UI нет: monitor-only
+### Если панели нет: monitor-only
 
-Установщик сам находит панели/VPN по службам, путям и портам. Если 3X-UI не
-найден, можно оставить `PANEL_URL` и `PANEL_API_TOKEN` пустыми — бот будет
+Установщик сам находит панели/VPN по службам, путям и портам. Если поддерживаемая
+панель не найдена, можно оставить `PANEL_URL` и `PANEL_API_TOKEN` пустыми — бот будет
 наблюдать службы, VPN-стек, железо и алерты, а разделы панели/подписок честно
 скажут, что API не настроен. Позже включить API: `sudo stacksentry-menu` →
 адрес панели и токен (или переустановка с `--panel`).
@@ -359,15 +387,17 @@ Telegram  ⇄  бот (непривилегированный пользоват
 | Команда | Что показывает |
 |---|---|
 | `/status` | вердикт одной строкой, замечания, метрики, службы и панель |
-| `/traffic` | итоги по inbound'ам и топ клиентов по трафику |
+| `/traffic` | трафик: inbound'ы/клиенты или пользователи панели |
 | `/services` | состояние служб; рестарт и журнал рядом |
-| `/panel` | доступность панели и xray, версии, обновления |
+| `/panel` | доступность панели и API, версия и обновления |
 | `/subs` | подписки: сроки, трафик, исчерпанные и отключённые |
 | `/history` | почасовые средние CPU/RAM/диска за сутки |
 | `/logs` | журнал выбранного сервиса, фильтр «только ошибки» |
 | `/audit` | журнал действий бота, фильтры «отказы / действия» |
-| `/maint` | обслуживание: `apt`, релиз-обновление, перезагрузка, команда из allowlist |
+| `/stack` | что найдено на сервере: панели, VPN, прокси, службы |
+| `/maint` | обслуживание: обновления пакетов, перезагрузка, команда из allowlist |
 | `/run <команда>` | выполнить диагностическую команду из белого списка |
+| `/version` | версия StackSentry, Python, ОС, пакетный менеджер и панель |
 | `/help` | помощь простыми словами: что нажать и что значат цифры |
 
 Кнопки дублируют команды; на каждом экране есть «🏠 В меню», так что в тупике
@@ -380,12 +410,12 @@ Telegram  ⇄  бот (непривилегированный пользоват
 Разрешены только безопасные диагностические команды из `COMMAND_ALLOWLIST`;
 список покажет `/run` без аргументов. Произвольный shell недоступен.
 
-**Обновления в `/maint` разделены и отчитываются в чат.** `apt update` обновляет
-индексы и показывает, какие пакеты доступны к обновлению; `full-upgrade` ставит все пакеты; `phased` разрешает
-phased-обновления Ubuntu; «запустить релиз» — это `do-release-upgrade`, который
-сначала сам проверяет новую версию ОС и сообщает, если её нет. Это разные вещи:
-`apt update` не проверяет новую версию ОС. Все фоновые задачи бот ведёт сам: когда
-systemd-юнит завершится, в чат придёт код возврата и хвост журнала — вводить
+**Обновления в `/maint` разделены и отчитываются в чат.** Кнопка обновления
+индексов вызывает команду фактического пакетного менеджера (`apt update`,
+`dnf makecache`, `pacman -Sy` и т. п.); кнопка обновления системы — его штатный
+upgrade/full-upgrade. `phased` и «запустить релиз» (`do-release-upgrade`) —
+только APT/Ubuntu и на других системах скрыты. Все фоновые задачи бот ведёт сам:
+когда юнит завершится, в чат придёт код возврата и хвост журнала — вводить
 `journalctl` не нужно. Одно действие — одно сообщение: «в очереди» → «запущено» →
 отчёт, без вереницы. Вручную журнал смотреть так: `sudo stacksentry-menu apt-logs`.
 
@@ -439,7 +469,7 @@ stacksentry-menu check PANEL_TIMEOUT 20   # проверка без измене
 sudo stacksentry-menu set PANEL_TIMEOUT 20
 sudo stacksentry-menu restart       # применить
 sudo stacksentry-menu detect        # что найдено: ОС, панели, VPN, службы
-sudo stacksentry-menu restart-xray  # перезапустить ядро панели (3X-UI/Marzban/S-UI)
+sudo stacksentry-menu restart-xray  # перезапустить ядро (где поддерживается)
 sudo stacksentry-menu apt-logs 100  # журнал фоновых apt-обновлений
 sudo stacksentry-menu logs 100
 ```
@@ -725,7 +755,7 @@ Caddy/Nginx с TLS перед `127.0.0.1:8788`.
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 
 # то же из меню
-sudo stacksentry-menu          # пункт 21
+sudo stacksentry-menu          # пункт 24
 
 # удалить целиком: служба, sudoers, обёртка, меню, код, база и пользователь
 sudo bash install.sh --uninstall
@@ -763,6 +793,28 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 
 Больше — в [SECURITY.md](SECURITY.md) и [CHANGELOG.md](CHANGELOG.md).
 
+## Документация
+
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — ОС, init, пакеты, панели, протоколы, рестарт.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — компоненты, поток данных, безопасность, расширение.
+- [docs/RELEASING.md](docs/RELEASING.md) — версии, теги, релизы и откат.
+- [ROADMAP.md](ROADMAP.md) — направления развития.
+- [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
+- [SECURITY.md](SECURITY.md) — политика и модель безопасности.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — сборка, проверки, PR.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
+- [CHANGELOG.md](CHANGELOG.md) — история изменений.
+
+## Версии и релизы
+
+- Версионирование — SemVer, текущая версия в `stacksentry/__init__.py` и в боте
+  (`/version`).
+- Релизы — теги `vX.Y.Z` с заметками; установка тега:
+  `sudo bash install.sh --ref vX.Y.Z`.
+- `main` — разработка и может опережать релиз. Для продакшена предпочтителен
+  последний тег.
+- Порядок выпуска и откат описаны в [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Разработка
 
 ```bash
@@ -780,6 +832,10 @@ CI гоняет Python 3.10 и 3.13, `shellcheck`, `bash -n` и `visudo -cf`.
 
 - [SECURITY.md](SECURITY.md) — как сообщить об уязвимости и что уже защищено.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — окружение, обязательные проверки, стиль.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — правила общения.
+- [SUPPORT.md](SUPPORT.md) — куда обращаться и что приложить.
+- [ROADMAP.md](ROADMAP.md) — направления развития.
+- [docs/](docs/README.md) — совместимость, архитектура, релизы.
 - [CHANGELOG.md](CHANGELOG.md) — история изменений.
 - [`.env.example`](.env.example) — все настройки с комментариями.
 - [English README](README.en.md).

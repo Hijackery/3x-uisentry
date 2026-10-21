@@ -320,3 +320,15 @@ def test_panel_render_uses_configured_panel_name() -> None:
     text = ui.render_panel(snapshot(panel=panel()), panel_type="s-ui")
     assert "S-UI" in text
     assert "xray" not in text
+
+
+def test_help_adapts_to_panel_and_package_manager(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(panel_type="s-ui")
+    text = ui.render_help(True, settings=settings, package_manager="dnf")
+    assert "S-UI" in text
+    assert "dnf makecache" in text
+    assert "dnf upgrade" in text
+    assert "Marzneshin" in text and "Outline" in text
+    assert "/stack" in text and "/version" in text

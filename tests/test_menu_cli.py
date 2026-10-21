@@ -188,3 +188,25 @@ def test_menu_lists_every_item_number() -> None:
     rows = re.findall(r'^\s*"(\d+)\|', text, flags=re.MULTILINE)
     numbers = sorted(int(n) for n in rows)
     assert numbers == list(range(len(numbers)))
+
+
+def test_menu_version_reads_package_version(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("PANEL_TYPE=s-ui\n", encoding="utf-8")
+    env = dict(
+        os.environ,
+        NO_COLOR="1",
+        PREFIX=str(BASE_DIR),
+        ENV_FILE=str(env_file),
+    )
+    result = subprocess.run(
+        ["bash", str(MENU), "version"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "StackSentry" in result.stdout
+    assert "PANEL_TYPE=s-ui" in result.stdout

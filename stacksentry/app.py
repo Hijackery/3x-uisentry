@@ -38,7 +38,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import ui
+from . import __version__, ui
 from .actions import (
     ACTION_APT_UPDATE,
     ACTION_COMMAND,
@@ -236,6 +236,7 @@ class MonitorBot:
             ("logs", self.cmd_logs),
             ("maint", self.cmd_maintenance),
             ("stack", self.cmd_stack),
+            ("version", self.cmd_version),
             ("security", self.cmd_security),
             ("traffic", self.cmd_traffic),
             ("run", self.cmd_run),
@@ -414,7 +415,11 @@ class MonitorBot:
         allowed = self.is_admin(_user_id(update))
         await self._reply_screen(
             message,
-            ui.render_help(allowed),
+            ui.render_help(
+                allowed,
+                settings=self.settings,
+                package_manager=self.platform.package_manager,
+            ),
             markup=self._main_menu(True) if allowed else None,
         )
 
@@ -451,6 +456,28 @@ class MonitorBot:
                 self.is_admin(_user_id(update)),
                 settings=self.settings,
             ),
+        )
+
+    async def cmd_version(
+        self, update: Update, _context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Версия бота, ОС, пакетный менеджер и выбранная панель."""
+        message = update.effective_message
+        if message is None or not await self._guard(message, update.effective_user):
+            return
+        panel = ui.panel_title(self.settings.panel_type)
+        panel_state = "API включён" if self.settings.panel_enabled else "monitor-only"
+        os_name = self.platform.os_name or self.platform.os_id or "ОС неизвестна"
+        await self._reply_screen(
+            message,
+            "🛰 <b>StackSentry</b> "
+            f"{ui.esc(__version__)}\n"
+            f"Python {ui.esc(sys.version.split()[0])} · "
+            f"{ui.esc(os_name)}\n"
+            f"init: {ui.esc(self.platform.init or '?')} · "
+            f"пакеты: {ui.esc(self.platform.package_manager or '?')}\n"
+            f"Панель: {ui.esc(panel)} ({panel_state})",
+            markup=self._main_menu(_user_id(update)),
         )
 
     async def cmd_services(
@@ -937,7 +964,11 @@ class MonitorBot:
         elif data == "help":
             await self._edit(
                 query,
-                ui.render_help(self.is_admin(user_id)),
+                ui.render_help(
+                    self.is_admin(user_id),
+                    settings=self.settings,
+                    package_manager=self.platform.package_manager,
+                ),
                 markup=self._main_menu(user_id),
             )
         elif data == "maintenance":

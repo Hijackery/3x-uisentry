@@ -4,9 +4,15 @@
 
 ## Поддерживаемые версии
 
-Релизы (теги) не публикуются: актуальная и единственная поддерживаемая версия —
-ветка `main`. Ставьте её командой из README, обновляйтесь через `sudo stacksentry-menu`
-(пункт 11) и не забывайте, что GitHub отдаёт ветку из кэша пару минут.
+| Версия | Поддержка |
+|---|---|
+| последний релиз `vX.Y.Z` | исправления безопасности и регрессий |
+| `main` | разработка, может опережать релиз |
+| старые минорные релизы | по возможности; критическое — отдельным patch-релизом |
+
+Ставьте релиз тегом (`install.sh --ref vX.Y.Z`) или `main`; обновляйтесь через
+`sudo stacksentry-menu` (пункт 24) или повторный установщик. GitHub может отдавать
+ветку из кэша пару минут — сверяйте коммит через `/version` или `git rev-parse`.
 
 ## Как сообщить об уязвимости
 
@@ -34,6 +40,18 @@
   Telegram ID в сообщениях маскируются.
 - Установщик умеет проверять контрольную сумму архива (`--sha256`) и не следует
   редиректам при обращении к панели.
+- Адаптеры панелей не следуют HTTP-редиректам, чтобы токен не ушёл на сторонний
+  хост; поддерживается свой CA-bundle и отключение проверки TLS.
+- Секреты панелей и Telegram не попадают в `argv`/`ps` при рестарте ядра из меню:
+  меню вызывает те же Python-адаптеры, что и бот.
+
+## Зависимости и релизы
+
+- Зависимости обновляются через Dependabot; код анализируется CodeQL.
+- Релизы — семантические теги `vX.Y.Z`; заметки и порядок выпуска описаны в
+  [docs/RELEASING.md](docs/RELEASING.md).
+- Проверяйте `CHANGELOG.md` и `git log` перед обновлением продакшена.
+- Не устанавливайте непроверенные форки и сторонние сборки `.env`/скриптов.
 
 ## Вне области рассмотрения
 
@@ -47,9 +65,15 @@
 
 ## English
 
-**Supported version:** there are no published releases; the single supported
-version is the `main` branch. Install it with the command from the README and
-update via `sudo stacksentry-menu` (item 11).
+**Supported versions:** the latest `vX.Y.Z` release receives security and
+regression fixes; `main` tracks development. Install a release with
+`install.sh --ref vX.Y.Z` (or `main`) and update via `sudo stacksentry-menu`
+(item 24). GitHub may serve a cached branch for a couple of minutes — verify the
+commit with `/version` or `git rev-parse`.
+
+**Dependencies and releases:** Dependabot and CodeQL are enabled; releases are
+semantic `vX.Y.Z` tags with notes (see [docs/RELEASING.md](docs/RELEASING.md)).
+
 
 **Reporting:** use GitHub Security Advisories (“Security” → “Report a
 vulnerability”) or email the repository owner — do not open a public issue.
@@ -63,7 +87,9 @@ sudoers allowlist and argument validation (no arbitrary shell); confirmations,
 cooldowns and an audit log for dangerous actions; commands accepted only in the
 administrator's private chat with denials logged; secrets masked out of logs and
 Telegram IDs masked; optional archive checksum verification (`--sha256`) and no
-redirect following when talking to the panel.
+redirect following when talking to the panel. Panel adapters never follow HTTP
+redirects, support a custom CA bundle, and the menu restarts the core through the
+same Python adapters as the bot so tokens never appear in `argv`/`ps`.
 
 **Out of scope:** root/physical access, a compromised Telegram admin account,
 vulnerabilities in 3X-UI/Xray/third-party packages, and consequences of actions

@@ -14,6 +14,12 @@ python3 -m venv .venv
 ## Обязательные проверки перед PR
 
 ```bash
+make check   # format + ruff + mypy + pytest + shellcheck + visudo
+```
+
+Или по отдельности:
+
+```bash
 .venv/bin/ruff format --check .
 .venv/bin/ruff check .
 .venv/bin/python -m mypy .          # strict, 3.10+
@@ -38,7 +44,9 @@ sudo visudo -cf install/stacksentry-sudoers
 ## Коммиты и PR
 
 - Сообщение коммита: императив, до 72 символов в первой строке, дальше —
-  подробности построчно. Релизы и теги не публикуем.
+  подробности построчно.
+- Релизы — семантические теги `vX.Y.Z`; порядок описан в
+  [docs/RELEASING.md](docs/RELEASING.md). Не переписывайте опубликованные теги.
 - В описании PR: что изменилось и **как проверено** (команды + результат).
 - Не коммитьте `.env`, токены, `state.db`, логи. Проверьте `git diff --cached`.
 
@@ -47,6 +55,10 @@ sudo visudo -cf install/stacksentry-sudoers
 - Поддержка новых дистрибутивов (init-системы, пакетные менеджеры).
 - Улучшения UX в Telegram: понятнее текст, меньше тапов, безопаснее кнопки.
 - Наблюдаемость: новые метрики 3X-UI/Xray, если они есть в API панели.
+- Документация: `docs/`, README (ru/en), help бота и `stacksentry-menu --help`
+  должны совпадать с фактическим поведением.
+- Новые панели/протоколы: адаптер, тесты, строка в
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) и CHANGELOG.
 
 ---
 
@@ -68,10 +80,11 @@ test the exact bug that was found (see `tests/test_review_fixes.py`). Installer
 scripts: `set -euo pipefail`, no `eval`/`bash -c` with user input, validate every
 argument.
 
-**Commits and PRs:** imperative subject up to 72 characters, details below; no
-release tags. Describe what changed and how it was verified. Never commit `.env`,
+**Commits and PRs:** imperative subject up to 72 characters, details below;
+releases are semantic `vX.Y.Z` tags (see [docs/RELEASING.md](docs/RELEASING.md)),
+never rewrite published tags. Describe what changed and how it was verified. Never commit `.env`,
 tokens, `state.db` or logs — check `git diff --cached`.
 
 **Especially welcome:** support for more distributions (init systems, package
-managers), Telegram UX improvements, and extra 3X-UI/Xray metrics available in
-the panel API.
+managers), Telegram UX improvements, extra 3X-UI/Xray metrics available in the
+panel API, and keeping `docs/` + bot help + `stacksentry-menu --help` in sync.

@@ -44,8 +44,14 @@ body:
   - type: input
     id: panel
     attributes:
-      label: Версия панели 3X-UI и Xray
-      placeholder: "3X-UI 2.x, Xray 25.x (видно в панели или /panel)"
+      label: Панель, версия панели и ядра
+      placeholder: "3X-UI 2.x / Marzban 0.8 / S-UI 1.x, Xray или sing-box 25.x"
+  - type: input
+    id: stack
+    attributes:
+      label: Что нашёл `stacksentry-menu detect`
+      description: ОС, пакетный менеджер, панели и VPN (без токенов).
+      placeholder: "Debian 13, apt, systemd, 3x-ui, sing-box, wireguard"
   - type: textarea
     id: logs
     attributes:

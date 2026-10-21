@@ -1,8 +1,17 @@
 # История изменений / Changelog
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
-Релизы и теги проект не публикует: актуальная версия всегда в ветке `main`,
-обновление — `sudo stacksentry-menu` (пункт 21) или повторный запуск установщика.
+Проект использует семантические версии `vX.Y.Z`; порядок выпуска — в
+[docs/RELEASING.md](docs/RELEASING.md). Обновление — `sudo stacksentry-menu`
+(пункт 24) или повторный запуск установщика с нужным тегом (`--ref vX.Y.Z`).
+
+## [1.0.0] — 2026-10-21
+
+Первый публичный релиз StackSentry. Включает всё перечисленное ниже в разделе
+`Unreleased`: мониторинг сервера/служб/VPN, восемь API-панелей, адаптивный
+установщик и меню, кроссплатформенные обновления пакетов, 2FA, аудит,
+read-only Mini App и web/root-терминал. Добавлены публичная документация,
+политика релизов и безопасности, CodeQL/Dependabot и Makefile.
 
 ## [Unreleased]
 
@@ -275,9 +284,10 @@
   and removes the old units/sudoers/wrappers and user. Old GitHub links redirect,
   but the installer and README already use the new address.
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No releases or
-tags are published — the current version is always the `main` branch; update via
-`sudo stacksentry-menu` (item 21) or by re-running the installer.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Semantic
+`vX.Y.Z` releases are published with notes (see [docs/RELEASING.md](docs/RELEASING.md));
+update via `sudo stacksentry-menu` (item 24) or by re-running the installer with
+`--ref vX.Y.Z`.
 
 ### Added
 

@@ -347,6 +347,20 @@ cmd_set() {
     info "Применится после перезапуска: sudo stacksentry-menu restart"
 }
 
+cmd_version() {
+    local ver="?"
+    if [ -r "$PREFIX/stacksentry/__init__.py" ]; then
+        ver="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' \
+            "$PREFIX/stacksentry/__init__.py" 2>/dev/null | head -1)"
+        [ -n "$ver" ] || ver="?"
+    fi
+    printf 'StackSentry %s\n' "$ver"
+    printf 'PREFIX=%s\n' "$PREFIX"
+    if [ -f "$ENV_FILE" ]; then
+        printf 'PANEL_TYPE=%s\n' "$(sed -n 's/^PANEL_TYPE=//p' "$ENV_FILE" | head -1)"
+    fi
+}
+
 cmd_detect() {
     need_env
     head1 "Что найдено на сервере"
@@ -681,6 +695,7 @@ ${BOLD}stacksentry-menu${RESET} — панель управления StackSentr
   sudo stacksentry-menu status              состояние службы и последние ошибки
   sudo stacksentry-menu show                текущие настройки (секреты замаскированы)
   sudo stacksentry-menu detect              что найдено: ОС, панели, VPN, службы
+  stacksentry-menu version                  версия StackSentry и PREFIX
   stacksentry-menu keys                     какие ключи разрешено менять
   stacksentry-menu check KEY VALUE          проверить значение (без изменений)
   sudo stacksentry-menu set KEY VALUE       изменить настройку и подсказать рестарт
@@ -699,6 +714,7 @@ ${BOLD}English${RESET}
   sudo stacksentry-menu status              service state and recent errors
   sudo stacksentry-menu show                current settings (secrets masked)
   sudo stacksentry-menu detect              detected OS, panels, VPN, services
+  stacksentry-menu version                  StackSentry version and PREFIX
   stacksentry-menu keys                     keys that may be changed
   stacksentry-menu check KEY VALUE          validate a value (no changes)
   sudo stacksentry-menu set KEY VALUE       change a setting, then restart
@@ -717,6 +733,7 @@ case "${1:-}" in
     status) cmd_status ;;
     show|settings) cmd_show ;;
     detect|stack) cmd_detect ;;
+    version) cmd_version ;;
     keys) cmd_keys ;;
     check) cmd_check "${2:-}" "${3:-}" ;;
     set) cmd_set "${2:-}" "${3:-}" ;;

@@ -4,8 +4,8 @@ contact_links:
     url: https://github.com/Hijackery/stacksentry/security/advisories/new
     about: Сообщайте об уязвимостях приватно, не через публичный issue
   - name: Документация
-    url: https://github.com/Hijackery/stacksentry#readme
-    about: Установка, настройки, stacksentry-menu, решение типовых проблем
+    url: https://github.com/Hijackery/stacksentry/tree/main/docs
+    about: Совместимость, архитектура, релизы, установка и типовые проблемы
   - name: Как помочь проекту
     url: https://github.com/Hijackery/stacksentry/blob/main/CONTRIBUTING.md
     about: Окружение, обязательные проверки, стиль кода и PR

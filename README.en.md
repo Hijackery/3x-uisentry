@@ -4,39 +4,51 @@
 > the technical `stacksentry`/`stacksentry-*` identifiers are kept for compatibility.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+[![Release](https://img.shields.io/github/v/release/Hijackery/stacksentry)](https://github.com/Hijackery/stacksentry/releases)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 ![Platform](https://img.shields.io/badge/platform-systemd%20%7C%20openrc%20%7C%20sysv-4EAA25)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 [Русский](README.md) · **English**
 
-**StackSentry** is a Telegram bot for VPS: it watches hardware, services,
-panels (3X-UI, S-UI, Marzban, Hiddify) and VPN stacks (WireGuard, OpenVPN,
-AmneziaWG, sing-box, Xray, Shadowsocks, Tailscale), sends clear alerts and shows
-subscriptions. Risky actions
-— restart, system upgrade, reboot — happen only from a confirmed button and only
-for an administrator.
+**StackSentry** is a Telegram bot for VPS: it watches hardware, services, panels
+(3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline) and
+VPN stacks (WireGuard, OpenVPN, AmneziaWG, sing-box, Xray, Shadowsocks,
+Tailscale), sends clear alerts and shows subscriptions. Risky actions — restart,
+system upgrade, reboot — happen only from a confirmed button and only for an
+administrator.
 
-The repository is **private** while the product is in development. Install via
-GitHub CLI:
+Current version: **1.0.0**. The project is public: [releases](https://github.com/Hijackery/stacksentry/releases),
+[documentation](docs/README.md), [security policy](SECURITY.md).
 
-```bash
-gh api repos/Hijackery/stacksentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
-sudo bash /tmp/stacksentry-install.sh
-```
-
-Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
-
-```bash
-GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
-```
-
-Once the repository is public, the short form works again:
+One-command install:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
+```
+
+For production, install a tag rather than `main`:
+
+```bash
+sudo bash install.sh --ref v1.0.0
+```
+
+Alternatives without `curl | bash`:
+
+```bash
+# download and inspect the installer separately
+curl -fsSLo /tmp/stacksentry-install.sh \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# GitHub CLI
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# private fork or corporate GitHub — with a token
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 > One command: the wizard downloads the code, asks for tokens, installs
@@ -57,8 +69,10 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/ins
 10. [Security](#security)
 11. [Update and removal](#update-and-removal)
 12. [Troubleshooting](#troubleshooting)
-13. [Development](#development)
-14. [Project](#project)
+13. [Documentation](#documentation)
+14. [Versions and releases](#versions-and-releases)
+15. [Development](#development)
+16. [Project](#project)
 
 ---
 
@@ -116,7 +130,8 @@ Service x-ui restarted
 | **Services** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
 | **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` — detected automatically |
 | **Python** | 3.10+; the installer picks a suitable interpreter |
-| **Panel** | 3X-UI 2.x/3.x API; other panels/VPN are detected and monitored as service/port/process |
+| **Panels** | API: 3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline. Other VPN/proxy stacks are detected as service/port/process |
+| **Core restart** | 3X-UI, Marzban, Marzneshin, PasarGuard, S-UI via API; Remnawave/Hiddify/Outline via service/container only |
 | **sudo** | classic sudo and `sudo-rs` (Ubuntu 26.04+): rules are generated without wildcards or aliases |
 | **Architectures** | x86_64, ARM — anything with Python and a supported init system |
 
@@ -136,26 +151,34 @@ state is reported as unavailable (no false “crit” alerts).
 
 ### 2. Install
 
-The repository is **private** while the product is in development. Install via
-GitHub CLI:
-
-```bash
-gh api repos/Hijackery/stacksentry/contents/install.sh \
-  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
-sudo bash /tmp/stacksentry-install.sh
-```
-
-Or with a token (`GH_TOKEN`/`GITHUB_TOKEN`):
-
-```bash
-GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
-```
-
-Once the repository is public, the short form works again:
+One-command install:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
+```
+
+For production, install a tag rather than `main`:
+
+```bash
+sudo bash install.sh --ref v1.0.0
+```
+
+Alternatives without `curl | bash`:
+
+```bash
+# download and inspect the installer separately
+curl -fsSLo /tmp/stacksentry-install.sh \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# GitHub CLI
+gh api repos/Hijackery/stacksentry/contents/install.sh \
+  -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
+sudo bash /tmp/stacksentry-install.sh
+
+# private fork or corporate GitHub — with a token
+GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+  https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
 Or through a pipe (this form works with `sudo`):
@@ -224,8 +247,9 @@ missing values and offers the existing ones as defaults — no manual editing.
 | Outline | secret `SB_API_PREFIX` path in `PANEL_URL` | status, access keys, traffic |
 
 Switch with `sudo stacksentry-menu set PANEL_TYPE hiddify` (plus URL and token),
-then restart. Use `PANEL_API_TOKEN` for 3X-UI/Remnawave/S-UI/Hiddify and
-username/password for Marzban.
+then restart. Use `PANEL_API_TOKEN` for 3X-UI/Remnawave/S-UI/Hiddify,
+username/password for Marzban/Marzneshin/PasarGuard, and only the secret path in
+`PANEL_URL` for Outline.
 
 URL notes:
 - S-UI: `PANEL_URL` is the panel root including its web path, e.g.
@@ -239,11 +263,12 @@ URL notes:
 
 The installer, menu and bot adapt to the server. The wizard detects the OS,
 package manager, services and panel type, then asks only for the relevant
-credentials — a token for 3X-UI/Remnawave/S-UI/Hiddify or username/password for
-Marzban — and probes the API. `stacksentry-menu detect` shows what was found,
-the menu has a panel type item, and the core restart picks the right endpoint.
-The bot hides Traffic/Subscriptions until an API is configured and hides apt
-actions on non-APT systems.
+credentials — a token for 3X-UI/Remnawave/S-UI/Hiddify, username/password for
+Marzban/Marzneshin/PasarGuard, or a secret path for Outline — and probes the API.
+`stacksentry-menu detect` shows what was found, the menu has a panel type item,
+and the core restart picks the right endpoint. The bot hides
+Traffic/Subscriptions until an API is configured and shows update actions for the
+detected package manager (APT-specific actions only on APT).
 
 ### What is detected
 
@@ -254,16 +279,17 @@ GOST. VPN/mesh: WireGuard, AmneziaWG, OpenVPN, IPsec/StrongSwan, SoftEther,
 Tailscale, ZeroTier, NetBird, Headscale, Nebula.
 
 Detection uses units (systemd/OpenRC/SysV), config paths and process names
-(`ps`). API integration exists for 3X-UI (inbounds, subscriptions, xray
-restart), Marzban, Remnawave, S-UI and Hiddify (users/clients, traffic); the
-rest are shown as service/port and honestly marked “API not supported”.
+(`ps`). API integration exists for 3X-UI (inbounds, subscriptions, xray restart),
+Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify and Outline
+(users/clients, traffic); the rest are shown as service/port and honestly marked
+“API not supported”.
 Docker containers are visible as the `docker` service but are not queried via the
 Docker API (that would give the bot root-equivalent rights).
 
-### No 3X-UI: monitor-only
+### No panel: monitor-only
 
-The installer detects panels/VPN by services, paths and ports. If 3X-UI is not
-found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty — the bot then monitors
+The installer detects panels/VPN by services, paths and ports. If no supported
+panel is found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty — the bot then monitors
 services, the VPN stack, hardware and alerts, while panel/subscription screens
 honestly say the API is not configured. Enable it later via `sudo stacksentry-menu`
 (panel address and token) or reinstall with `--panel`.
@@ -443,7 +469,7 @@ stacksentry-menu check PANEL_TIMEOUT 20   # validate without changes (no root)
 sudo stacksentry-menu set PANEL_TIMEOUT 20
 sudo stacksentry-menu restart       # apply
 sudo stacksentry-menu detect        # detected OS, panels, VPN, services
-sudo stacksentry-menu restart-xray  # restart the panel core when supported
+sudo stacksentry-menu restart-xray  # restart the core when supported
 sudo stacksentry-menu apt-logs 100  # log of background apt upgrades
 sudo stacksentry-menu logs 100
 ```
@@ -719,7 +745,7 @@ truncated (16 KB) and has a timeout.
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh)
 
 # same from the menu
-sudo stacksentry-menu          # item 21
+sudo stacksentry-menu          # item 24
 
 # full removal: service, sudoers, wrapper, menu, code, database and user
 sudo bash install.sh --uninstall
@@ -757,6 +783,27 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 
 More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
+## Documentation
+
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — OS, init, packages, panels, protocols, restart.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, security, extension.
+- [docs/RELEASING.md](docs/RELEASING.md) — versions, tags, releases and rollback.
+- [ROADMAP.md](ROADMAP.md) — planned work.
+- [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
+- [SECURITY.md](SECURITY.md) — security policy and model.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, checks, PRs.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
+- [CHANGELOG.md](CHANGELOG.md) — change history.
+
+## Versions and releases
+
+- SemVer; the current version lives in `stacksentry/__init__.py` and `/version`.
+- Releases are `vX.Y.Z` tags with notes; install a tag with
+  `sudo bash install.sh --ref vX.Y.Z`.
+- `main` tracks development and may be ahead of the latest release. Prefer the
+  latest tag for production.
+- Release and rollback steps: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Development
 
 ```bash
@@ -774,6 +821,10 @@ Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is protected.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community rules.
+- [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
+- [ROADMAP.md](ROADMAP.md) — planned work.
+- [docs/](docs/README.md) — compatibility, architecture, releases.
 - [CHANGELOG.md](CHANGELOG.md) — change history.
 - [`.env.example`](.env.example) — every setting with comments.
 - [Русский README](README.md).
