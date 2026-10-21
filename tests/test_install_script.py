@@ -270,8 +270,9 @@ def test_incomplete_env_does_not_block_install() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "CONFIG_COMPLETE=0" in text
     assert "дозаполняю через мастер" in text
+    assert "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS; do" in text
     assert (
-        "for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN"
+        'if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]'
         in text
     )
 
@@ -633,3 +634,13 @@ def test_installer_supports_2fa() -> None:
     menu = (BASE_DIR / "install" / "uisentry-menu").read_text(encoding="utf-8")
     assert "cmd_totp" in menu
     assert "TOTP secret" in menu
+
+
+def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "Флаги должны работать и на уже готовом .env" in text
+    assert "--no-root-terminal" in text
+    assert "_old_totp" in text
+    assert "_old_root" in text
+    assert "TERMINAL_SHELL_USER" in text
+    assert "uisentry-shell" in text

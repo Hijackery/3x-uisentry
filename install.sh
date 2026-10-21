@@ -216,6 +216,10 @@ START_SERVICE=1
 TERMINAL=0
 TERMINAL_ALLOW_ROOT=0
 TERMINAL_ORIGIN=""
+TERMINAL_ORIGIN_EXPLICIT=0
+ROOT_TERMINAL_EXPLICIT=0
+WEBAPP_ORIGIN_EXPLICIT=0
+PANEL_MODE_EXPLICIT=0
 ENABLE_2FA=0
 DISABLE_2FA=0
 PANEL_MODE="auto"
@@ -255,6 +259,7 @@ ${BOLD}Установка StackSentry${RESET}
   --init TYPE      менеджер служб: systemd, openrc или sysv (по умолчанию — авто)
   --terminal       поставить отдельный веб-терминал (TOTP, только localhost)
   --root-terminal  то же + разрешить root-сессию (sudo -i) через sudoers
+  --no-root-terminal  выключить root-сессию, остальное сохранить
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
   --2fa            включить 2FA (TOTP) для опасных действий
   --no-2fa         выключить 2FA (секрет сохраняется)
@@ -275,6 +280,7 @@ ${BOLD}English${RESET}
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
             --terminal · --root-terminal · --terminal-origin URL · --2fa · --no-2fa
             --panel · --no-panel · --webapp · --webapp-origin URL
+            --root-terminal · --no-root-terminal
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -299,14 +305,15 @@ while [ $# -gt 0 ]; do
         --no-start)     START_SERVICE=0; shift ;;
         --init)         INIT="${2:?--init требует systemd|openrc|sysv}"; shift 2 ;;
         --terminal)     TERMINAL=1; shift ;;
-        --root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=1; shift ;;
-        --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; shift 2 ;;
+        --root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=1; ROOT_TERMINAL_EXPLICIT=1; shift ;;
+        --no-root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
+        --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; shift 2 ;;
         --2fa)          ENABLE_2FA=1; shift ;;
         --no-2fa)       DISABLE_2FA=1; shift ;;
-        --panel)        PANEL_MODE=1; shift ;;
-        --no-panel)     PANEL_MODE=0; shift ;;
+        --panel)        PANEL_MODE=1; PANEL_MODE_EXPLICIT=1; shift ;;
+        --no-panel)     PANEL_MODE=0; PANEL_MODE_EXPLICIT=1; shift ;;
         --webapp)       WEBAPP=1; shift ;;
-        --webapp-origin) WEBAPP=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; shift 2 ;;
+        --webapp-origin) WEBAPP=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; WEBAPP_ORIGIN_EXPLICIT=1; shift 2 ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -414,10 +421,12 @@ uninstall() {
         /etc/systemd/system/uisentry-webapp.service \
         /etc/sudoers.d/uisentry-terminal \
         /etc/uisentry/terminal.env /etc/uisentry/terminal-secrets.env
-    rm -rf /etc/uisentry /var/lib/uisentry-term
-    if id uisentry-term >/dev/null 2>&1; then
-        userdel uisentry-term >/dev/null 2>&1 || true
-    fi
+    rm -rf /etc/uisentry /var/lib/uisentry-term /var/lib/uisentry-shell
+    for _term_user in uisentry-term uisentry-shell; do
+        if id "$_term_user" >/dev/null 2>&1; then
+            userdel "$_term_user" >/dev/null 2>&1 || true
+        fi
+    done
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
@@ -655,7 +664,10 @@ if [ -z "$SOURCE_DIR" ]; then
             info "Скачиваю исходники: $_candidate"
             _auth=()
             _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-            [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token")
+            case "$_fetch_url" in
+                https://github.com/*|https://codeload.github.com/*)
+                    [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token") ;;
+            esac
             if curl -fsSL --max-time 120 "${_auth[@]}" "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
                 && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
@@ -962,12 +974,22 @@ print(found[0] if found else "")
 CONFIG_COMPLETE=0
 if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
     CONFIG_COMPLETE=1
-    for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
+    for _key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS; do
         _value="$(env_get "$_key")"
         case "$_value" in
             "" | *ExampleTokenReplaceMe*) CONFIG_COMPLETE=0 ;;
         esac
     done
+    if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
+        for _key in PANEL_URL PANEL_API_TOKEN; do
+            _value="$(env_get "$_key")"
+            [ -n "$_value" ] || CONFIG_COMPLETE=0
+        done
+    fi
+    # --panel на monitor-only .env должен снова открыть мастер.
+    if [ "$PANEL_MODE" = "1" ] && [ -z "$(env_get PANEL_URL)" ]; then
+        CONFIG_COMPLETE=0
+    fi
 fi
 
 if [ "$CONFIG_COMPLETE" -eq 1 ]; then
@@ -1066,14 +1088,11 @@ else
         if [ -n "$(env_get PANEL_URL)" ]; then
             PANEL_MODE=1
         else
-            _stack_json="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --json 2>/dev/null || true)"
-            case "$_stack_json" in
-                *'"key": "3x-ui"'*) PANEL_MODE=1 ;;
-                *) PANEL_MODE=0 ;;
-            esac
+            PANEL_MODE="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --panel 2>/dev/null || echo 0)"
         fi
     fi
-    if [ "$PANEL_MODE" = "0" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+    if [ "$PANEL_MODE" = "0" ] && [ "$PANEL_MODE_EXPLICIT" -eq 0 ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         ask "3X-UI API не найден. Настроить адрес и токен вручную? [y/N] "
         read -r _panel_answer <&$READ_FD || _panel_answer=""
         case "$_panel_answer" in
@@ -1083,6 +1102,8 @@ else
     fi
 
     if [ "$PANEL_MODE" = "1" ]; then
+    _existing_panel_url="$(env_get PANEL_URL)"
+    [ -n "$_existing_panel_url" ] && SUGGESTED_URL="$_existing_panel_url"
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
     PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"
     # Адрес можно вставлять прямо из браузера, вместе с путём — отделяем путь.
@@ -1199,19 +1220,23 @@ else
 
     # Автоопределение панелей и VPN-стека (stdlib, работает до venv).
     DETECTED_SERVICES="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --services 2>/dev/null || true)"
-    [ -n "$DETECTED_SERVICES" ] || DETECTED_SERVICES="x-ui"
-    info "Найдены службы: $DETECTED_SERVICES"
+    if [ -n "$DETECTED_SERVICES" ]; then
+        info "Найдены службы: $DETECTED_SERVICES"
+    else
+        warn "Службы не найдены — можно оставить поле пустым (monitor-only)."
+    fi
+    _services_default="$(env_get SERVICES)"
+    [ -n "$_services_default" ] || _services_default="$DETECTED_SERVICES"
     info "Сервисы можно перечислить через запятую; служебные имена — из вашего"
     info "менеджера служб (systemd/OpenRC/SysV). Enter — оставить найденные."
-    question SERVICES_LIST "Сервисы под наблюдением" \
-        "${SERVICES:-${DETECTED_SERVICES}}"
+    question SERVICES_LIST "Сервисы под наблюдением" "$_services_default"
 
     info "Чат для алертов — необязательное поле: Enter — алерты придут в личку"
     info "всем ID из TELEGRAM_ADMIN_IDS."
     info "Нужен общий чат? Впишите его ID (число, у групп оно отрицательное,"
     info "например -1001234567890). Узнать: добавьте бота в группу, отправьте там"
     info "сообщение и посмотрите ID у @userinfobot или @getidsbot."
-    question START_CHAT "Чат для алертов (Enter — админам в личку)" ""
+    question START_CHAT "Чат для алертов (Enter — админам в личку)" "$(env_get ALERT_CHAT_ID)"
 
     if [ "$PANEL_MODE" = "1" ]; then
         info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_URL_VALUE${PANEL_BASE:+/$PANEL_BASE}, сервисы $SERVICES_LIST, токен панели ***${PANEL_TOKEN: -4}"
@@ -1233,6 +1258,33 @@ else
         set_env TELEGRAM_API_URL "$TELEGRAM_API_URL"
     fi
     ok "Конфигурация записана в $ENV_FILE"
+fi
+
+# Флаги должны работать и на уже готовом .env (обычный update).
+if [ "$CONFIG_COMPLETE" -eq 1 ]; then
+    if [ "$DISABLE_2FA" -eq 1 ]; then
+        set_env TOTP_REQUIRED 0
+        info "2FA выключена (--no-2fa). Секрет сохранён."
+    fi
+    if [ "$ENABLE_2FA" -eq 1 ]; then
+        _totp_value="$(env_get TOTP_SECRET)"
+        if [ -z "$_totp_value" ]; then
+            _totp_value="$("$PYTHON_BIN" -c \
+                'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
+            info "2FA включена. Добавьте секрет в аутентификатор:"
+            printf '        TOTP secret: %s\n' "$_totp_value"
+            printf '        otpauth: otpauth://totp/StackSentry:admin?secret=%s&issuer=StackSentry\n' "$_totp_value"
+        fi
+        set_env TOTP_SECRET "$_totp_value"
+        set_env TOTP_REQUIRED 1
+        ok "2FA для опасных действий включена"
+    fi
+    if [ "$PANEL_MODE" = "0" ]; then
+        set_env PANEL_URL ""
+        set_env PANEL_API_TOKEN ""
+        set_env PANEL_BASE_PATH ""
+        info "API панели отключён (--no-panel): monitor-only."
+    fi
 fi
 
 # .env содержит оба токена. Владелец — root, сервису доступно только чтение
@@ -1547,6 +1599,17 @@ install_terminal() {
     fi
     TERM_GROUP="$(id -gn "$TERM_USER")"
     install -d -m 0750 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_HOME"
+    # Отдельный пользователь для обычного shell: у него НЕТ sudo-правила,
+    # иначе из обычного терминала можно было бы сделать sudo -i.
+    TERM_SHELL_USER="uisentry-shell"
+    TERM_SHELL_HOME="/var/lib/uisentry-shell"
+    if ! id "$TERM_SHELL_USER" >/dev/null 2>&1; then
+        useradd --system --no-create-home --home-dir "$TERM_SHELL_HOME" \
+            --shell /bin/bash --comment "StackSentry terminal shell" "$TERM_SHELL_USER" \
+            || { warn "Не удалось создать $TERM_SHELL_USER"; return 1; }
+    fi
+    TERM_SHELL_GROUP="$(id -gn "$TERM_SHELL_USER")"
+    install -d -m 0750 -o "$TERM_SHELL_USER" -g "$TERM_SHELL_GROUP" "$TERM_SHELL_HOME"
     install -d -m 0750 -o root -g root "$TERM_ENV_DIR"
 
     TERM_BOT_TOKEN="$(env_get TELEGRAM_BOT_TOKEN)"
@@ -1556,9 +1619,19 @@ install_terminal() {
         return 1
     fi
     TERM_ACCESS_USER="${TERM_ADMIN_IDS%%,*}"
-    TERM_TICKET_SECRET="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))')"
-    TERM_ACCESS_TOKEN="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(32))')"
-    TERM_TOTP="$("$PYTHON_BIN" -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
+    _old_secret="$(sed -n 's/^TERMINAL_SECRET=//p' "$TERM_SECRETS" 2>/dev/null | head -1)"
+    TERM_TICKET_SECRET="${_old_secret:-$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))')}"
+    _old_access="$(sed -n 's/^TERMINAL_ACCESS_TOKEN=//p' "$TERM_SECRETS" 2>/dev/null | head -1)"
+    TERM_ACCESS_TOKEN="${_old_access:-$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+    _old_totp="$(sed -n 's/^TERMINAL_TOTP_SECRET=//p' "$TERM_SECRETS" 2>/dev/null | head -1)"
+    TERM_TOTP="${_old_totp:-$("$PYTHON_BIN" -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')}"
+    if [ "$TERMINAL_ORIGIN_EXPLICIT" -eq 0 ]; then
+        TERMINAL_ORIGIN="$(sed -n 's/^TERMINAL_PUBLIC_ORIGIN=//p' "$TERM_ENV" 2>/dev/null | head -1)"
+    fi
+    if [ "$ROOT_TERMINAL_EXPLICIT" -eq 0 ]; then
+        _old_root="$(sed -n 's/^TERMINAL_ALLOW_ROOT=//p' "$TERM_ENV" 2>/dev/null | head -1)"
+        [ -n "$_old_root" ] && TERMINAL_ALLOW_ROOT="$_old_root"
+    fi
 
     if [ -z "$TERMINAL_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         question TERMINAL_ORIGIN \
@@ -1583,6 +1656,8 @@ EOF
 
     cat > "$TERM_ENV" <<EOF
 TERMINAL_ALLOW_ROOT=$TERMINAL_ALLOW_ROOT
+TERMINAL_SHELL_USER=$TERM_SHELL_USER
+TERMINAL_SHELL_HOME=$TERM_SHELL_HOME
 TERMINAL_HOST=127.0.0.1
 TERMINAL_PORT=8788
 TERMINAL_PUBLIC_ORIGIN=$TERMINAL_ORIGIN
@@ -1627,19 +1702,27 @@ EOF
     chmod 644 "$TERM_UNIT"
     systemctl daemon-reload
 
+    printf '%s ALL=(%s) NOPASSWD: /bin/bash -l\n' \
+        "$TERM_USER" "$TERM_SHELL_USER" > "$TERM_SUDOERS"
     if [ "$TERMINAL_ALLOW_ROOT" -eq 1 ]; then
-        printf '%s ALL=(root) NOPASSWD: /bin/bash -l\n' "$TERM_USER" > "$TERM_SUDOERS"
-        chown root:root "$TERM_SUDOERS"
+        printf '%s ALL=(root) NOPASSWD: /bin/bash -l\n' "$TERM_USER" >> "$TERM_SUDOERS"
+    fi
+    chown root:root "$TERM_SUDOERS"
+    chmod 440 "$TERM_SUDOERS"
+    if command -v visudo >/dev/null 2>&1 \
+        && ! visudo -cf "$TERM_SUDOERS" >/dev/null 2>&1; then
+        # Пробуем без root-правила: shell-переключение важнее.
+        printf '%s ALL=(%s) NOPASSWD: /bin/bash -l\n' \
+            "$TERM_USER" "$TERM_SHELL_USER" > "$TERM_SUDOERS"
         chmod 440 "$TERM_SUDOERS"
-        if command -v visudo >/dev/null 2>&1 \
-            && ! visudo -cf "$TERM_SUDOERS" >/dev/null 2>&1; then
+        if ! visudo -cf "$TERM_SUDOERS" >/dev/null 2>&1; then
             rm -f "$TERM_SUDOERS"
-            TERMINAL_ALLOW_ROOT=0
-            sed -i 's/^TERMINAL_ALLOW_ROOT=.*/TERMINAL_ALLOW_ROOT=0/' "$TERM_ENV"
-            warn "visudo не принял root-правило — root-терминал выключен"
+            warn "visudo не принял правила терминала — терминал не установлен"
+            return 1
         fi
-    else
-        rm -f "$TERM_SUDOERS"
+        TERMINAL_ALLOW_ROOT=0
+        sed -i 's/^TERMINAL_ALLOW_ROOT=.*/TERMINAL_ALLOW_ROOT=0/' "$TERM_ENV"
+        warn "root-правило не принято — root-терминал выключен"
     fi
 
     systemctl enable uisentry-terminal >/dev/null 2>&1 || true
@@ -1686,6 +1769,9 @@ install_webapp() {
     if [ "$INIT" != "systemd" ]; then
         warn "Mini App ставится только на systemd; для $INIT пропускаю"
         return 0
+    fi
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
+        WEBAPP_ORIGIN="$(env_get WEBAPP_PUBLIC_ORIGIN)"
     fi
     if [ -z "$WEBAPP_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         question WEBAPP_ORIGIN \

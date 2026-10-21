@@ -145,3 +145,20 @@ def test_root_requires_flag(tmp_path) -> None:  # type: ignore[no-untyped-def]
     )
     assert response.status_code == 200
     assert response.json()["root"] is True
+
+
+def test_totp_replay_normalizes_separators(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from uisentry.totp import normalize_totp
+
+    settings = _settings(tmp_path)
+    code = totp_code(settings.totp_secret)
+    assert normalize_totp(f"{code[:3]} {code[3:]}") == code
+    client = TestClient(create_app(settings))
+    first = client.post(
+        "/api/session",
+        json={"initData": _init_data(), "totp": f"{code[:3]} {code[3:]}"},
+    )
+    assert first.status_code == 200, first.text
+    # Тот же код без пробела — это повтор, а не новый вход.
+    replay = client.post("/api/session", json={"initData": _init_data(), "totp": code})
+    assert replay.status_code == 401

@@ -76,3 +76,17 @@ def test_installer_uses_inventory() -> None:
     text = (BASE_DIR / "install.sh").read_text(encoding="utf-8")
     assert "-m uisentry.inventory --services" in text
     assert "apk add --no-cache" in text
+
+
+def test_no_fake_x_ui_when_nothing_found(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: set())
+    assert inventory.watched_services() == []
+
+
+def test_panel_detection_cli(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: set())
+    assert inventory.main(["--panel"]) == 0
+    assert capsys.readouterr().out.strip() == "0"
+    monkeypatch.setattr(inventory, "_units", lambda: {"x-ui"})
+    assert inventory.main(["--panel"]) == 0
+    assert capsys.readouterr().out.strip() == "1"

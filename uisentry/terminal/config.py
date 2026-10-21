@@ -78,6 +78,8 @@ class TerminalSettings:
     access_token: str
     access_user: int
     allow_root: bool
+    shell_user: str
+    shell_home: str
     host: str
     port: int
     public_origin: str
@@ -138,6 +140,12 @@ class TerminalSettings:
             access_user=access_user,
             allow_root=values.get("TERMINAL_ALLOW_ROOT", "").strip()
             in {"1", "true", "yes"},
+            shell_user=values.get("TERMINAL_SHELL_USER", "uisentry-shell").strip()
+            or "uisentry-shell",
+            shell_home=values.get(
+                "TERMINAL_SHELL_HOME", "/var/lib/uisentry-shell"
+            ).strip()
+            or "/var/lib/uisentry-shell",
             host=values.get("TERMINAL_HOST", "127.0.0.1").strip() or "127.0.0.1",
             port=_int(values, "TERMINAL_PORT", 8788, 1),
             public_origin=public_origin,

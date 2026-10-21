@@ -236,7 +236,7 @@ def _build_settings() -> Settings:
         panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),
         panel_base_path=env_str("PANEL_BASE_PATH", "").strip("/"),
-        services=tuple(env_str_list("SERVICES", ["x-ui"])),
+        services=tuple(env_str_list("SERVICES", [])),
         sudo_wrapper=env_str("SUDO_WRAPPER", "/usr/local/bin/uisentry-ctl"),
         command_allowlist=tuple(env_str_list("COMMAND_ALLOWLIST")),
         check_interval=env_int("CHECK_INTERVAL", 60, minimum=15),
@@ -345,8 +345,6 @@ def _validate(settings: Settings) -> list[str]:
             )
         except Exception:  # noqa: BLE001 — любая ошибка декодирования
             problems.append("TOTP_SECRET: неверный base32")
-    if not settings.services:
-        problems.append("SERVICES пуст: нечего проверять через systemd")
     problems.extend(_service_problems(settings.services))
     if settings.cpu_warn >= settings.cpu_crit:
         problems.append("CPU_WARN должен быть меньше CPU_CRIT")

@@ -160,3 +160,32 @@ def test_installer_webapp_flag() -> None:
     assert "--webapp" in text
     assert "uisentry-webapp.service" in text
     assert "create_app_from_env" in text
+
+
+def test_cookie_flags(make_settings: Callable[..., Settings], storage: Storage) -> None:
+    settings = make_settings(webapp_enabled=True, webapp_secret=SECRET)
+    app = create_app(
+        _config(settings),
+        monitor=FakeMonitor(),  # type: ignore[arg-type]
+        storage=storage,
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/session", json={"initData": _init_data(settings.telegram_token)}
+    )
+    cookie = response.headers.get("set-cookie", "").lower()
+    assert "httponly" in cookie
+    assert "samesite=lax" in cookie
+    assert "secure" not in cookie
+
+    secure_app = create_app(
+        _config(settings, origin="https://app.example.com"),
+        monitor=FakeMonitor(),  # type: ignore[arg-type]
+        storage=storage,
+    )
+    secure_response = TestClient(secure_app).post(
+        "/api/session", json={"initData": _init_data(settings.telegram_token)}
+    )
+    secure_cookie = secure_response.headers.get("set-cookie", "").lower()
+    assert "secure" in secure_cookie
+    assert "samesite=none" in secure_cookie

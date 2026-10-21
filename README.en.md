@@ -572,8 +572,11 @@ What happens:
   `/etc/uisentry/terminal-secrets.env`, `600 root`);
 - terminal secrets live in `/etc/uisentry/terminal-secrets.env` (`600 root`);
   systemd injects them, the service user never reads the file;
-- `--root-terminal` adds the exact sudoers rule
-  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l`.
+- the normal shell runs as a separate `uisentry-shell` user **without sudo**;
+  a root session uses only the exact
+  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule (`--root-terminal`);
+- terminal secrets (TOTP, tickets, access token, bot token) are **not passed**
+  to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER.
 
 Default access is local/SSH tunnel only:
 

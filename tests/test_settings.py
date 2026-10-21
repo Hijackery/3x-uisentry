@@ -13,6 +13,7 @@ BASE_ENV = {
     "TELEGRAM_ADMIN_IDS": "42,43",
     "PANEL_URL": "https://panel.example.com",
     "PANEL_API_TOKEN": "tok",
+    "SERVICES": "x-ui",
 }
 
 
@@ -107,3 +108,8 @@ def test_monitor_only_mode_without_panel(tmp_path: Path) -> None:
 def test_panel_url_and_token_must_be_set_together(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="задаются вместе"):
         load_settings(write_env(tmp_path, PANEL_API_TOKEN=""))
+
+
+def test_empty_services_is_allowed(tmp_path: Path) -> None:
+    settings = load_settings(write_env(tmp_path, SERVICES=""))
+    assert settings.services == ()

@@ -101,6 +101,18 @@
   подставляет SERVICES, экран `/stack` показывает найденное и наблюдаемое.
 - Установщик: apk (Alpine), xbps (Void), pkg (FreeBSD, best-effort).
 
+### Безопасность
+
+- Аудит терминала: секреты больше не наследуются PTY-shell; обычный shell — под
+  `uisentry-shell` без sudo, root — отдельным правилом; TOTP-код нормализуется
+  для replay-защиты; исправлены утечка fd, гонка карты сессий и битые cookie/
+  тикеты с не-ASCII.
+- Установщик: `--2fa`/`--no-2fa`/`--no-panel` работают и на готовом `.env`;
+  monitor-only считается полным конфигом; повторный `--terminal`/`--webapp`
+  сохраняет секреты/origin/root; `GH_TOKEN` уходит только на github.com.
+- Mini App: `SameSite=None+Secure` для Telegram и `Lax` для localhost, без
+  бесконечного retry; monitor-only отчёт о перезагрузке больше не врёт.
+
 ### Исправлено
 
 - У логов из `/run` (`os_logs`, `xui_logs`, `kernel_logs`, `dmesg`) появились
@@ -309,6 +321,18 @@ tags are published — the current version is always the `main` branch; update v
   AmneziaWG, OpenVPN, Shadowsocks, Tailscale; the installer fills `SERVICES`,
   `/stack` shows detected vs watched.
 - Package managers: apk (Alpine), xbps (Void), pkg (FreeBSD, best-effort).
+
+### Security
+
+- Terminal audit: secrets are no longer inherited by the PTY shell; the normal
+  shell runs as `uisentry-shell` without sudo, root uses a separate rule; TOTP
+  is normalized for replay protection; fixed fd leak, session-map race and
+  non-ASCII cookie/ticket handling.
+- Installer: `--2fa`/`--no-2fa`/`--no-panel` work on a complete `.env`;
+  monitor-only counts as a complete config; re-running `--terminal`/`--webapp`
+  preserves secrets/origin/root; `GH_TOKEN` is sent only to github.com.
+- Mini App: `SameSite=None+Secure` for Telegram and `Lax` for localhost, no
+  infinite retry; monitor-only reboot report is honest.
 
 ### Fixed
 

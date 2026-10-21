@@ -571,8 +571,11 @@ sudo bash install.sh --terminal --terminal-origin https://term.example.com
   access token из `/etc/uisentry/terminal-secrets.env`, `600 root`);
 - секреты терминала лежат в `/etc/uisentry/terminal-secrets.env` с правами
   `600 root`; systemd передаёт их процессу, сам пользователь файл не читает;
-- `--root-terminal` добавляет **точное** правило sudoers
-  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l`.
+- обычный shell работает под отдельным пользователем `uisentry-shell` **без
+  sudo**; root-сессия — только через точное правило
+  `uisentry-term ALL=(root) NOPASSWD: /bin/bash -l` (флаг `--root-terminal`);
+- секреты терминала (TOTP, тикеты, access token, токен бота) **не передаются**
+  в PTY: shell получает только PATH/TERM/LANG/HOME/USER.
 
 Доступ по умолчанию — только с сервера/через SSH-туннель:
 

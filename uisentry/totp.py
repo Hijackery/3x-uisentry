@@ -20,6 +20,11 @@ def totp_code(secret_b32: str, *, at: float | None = None, step: int = 30) -> st
     return f"{value % 1_000_000:06d}"
 
 
+def normalize_totp(code: str) -> str:
+    """Оставляет только ASCII-цифры: «123 456» и «123-456» — один и тот же код."""
+    return "".join(ch for ch in code if ch in "0123456789")
+
+
 def verify_totp(
     secret_b32: str,
     code: str,
@@ -27,7 +32,7 @@ def verify_totp(
     window: int = 1,
     at: float | None = None,
 ) -> bool:
-    candidate = "".join(ch for ch in code if ch.isdigit())
+    candidate = normalize_totp(code)
     if len(candidate) != 6:
         return False
     moment = time.time() if at is None else at

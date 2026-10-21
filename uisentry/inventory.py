@@ -214,7 +214,6 @@ def _listening_ports() -> set[int]:
 
 def detect_stack() -> list[Detected]:
     units = _units()
-    ports = _listening_ports()
     detected: list[Detected] = []
     for item in STACK:
         evidence: list[str] = []
@@ -236,8 +235,6 @@ def detect_stack() -> list[Detected]:
                 if "path" not in evidence:
                     evidence.append("path")
                 break
-        if item.ports and ports.intersection(item.ports):
-            evidence.append("port")
         if evidence:
             detected.append(Detected(item=item, unit=unit, evidence=tuple(evidence)))
     return detected
@@ -259,10 +256,7 @@ def watched_services() -> list[str]:
     for extra in EXTRA_UNITS:
         if extra in units:
             services.append(extra)
-    # Без служб установщик по умолчанию наблюдает x-ui: это его целевая панель.
-    if not services:
-        return ["x-ui"]
-    # Убираем дубли, сохраняя порядок.
+    # Ничего не выдумываем: на минимальном хосте служб может не быть.
     return list(dict.fromkeys(services))
 
 
@@ -271,6 +265,14 @@ def main(argv: list[str] | None = None) -> int:
     items = detect_stack()
     if "--services" in args:
         print(",".join(watched_services()))
+        return 0
+    if "--panel" in args:
+        confirmed = any(
+            item.item.key == "3x-ui"
+            and ("unit" in item.evidence or "path" in item.evidence)
+            for item in items
+        )
+        print("1" if confirmed else "0")
         return 0
     if "--json" in args:
         print(

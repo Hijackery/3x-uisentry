@@ -97,13 +97,17 @@ class Storage:
             # параллельный доступ падал с «database is locked».
             self.conn.execute("PRAGMA busy_timeout = 5000")
             self.conn.executescript(SCHEMA)
-            # Миграция баз, созданных до появления message_id. Ошибку
-            # «duplicate column» глушим, остальные DatabaseError — нет.
-            with suppress(sqlite3.OperationalError):
-                self.conn.execute(
-                    "ALTER TABLE pending_jobs ADD COLUMN message_id "
-                    "INTEGER NOT NULL DEFAULT 0"
-                )
+            # Миграция баз, созданных до появления message_id.
+            columns = {
+                row["name"]
+                for row in self.conn.execute("PRAGMA table_info(pending_jobs)")
+            }
+            if "message_id" not in columns:
+                with suppress(sqlite3.OperationalError):
+                    self.conn.execute(
+                        "ALTER TABLE pending_jobs ADD COLUMN message_id "
+                        "INTEGER NOT NULL DEFAULT 0"
+                    )
         except sqlite3.DatabaseError as exc:
             self.conn.close()
             raise StorageError(

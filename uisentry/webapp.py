@@ -75,7 +75,13 @@ def issue_cookie(secret: str, user_id: int, ttl: int) -> str:
 
 def verify_cookie(secret: str, cookie: str) -> int | None:
     body, sep, signature = cookie.partition(".")
-    if not sep or not hmac.compare_digest(_sign(secret, body), signature):
+    if not sep:
+        return None
+    try:
+        matched = hmac.compare_digest(_sign(secret, body).encode(), signature.encode())
+    except (TypeError, UnicodeError):
+        matched = False
+    if not matched:
         return None
     try:
         payload = json.loads(
@@ -164,8 +170,9 @@ def create_app(
             cookie,
             max_age=config.session_ttl,
             httponly=True,
+            # Telegram Web — iframe: строгий SameSite не отправит cookie.
             secure=bool(config.public_origin),
-            samesite="strict",
+            samesite="none" if config.public_origin else "lax",
             path="/",
         )
         return {

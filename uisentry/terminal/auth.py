@@ -69,7 +69,10 @@ def validate_init_data(
     def matches(fields: dict[str, str]) -> bool:
         check_string = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
         calculated = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(calculated, received)
+        try:
+            return hmac.compare_digest(calculated.encode(), received.encode())
+        except (TypeError, UnicodeError):
+            return False
 
     fields = {key: value for key, value in pairs.items() if key != "hash"}
     if not matches(fields):
@@ -130,7 +133,11 @@ class TicketStore:
         if not separator or not body:
             raise AuthError("тикет неверен")
         expected = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, signature):
+        try:
+            matched = hmac.compare_digest(expected.encode(), signature.encode())
+        except (TypeError, UnicodeError):
+            matched = False
+        if not matched:
             raise AuthError("подпись тикета не совпала")
         try:
             payload = json.loads(

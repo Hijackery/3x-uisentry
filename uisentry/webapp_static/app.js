@@ -21,6 +21,7 @@
     ["traffic", "Трафик"], ["subs", "Подписки"], ["history", "История"],
   ];
   let active = "overview";
+  let authAttempted = false;
   let snapshot = null;
   let timer = null;
 
@@ -170,7 +171,8 @@
         main.innerHTML = `<div class="card"><h3>Нужен вход</h3>
           <div class="empty">Откройте это приложение кнопкой в Telegram — 
           вход по подписи Telegram, без паролей.</div></div>`;
-        if (initData) {
+        if (initData && !authAttempted) {
+          authAttempted = true;
           try {
             await api("/api/session", {
               method: "POST",

@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..totp import normalize_totp
 from .auth import (
     AuthError,
     RateLimiter,
@@ -196,9 +197,10 @@ def create_app(settings: TerminalSettings) -> FastAPI:
                 raise AuthError("пользователь не администратор")
             if not limiter.allow(f"{client}:{user_id}"):
                 raise HTTPException(status_code=429, detail="слишком много попыток")
-            if not verify_totp(settings.totp_secret, body.totp):
+            code = normalize_totp(body.totp)
+            if not verify_totp(settings.totp_secret, code):
                 raise AuthError("неверный код TOTP")
-            if not replay.allow(f"{user_id}:{body.totp}"):
+            if not replay.allow(f"{user_id}:{code}"):
                 raise AuthError("этот код TOTP уже использован")
             if body.root and not settings.allow_root:
                 raise AuthError("root-терминал выключен")
@@ -249,7 +251,8 @@ def create_app(settings: TerminalSettings) -> FastAPI:
         except Exception as exc:  # noqa: BLE001 — сессия не должна ронять сервис
             logger.exception("terminal crashed: %s", exc)
         finally:
-            sessions.pop(info.user_id, None)
+            if sessions.get(info.user_id) is ws:
+                sessions.pop(info.user_id, None)
             logger.info("terminal closed: user=%s", info.user_id)
             with suppress(BaseException):
                 await ws.close(code=1000)

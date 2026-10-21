@@ -62,7 +62,7 @@ from .models import MonitorSnapshot, Severity
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
 from .storage import Storage, StorageError
-from .totp import ReplayGuard, verify_totp
+from .totp import ReplayGuard, normalize_totp, verify_totp
 
 #: PTB обобщает Application шестью параметрами; конкретные типы здесь не важны.
 BotApplication = Application[Any, Any, Any, Any, Any, Any]
@@ -980,6 +980,7 @@ class MonitorBot:
         return max(0.0, self._totp_locked.get(user_id, 0.0) - time.time())
 
     def _check_totp(self, user_id: int, code: str) -> tuple[bool, str, int]:
+        code = normalize_totp(code)
         lock_left = self._totp_lock_left(user_id)
         if lock_left > 0:
             return (
@@ -1439,7 +1440,7 @@ class MonitorBot:
                 int(row["chat_id"]),
                 int(row["user_id"]),
                 created_at=created_at,
-                message_id=int(row["message_id"] or 0),
+                message_id=int(dict(row).get("message_id") or 0),
             )
 
     async def _job_watch_apt(self, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1467,6 +1468,8 @@ class MonitorBot:
 
         try:
             status = await self.actions.apt_status(action)
+            if status.returncode != 0:
+                raise RuntimeError(status.stderr.strip() or "apt_status: ошибка")
             fields, tail = _parse_apt_status(status.stdout)
         except Exception as exc:  # noqa: BLE001 — сеть/права/юнит
             errors += 1
@@ -1624,7 +1627,10 @@ class MonitorBot:
         attempt = int(data.get("attempt", 0)) + 1
         verify = bool(data.get("verify", False))
 
-        if not await self.monitor.services.is_active(self.settings.services[0]):
+        service_down = bool(
+            self.settings.services
+        ) and not await self.monitor.services.is_active(self.settings.services[0])
+        if service_down:
             if attempt < REBOOT_WATCH_ATTEMPTS:
                 job_queue.run_once(
                     self._job_reboot_watch,
@@ -1643,8 +1649,15 @@ class MonitorBot:
             return
 
         snapshot = await self.snapshot(force=True)
-        services_ok = all(service.active for service in snapshot.services)
-        panel_ok = snapshot.panel.reachable
+        services_ok = "services" not in snapshot.unavailable and all(
+            service.active for service in snapshot.services
+        )
+        panel_ok = snapshot.panel.reachable or snapshot.panel.disabled
+        panel_text = (
+            "не настроена"
+            if snapshot.panel.disabled
+            else ("отвечает" if snapshot.panel.reachable else "не отвечает")
+        )
         verdict = (
             "✅ Сервер вернулся" if services_ok and panel_ok else "⚠️ Вернулся частично"
         )
@@ -1652,7 +1665,7 @@ class MonitorBot:
             chat_id,
             f"{verdict}\n"
             f"Сервисы: {'ок' if services_ok else 'есть проблемы'} · "
-            f"панель: {'отвечает' if panel_ok else 'не отвечает'}",
+            f"панель: {panel_text}",
         )
 
     # ------------------------------------------------------------- текст
