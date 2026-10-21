@@ -40,7 +40,9 @@ PANEL_TITLES: Final = {
     "outline": "Outline",
 }
 #: Панели, у которых бот умеет перезапускать ядро через API.
-PANEL_RESTART: Final = frozenset({"3x-ui", "marzban", "pasarguard", "s-ui"})
+PANEL_RESTART: Final = frozenset(
+    {"3x-ui", "marzban", "marzneshin", "pasarguard", "s-ui"}
+)
 #: Панели, отдающие inbound'ы (для детального экрана трафика).
 PANEL_INBOUNDS: Final = frozenset({"3x-ui"})
 

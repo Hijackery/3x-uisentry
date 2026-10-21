@@ -213,7 +213,7 @@ sudo env \
 | 3X-UI 2.x/3.x | Bearer API token | статус, inbound'ы, подписки, трафик, рестарт xray |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | статус, пользователи, трафик, рестарт xray |
 | Remnawave | Bearer API token | статус, пользователи, трафик |
-| Marzneshin | логин/пароль (OAuth2 `/api/admins/token`) | статус, пользователи, трафик |
+| Marzneshin | логин/пароль (OAuth2 `/api/admins/token`) | статус, пользователи, трафик, рестарт backend через переприменение конфига |
 | PasarGuard | логин/пароль (OAuth2 `/api/admin/token`) | статус, пользователи, трафик, рестарт core |
 | S-UI | `PANEL_API_TOKEN` в заголовке `Token` | статус, клиенты, трафик, рестарт sing-box |
 | Hiddify | `PANEL_API_TOKEN` (admin UUID) в `Hiddify-API-Key` | статус, пользователи, трафик |

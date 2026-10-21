@@ -347,11 +347,6 @@ cmd_set() {
     info "Применится после перезапуска: sudo stacksentry-menu restart"
 }
 
-env_peek() {
-    [ -f "$ENV_FILE" ] || return 0
-    sed -n "s/^$1=//p" "$ENV_FILE" | head -1
-}
-
 cmd_detect() {
     need_env
     head1 "Что найдено на сервере"
@@ -560,92 +555,50 @@ cmd_apt_logs() {
 cmd_restart_xray() {
     need_root "restart-xray"
     need_env
-    local ptype url token
-    ptype="$(env_peek PANEL_TYPE)"
-    ptype="${ptype:-3x-ui}"
-    url="$(env_peek PANEL_URL)"
-    token="$(env_peek PANEL_API_TOKEN)"
-    [ -n "$url" ] || die "в .env пуст PANEL_URL"
-    case "$ptype" in
-        3x-ui)
-            local base api code
-            base="$(env_peek PANEL_BASE_PATH)"
-            [ -n "$token" ] || die "в .env пуст PANEL_API_TOKEN"
-            api="$url"
-            [ -n "$base" ] && api="$url/${base#/}"
-            api="${api%/}/panel/api"
-            info "Запрос к 3X-UI: POST $api/server/restartXrayService"
-            code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
-                -H "Authorization: Bearer $token" \
-                "$api/server/restartXrayService" 2>/dev/null || echo 000)"
-            case "$code" in
-                200) ok "xray перезапущен" ;;
-                401|403) die "панель отклонила токен (HTTP $code) — нужен scope node-sync или admin" ;;
-                404) die "панель ответила 404 — проверьте PANEL_URL и PANEL_BASE_PATH" ;;
-                000) die "панель недоступна — проверьте PANEL_URL и что она запущена" ;;
-                *) warn "панель ответила HTTP $code" ;;
-            esac
-            ;;
-        s-ui)
-            [ -n "$token" ] || die "в .env пуст PANEL_API_TOKEN"
-            info "Запрос к S-UI: POST $url/apiv2/restartSb"
-            local body code
-            body="$(mktemp)"
-            code="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' -X POST \
-                -H "Token: $token" "$url/apiv2/restartSb" 2>/dev/null || echo 000)"
-            if grep -q '"success":true' "$body" 2>/dev/null; then
-                ok "sing-box перезапущен"
-            else
-                rm -f "$body"
-                die "S-UI не подтвердила рестарт (HTTP $code) — проверьте токен и путь панели"
-            fi
-            rm -f "$body"
-            ;;
-        marzban|pasarguard)
-            local user pass login body code endpoint
-            user="$(env_peek PANEL_USERNAME)"
-            pass="$(env_peek PANEL_PASSWORD)"
-            if [ -z "$user" ] || [ -z "$pass" ]; then
-                die "для $ptype нужны PANEL_USERNAME и PANEL_PASSWORD"
-            fi
-            body="$(mktemp)"
-            login="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' \
-                --data-urlencode "username=$user" \
-                --data-urlencode "password=$pass" \
-                --data-urlencode "grant_type=password" \
-                "$url/api/admin/token" 2>/dev/null || echo 000)"
-            token="$(sed -nE 's/.*"access_token":"([^"]+)".*/\1/p' "$body" 2>/dev/null | head -1)"
-            if [ "$login" != "200" ] || [ -z "$token" ]; then
-                rm -f "$body"
-                die "$ptype отклонил логин/пароль (HTTP $login)"
-            fi
-            if [ "$ptype" = "pasarguard" ]; then
-                local core_id
-                core_id="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" \
-                    "$url/api/cores?offset=0&limit=1" 2>/dev/null \
-                    | python3 -c 'import json,sys; print(json.load(sys.stdin)["cores"][0]["id"])' 2>/dev/null || true)"
-                [ -n "$core_id" ] || { rm -f "$body"; die "PasarGuard: не найден core для рестарта"; }
-                endpoint="$url/api/core/$core_id/restart"
-            else
-                endpoint="$url/api/core/restart"
-            fi
-            code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
-                -H "Authorization: Bearer $token" \
-                "$endpoint" 2>/dev/null || echo 000)"
-            rm -f "$body"
-            case "$code" in
-                200|204) ok "ядро $ptype перезапущено" ;;
-                401|403) die "$ptype отклонил токен (HTTP $code)" ;;
-                *) warn "$ptype ответил HTTP $code" ;;
-            esac
-            ;;
-        marzneshin|outline)
-            die "перезапуск ядра не поддерживается для PANEL_TYPE=$ptype"
-            ;;
-        *)
-            die "перезапуск ядра не поддерживается для PANEL_TYPE=$ptype"
-            ;;
-    esac
+    local py="$PREFIX/.venv/bin/python"
+    if [ ! -x "$py" ]; then
+        py="$(command -v python3 || true)"
+    fi
+    [ -n "$py" ] || die "не найден python3 (venv: $PREFIX/.venv)"
+    # Используем те же адаптеры, что и бот: токены не попадают в argv/ps,
+    # а поддерживаемые панели определяются по PANEL_TYPE автоматически.
+    if ! PYTHONPATH="$PREFIX" ENV_FILE="$ENV_FILE" "$py" - <<'PY'
+import asyncio
+import os
+import sys
+from pathlib import Path
+
+try:
+    from stacksentry.collectors.panels import build_panel
+    from stacksentry.settings import load_settings
+except Exception as exc:  # noqa: BLE001 — сообщаем причину в меню
+    print(f"Не удалось загрузить StackSentry: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+async def main() -> None:
+    settings = load_settings(Path(os.environ["ENV_FILE"]))
+    panel = build_panel(settings)
+    try:
+        result = await panel.restart_xray()
+    finally:
+        await panel.close()
+    suffix = ""
+    if isinstance(result, dict) and result.get("backend"):
+        suffix = f" (backend {result['backend']})"
+    print(f"Ядро панели перезапущено{suffix}")
+
+
+try:
+    asyncio.run(main())
+except Exception as exc:  # noqa: BLE001 — ошибка панели и есть ответ меню
+    print(f"Не удалось перезапустить ядро: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+    then
+        warn "Рестарт не выполнен — смотрите сообщение выше"
+        return 0
+    fi
 }
 
 menu() {

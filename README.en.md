@@ -217,7 +217,7 @@ missing values and offers the existing ones as defaults — no manual editing.
 | 3X-UI 2.x/3.x | Bearer API token | status, inbounds, subscriptions, traffic, xray restart |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | status, users, traffic, xray restart |
 | Remnawave | Bearer API token | status, users, traffic |
-| Marzneshin | username/password (OAuth2 `/api/admins/token`) | status, users, traffic |
+| Marzneshin | username/password (OAuth2 `/api/admins/token`) | status, users, traffic, backend restart by re-applying the current config |
 | PasarGuard | username/password (OAuth2 `/api/admin/token`) | status, users, traffic, core restart |
 | S-UI | `PANEL_API_TOKEN` in the `Token` header | status, clients, traffic, sing-box restart |
 | Hiddify | `PANEL_API_TOKEN` (admin UUID) in `Hiddify-API-Key` | status, users, traffic |

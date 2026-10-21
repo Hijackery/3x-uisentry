@@ -390,3 +390,51 @@ async def test_pasarguard_restart_uses_first_core(
 
     assert result == {"success": True}
     assert posted == ["/api/core/7/restart"]
+
+
+async def test_marzneshin_restart_reapplies_current_config(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = make_settings(
+        panel_type="marzneshin",
+        panel_url="https://marzneshin.example.com",
+        panel_username="admin",
+        panel_password="secret",
+    )
+    client = MarzneshinClient(settings)
+    client._token = "token"
+    posted: list[tuple[str, object]] = []
+
+    async def fake_get(path: str) -> dict[str, object]:
+        if path.startswith("/api/nodes?"):
+            return {
+                "items": [
+                    {
+                        "id": 5,
+                        "backends": [
+                            {"name": "sing-box"},
+                            {"name": "xray", "backend_type": "xray"},
+                        ],
+                    }
+                ]
+            }
+        if path == "/api/nodes/5/xray/config":
+            return {"config": '{"inbounds":[]}', "format": 1}
+        raise AssertionError(path)
+
+    async def fake_post(path: str, payload: object) -> dict[str, object]:
+        posted.append((path, payload))
+        return {}
+
+    monkeypatch.setattr(client, "_auth_get", fake_get)
+    monkeypatch.setattr(client, "_auth_post", fake_post)
+    try:
+        result = await client.restart_xray()
+    finally:
+        await client.close()
+
+    # Приоритет — xray, конфиг отправляется обратно без изменений.
+    assert result == {"success": True, "backend": "xray", "node_id": 5}
+    assert posted == [
+        ("/api/nodes/5/xray/config", {"config": '{"inbounds":[]}', "format": 1})
+    ]

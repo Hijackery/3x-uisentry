@@ -318,6 +318,17 @@ class MarzneshinClient(_HttpClient):
             token = await self._login()
             return await self.get(path, headers={"Authorization": f"Bearer {token}"})
 
+    async def _auth_post(self, path: str, payload: Any) -> Any:
+        token = self._token or await self._login()
+        headers = {"Authorization": f"Bearer {token}"}
+        try:
+            return await self.post(path, headers=headers, json=payload)
+        except PanelForbidden:
+            token = await self._login()
+            return await self.post(
+                path, headers={"Authorization": f"Bearer {token}"}, json=payload
+            )
+
     async def health(self) -> PanelHealth:
         try:
             await self._auth_get("/api/admins/current")
@@ -374,7 +385,42 @@ class MarzneshinClient(_HttpClient):
             page_number += 1
 
     async def restart_xray(self) -> dict[str, Any]:
-        raise PanelError("Marzneshin: рестарт ядра из бота не поддерживается")
+        """Перезапуск backend'а через переприменение его текущего конфига.
+
+        У Marzneshin нет отдельного ``/restart``: backend перезапускается
+        вызовом ``PUT /api/nodes/{id}/{backend}/config``. Сначала читаем
+        конфиг, затем отправляем его же — без изменения настроек.
+        """
+        from urllib.parse import quote
+
+        nodes = await self._auth_get("/api/nodes?page=1&size=100")
+        items = nodes.get("items", []) if isinstance(nodes, dict) else []
+        for node in items:
+            if not isinstance(node, dict):
+                continue
+            node_id = _int(node.get("id"))
+            backends = node.get("backends")
+            if node_id <= 0 or not isinstance(backends, list):
+                continue
+            ordered = sorted(
+                (item for item in backends if isinstance(item, dict)),
+                key=lambda item: 0
+                if "xray" in str(item.get("name", "")).lower()
+                else 1,
+            )
+            for backend in ordered:
+                name = str(backend.get("name", "")).strip()
+                if not name:
+                    continue
+                path = f"/api/nodes/{node_id}/{quote(name, safe='')}/config"
+                config = await self._auth_get(path)
+                if not isinstance(config, dict) or "config" not in config:
+                    continue
+                await self._auth_post(path, config)
+                return {"success": True, "backend": name, "node_id": node_id}
+        raise PanelError(
+            "Marzneshin: не найден backend с доступным конфигом для рестарта"
+        )
 
 
 class PasarGuardClient(_HttpClient):
