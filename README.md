@@ -116,11 +116,16 @@ RAM  ▓▓▓▓░░░░░░  41.0% 🟢
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
 
-Или через пайп:
+Или через пайп (так можно с `sudo`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
 ```
+
+> Не добавляйте `sudo` к форме `bash <(curl …)`: sudo закрывает файловый
+> дескриптор process substitution, и bash отвечает
+> `bash: /dev/fd/63: No such file or directory`. Либо запускайте `bash <(…)`
+> уже от root (без sudo), либо используйте пайп `curl … | sudo bash`.
 
 Мастер задаёт вопросы **четвёртым шагом, до установки зависимостей**, поэтому
 отвечать нужно в начале. Вопросы читаются с терминала (`/dev/tty`), так что

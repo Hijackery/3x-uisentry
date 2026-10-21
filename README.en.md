@@ -117,11 +117,16 @@ state is reported as unavailable (no false “crit” alerts).
 bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh)
 ```
 
-Or through a pipe:
+Or through a pipe (this form works with `sudo`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
 ```
+
+> Do not add `sudo` to `bash <(curl …)`: sudo closes the process-substitution
+> file descriptor and bash prints
+> `bash: /dev/fd/63: No such file or directory`. Either run `bash <(…)` as root
+> without sudo, or use the pipe form `curl … | sudo bash`.
 
 The wizard asks questions as **step 4, before installing dependencies**, so
 answer them at the beginning. Questions are read from the terminal (`/dev/tty`),
