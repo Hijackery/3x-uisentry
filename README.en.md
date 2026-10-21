@@ -626,7 +626,8 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 - `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
-- with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram;
+- with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram and
+  an inline “📱 Open Mini App” button to the administrator's main menu;
 - if the panel API is not configured, the dashboard shows services/VPN/hardware
   and honestly says inbounds/subscriptions are unavailable.
 

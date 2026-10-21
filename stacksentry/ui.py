@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from typing import Final
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from .alerts import Finding
 from .hints import panel_token_hint
@@ -717,6 +717,15 @@ def main_menu(
             InlineKeyboardButton("⚙️ Сервисы", callback_data="services"),
         ],
     ]
+    if is_admin and settings is not None and settings.webapp_public_origin:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "📱 Открыть Mini App",
+                    web_app=WebAppInfo(url=settings.webapp_public_origin),
+                )
+            ]
+        )
     if panel_enabled:
         buttons.append(
             [

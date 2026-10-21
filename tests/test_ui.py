@@ -332,3 +332,33 @@ def test_help_adapts_to_panel_and_package_manager(
     assert "dnf upgrade" in text
     assert "Marzneshin" in text and "Outline" in text
     assert "/stack" in text and "/version" in text
+
+
+def test_main_menu_has_inline_mini_app_for_admins(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(
+        webapp_public_origin="https://sentry.example.com",
+    )
+    buttons = [
+        button
+        for row in ui.main_menu(True, settings=settings).inline_keyboard
+        for button in row
+    ]
+    mini = next((b for b in buttons if b.text == "📱 Открыть Mini App"), None)
+    assert mini is not None
+    assert mini.web_app is not None
+    assert mini.web_app.url == "https://sentry.example.com"
+    # Гостям и без публичного origin кнопка не показывается.
+    guest = [
+        b.text
+        for row in ui.main_menu(False, settings=settings).inline_keyboard
+        for b in row
+    ]
+    assert "📱 Открыть Mini App" not in guest
+    disabled = [
+        b.text
+        for row in ui.main_menu(True, settings=make_settings()).inline_keyboard
+        for b in row
+    ]
+    assert "📱 Открыть Mini App" not in disabled

@@ -630,7 +630,8 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
   с TLS; без публичного адреса доступен через
   `ssh -L 8787:127.0.0.1:8787 root@сервер` → `http://127.0.0.1:8787`;
 - при заданном `WEBAPP_PUBLIC_ORIGIN` бот добавляет кнопку «Панель» в меню
-  Telegram (Mini App);
+  Telegram (Mini App) и inline-кнопку «📱 Открыть Mini App» в главном меню
+  администратора;
 - если API панели не настроен, дашборд показывает службы/VPN/железо и честно
   пишет, что inbound'ы/подписки недоступны.
 
