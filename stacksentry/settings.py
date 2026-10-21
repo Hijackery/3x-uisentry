@@ -374,6 +374,11 @@ def _validate(settings: Settings) -> list[str]:
         )
     if settings.webapp_enabled and len(settings.webapp_secret) < 32:
         problems.append("WEBAPP_ENABLED=1, но WEBAPP_SECRET короче 32 символов")
+    if settings.webapp_public_origin and not settings.webapp_enabled:
+        problems.append(
+            "WEBAPP_PUBLIC_ORIGIN задан, но WEBAPP_ENABLED=0 — "
+            "Mini App не запущен, кнопка в Telegram работать не будет"
+        )
     if settings.webapp_public_origin and not settings.webapp_public_origin.startswith(
         "https://"
     ):

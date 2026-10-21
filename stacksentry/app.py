@@ -284,7 +284,7 @@ class MonitorBot:
         )
         await self._verify_after_reboot()
         await self._resume_apt_watches()
-        if self.settings.webapp_public_origin:
+        if self.settings.webapp_enabled and self.settings.webapp_public_origin:
             try:
                 await self.app.bot.set_chat_menu_button(
                     menu_button=MenuButtonWebApp(
@@ -914,7 +914,11 @@ class MonitorBot:
                     age=0.0,
                     compact=True,
                 ),
-                markup=ui.overview_menu(self.is_admin(user_id), compact=True),
+                markup=ui.overview_menu(
+                    self.is_admin(user_id),
+                    compact=True,
+                    settings=self.settings,
+                ),
             )
         elif data in {"details", "server"}:
             await self._edit(
@@ -922,7 +926,11 @@ class MonitorBot:
                 ui.render_overview(
                     await self.snapshot(), self.settings, age=self._snapshot_age()
                 ),
-                markup=ui.overview_menu(self.is_admin(user_id), compact=False),
+                markup=ui.overview_menu(
+                    self.is_admin(user_id),
+                    compact=False,
+                    settings=self.settings,
+                ),
             )
         elif data == "services":
             await self._edit(

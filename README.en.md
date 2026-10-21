@@ -627,7 +627,9 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
 - with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram and
-  an inline “📱 Open Mini App” button to the administrator's main menu;
+  an inline “📱 Open Mini App” button to the administrator's main menu. “Panel”
+  is the chat menu next to the attachment icon; the inline button lives in the
+  bot menu itself;
 - if the panel API is not configured, the dashboard shows services/VPN/hardware
   and honestly says inbounds/subscriptions are unavailable.
 

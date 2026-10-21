@@ -190,3 +190,27 @@ def test_outline_without_url_is_monitor_only(tmp_path: Path) -> None:
         write_env(tmp_path, PANEL_TYPE="outline", PANEL_URL="", PANEL_API_TOKEN="")
     )
     assert settings.panel_enabled is False
+
+
+def test_webapp_origin_requires_enabled_service(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="WEBAPP_ENABLED"):
+        load_settings(
+            write_env(
+                tmp_path,
+                WEBAPP_PUBLIC_ORIGIN="https://sentry.example.com",
+                WEBAPP_ENABLED="0",
+            )
+        )
+
+
+def test_enabled_webapp_with_public_origin_is_valid(tmp_path: Path) -> None:
+    settings = load_settings(
+        write_env(
+            tmp_path,
+            WEBAPP_ENABLED="1",
+            WEBAPP_SECRET="x" * 32,
+            WEBAPP_PUBLIC_ORIGIN="https://sentry.example.com",
+        )
+    )
+    assert settings.webapp_enabled is True
+    assert settings.webapp_public_origin == "https://sentry.example.com"

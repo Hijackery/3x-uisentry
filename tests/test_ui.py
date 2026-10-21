@@ -338,6 +338,8 @@ def test_main_menu_has_inline_mini_app_for_admins(
     make_settings: Callable[..., Settings],
 ) -> None:
     settings = make_settings(
+        webapp_enabled=True,
+        webapp_secret="x" * 32,
         webapp_public_origin="https://sentry.example.com",
     )
     buttons = [
@@ -362,3 +364,13 @@ def test_main_menu_has_inline_mini_app_for_admins(
         for b in row
     ]
     assert "📱 Открыть Mini App" not in disabled
+
+    # Кнопка сохраняется на экране «Домой/Обновить».
+    overview = [
+        b.text
+        for row in ui.overview_menu(
+            True, compact=True, settings=settings
+        ).inline_keyboard
+        for b in row
+    ]
+    assert "📱 Открыть Mini App" in overview

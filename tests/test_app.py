@@ -227,3 +227,50 @@ async def test_apt_watcher_keeps_polling_while_active(
 
     assert scheduled == [job_id]
     assert len(bot_app.storage.list_pending_jobs()) == 1
+
+
+async def test_post_init_sets_webapp_menu_button(
+    bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Кнопка «Панель» у значка прикрепления — это chat menu button."""
+    from dataclasses import replace
+    from unittest.mock import AsyncMock
+
+    bot_app.settings = replace(
+        bot_app.settings,
+        webapp_enabled=True,
+        webapp_secret="x" * 32,
+        webapp_public_origin="https://sentry.example.com",
+    )
+    bot_app._verify_after_reboot = AsyncMock()  # type: ignore[method-assign]
+    bot_app._resume_apt_watches = AsyncMock()  # type: ignore[method-assign]
+    setter = AsyncMock()
+    monkeypatch.setattr(type(bot_app.app.bot), "set_chat_menu_button", setter)
+
+    await bot_app._post_init(bot_app.app)
+
+    setter.assert_awaited_once()
+    assert setter.await_args is not None
+    menu = setter.await_args.kwargs["menu_button"]
+    assert menu.web_app.url == "https://sentry.example.com"
+
+
+async def test_post_init_skips_webapp_menu_button_when_disabled(
+    bot_app: MonitorBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+    from unittest.mock import AsyncMock
+
+    bot_app.settings = replace(
+        bot_app.settings,
+        webapp_enabled=False,
+        webapp_public_origin="https://sentry.example.com",
+    )
+    bot_app._verify_after_reboot = AsyncMock()  # type: ignore[method-assign]
+    bot_app._resume_apt_watches = AsyncMock()  # type: ignore[method-assign]
+    setter = AsyncMock()
+    monkeypatch.setattr(type(bot_app.app.bot), "set_chat_menu_button", setter)
+
+    await bot_app._post_init(bot_app.app)
+    setter.assert_not_awaited()
