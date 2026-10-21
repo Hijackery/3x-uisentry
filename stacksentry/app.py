@@ -201,8 +201,8 @@ class MonitorBot:
         return (
             "🛠 <b>Обслуживание</b>\n\n"
             f"Пакетный менеджер: <b>{ui.esc(title)}</b>.\n"
-            "Фоновые apt-обновления на этой ОС недоступны; используйте "
-            "«Выполнить команду» из белого списка или штатные средства системы.\n\n"
+            "Обновление индексов и системы выполняется его штатными командами. "
+            "Phased- и релиз-обновления доступны только на APT.\n\n"
             "Все действия требуют подтверждения и пишутся в журнал."
         )
 
@@ -1247,15 +1247,15 @@ class MonitorBot:
         await _safe_edit(status, "⏳ Выполняю…", markup=None)
         # Кнопки apt-обновлений скрыты на других ОС, но callback_data можно
         # подделать: не запускаем заведомо неверный пакетный менеджер.
+        # Обновления индексов и системы теперь кроссплатформенные; phased- и
+        # релиз-обновления остаются APT-специфичными.
         if action in {
-            ACTION_APT_UPDATE,
-            ACTION_UPGRADE,
             ACTION_UPGRADE_PHASED,
             ACTION_RELEASE_UPGRADE,
         } and self.platform.package_manager not in {"", "apt"}:
             await _safe_edit(
                 status,
-                "❌ На этой ОС APT недоступен "
+                "❌ Phased/релиз-обновления доступны только на APT "
                 f"(пакетный менеджер: {ui.esc(self.platform.package_manager or '?')}).",
                 markup=ui.result_menu(),
             )
@@ -1318,6 +1318,11 @@ class MonitorBot:
 
         icon = "✅" if result.ok else "⚠️"
         title = ACTION_TITLES.get(action, action)
+        if action == ACTION_RESTART_XRAY:
+            if self.settings.panel_type == "s-ui":
+                title = "sing-box перезапущен"
+            elif self.settings.panel_type in {"marzban", "pasarguard"}:
+                title = "Ядро панели перезапущено"
         body = ui.esc(result.summary(1500))
         extra: list[InlineKeyboardButton] = []
         if action == ACTION_RESTART_SERVICE and args:

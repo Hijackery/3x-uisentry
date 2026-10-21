@@ -32,12 +32,15 @@ SUBSCRIPTIONS_PAGE: Final = 10
 PANEL_TITLES: Final = {
     "3x-ui": "3X-UI",
     "marzban": "Marzban",
+    "marzneshin": "Marzneshin",
+    "pasarguard": "PasarGuard",
     "remnawave": "Remnawave",
     "s-ui": "S-UI",
     "hiddify": "Hiddify",
+    "outline": "Outline",
 }
 #: Панели, у которых бот умеет перезапускать ядро через API.
-PANEL_RESTART: Final = frozenset({"3x-ui", "marzban", "s-ui"})
+PANEL_RESTART: Final = frozenset({"3x-ui", "marzban", "pasarguard", "s-ui"})
 #: Панели, отдающие inbound'ы (для детального экрана трафика).
 PANEL_INBOUNDS: Final = frozenset({"3x-ui"})
 
@@ -774,6 +777,11 @@ def services_menu(
             label = "♻️ Рестарт xray"
             if settings is not None and settings.panel_type == "s-ui":
                 label = "♻️ Рестарт sing-box"
+            elif settings is not None and settings.panel_type in {
+                "marzban",
+                "pasarguard",
+            }:
+                label = "♻️ Рестарт ядра"
             buttons.append(
                 [InlineKeyboardButton(label, callback_data="ask:restart_xray:")]
             )
@@ -831,30 +839,52 @@ PACKAGE_MANAGER_TITLES: Final = {
     "pkg": "pkg (FreeBSD)",
 }
 
+PKG_UPDATE_LABELS: Final = {
+    "apt": "🔄 Обновить список пакетов (apt update)",
+    "dnf": "🔄 Обновить индексы (dnf makecache)",
+    "yum": "🔄 Обновить индексы (yum makecache)",
+    "zypper": "🔄 Обновить индексы (zypper refresh)",
+    "pacman": "🔄 Обновить индексы (pacman -Sy)",
+    "apk": "🔄 Обновить индексы (apk update)",
+    "xbps": "🔄 Обновить индексы (xbps-install -S)",
+    "emerge": "🔄 Обновить индексы (emerge --sync)",
+    "eopkg": "🔄 Обновить индексы (eopkg update-repo)",
+    "pkg": "🔄 Обновить индексы (pkg update)",
+}
+
+PKG_UPGRADE_LABELS: Final = {
+    "apt": "📦 Обновить систему (full-upgrade)",
+    "dnf": "📦 Обновить систему (dnf upgrade)",
+    "yum": "📦 Обновить систему (yum update)",
+    "zypper": "📦 Обновить систему (zypper update)",
+    "pacman": "📦 Обновить систему (pacman -Syu)",
+    "apk": "📦 Обновить систему (apk upgrade)",
+    "xbps": "📦 Обновить систему (xbps-install -Su)",
+    "emerge": "📦 Обновить систему (emerge -uDN @world)",
+    "eopkg": "📦 Обновить систему (eopkg upgrade)",
+    "pkg": "📦 Обновить систему (pkg upgrade)",
+}
+
 
 def maintenance_menu(*, package_manager: str | None = None) -> InlineKeyboardMarkup:
     """Пункты обслуживания под пакетный менеджер сервера.
 
-    Фоновые обновления реализованы для APT; на других системах не показываем
-    заведомо нерабочие кнопки, оставляя команды из белого списка и перезагрузку.
+    Обновление индексов и системы работает для всех поддерживаемых PM;
+    phased- и релиз-обновления остаются только у APT.
     """
-    apt = package_manager in (None, "", "apt")
-    rows: list[list[InlineKeyboardButton]] = []
+    pm = package_manager or ""
+    # Без явного аргумента сохраняем прежнее поведение (APT-набор) для тестов
+    # и старых вызовов; реальный неизвестный PM не получает apt-кнопки.
+    apt = package_manager is None or package_manager == "apt"
+    update_label = PKG_UPDATE_LABELS.get(pm, "🔄 Обновить список пакетов")
+    upgrade_label = PKG_UPGRADE_LABELS.get(pm, "📦 Обновить систему")
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(update_label, callback_data="ask:apt_update:")],
+        [InlineKeyboardButton(upgrade_label, callback_data="ask:apt_upgrade:")],
+    ]
     if apt:
         rows.extend(
             [
-                [
-                    InlineKeyboardButton(
-                        "🔄 Обновить список пакетов (apt update)",
-                        callback_data="ask:apt_update:",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        "📦 Обновить систему (full-upgrade)",
-                        callback_data="ask:apt_upgrade:",
-                    )
-                ],
                 [
                     InlineKeyboardButton(
                         "⬆️ Обновить с phased (обычный upgrade)",

@@ -213,8 +213,11 @@ sudo env \
 | 3X-UI 2.x/3.x | Bearer API token | статус, inbound'ы, подписки, трафик, рестарт xray |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | статус, пользователи, трафик, рестарт xray |
 | Remnawave | Bearer API token | статус, пользователи, трафик |
+| Marzneshin | логин/пароль (OAuth2 `/api/admins/token`) | статус, пользователи, трафик |
+| PasarGuard | логин/пароль (OAuth2 `/api/admin/token`) | статус, пользователи, трафик, рестарт core |
 | S-UI | `PANEL_API_TOKEN` в заголовке `Token` | статус, клиенты, трафик, рестарт sing-box |
 | Hiddify | `PANEL_API_TOKEN` (admin UUID) в `Hiddify-API-Key` | статус, пользователи, трафик |
+| Outline | секретный путь `SB_API_PREFIX` в `PANEL_URL` | статус, access keys, трафик |
 
 Переключение: `sudo stacksentry-menu set PANEL_TYPE s-ui` (и адрес/токен),
 затем рестарт. Для 3X-UI/Remnawave/S-UI/Hiddify — `PANEL_API_TOKEN`,
@@ -225,6 +228,8 @@ sudo env \
   `http://host:2095/app`; бот сам добавит `/apiv2/`.
 - Hiddify: `PANEL_URL` — корень вместе с admin proxy path, например
   `https://example.com/AbCdEf`; бот сам добавит `/api/v2/`.
+- Outline: `PANEL_URL` — полный адрес с секретным `SB_API_PREFIX`, например
+  `https://host:port/SecretPath`; отдельный токен не нужен.
 - 3X-UI: `PANEL_BASE_PATH` — webBasePath панели; `/panel/api` добавит бот.
 
 Установщик, меню и бот подстраиваются под сервер. Мастер определяет ОС,
@@ -539,7 +544,7 @@ sudo stacksentry-menu apt-logs 100
 | `PANEL_URL` | адрес панели, например `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | «URL панели» (`webBasePath`), если задан |
 | `PANEL_API_TOKEN` | токен панели (3X-UI `node-sync`, Remnawave, S-UI `Token`, Hiddify admin UUID) |
-| `PANEL_TYPE` | `3x-ui`, `marzban`, `remnawave`, `s-ui` или `hiddify` |
+| `PANEL_TYPE` | `3x-ui`, `marzban`, `marzneshin`, `pasarguard`, `remnawave`, `s-ui`, `hiddify` или `outline` |
 | `PANEL_USERNAME` | логин Marzban (только для `PANEL_TYPE=marzban`) |
 | `PANEL_PASSWORD` | пароль Marzban (только для `PANEL_TYPE=marzban`) |
 | `PANEL_VERIFY_TLS` | проверять TLS-сертификат панели |

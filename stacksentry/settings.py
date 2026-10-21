@@ -186,8 +186,10 @@ class Settings:
     @property
     def panel_enabled(self) -> bool:
         """API панели настроен. Пусто — режим «только мониторинг служб»."""
-        if self.panel_type == "marzban":
+        if self.panel_type in {"marzban", "marzneshin", "pasarguard"}:
             return bool(self.panel_url and self.panel_username and self.panel_password)
+        if self.panel_type == "outline":
+            return bool(self.panel_url)
         return bool(self.panel_url and self.panel_api_token)
 
     @property
@@ -322,29 +324,44 @@ def _validate(settings: Settings) -> list[str]:
         ("http://", "https://")
     ):
         problems.append("PANEL_URL должен начинаться с http:// или https://")
+    login_panels = {"marzban", "marzneshin", "pasarguard"}
+    token_panels = {"3x-ui", "remnawave", "s-ui", "hiddify"}
     if (
         bool(settings.panel_url) != bool(settings.panel_api_token)
-        and settings.panel_type != "marzban"
+        and settings.panel_type in token_panels
     ):
         problems.append(
             "PANEL_URL и PANEL_API_TOKEN задаются вместе: либо оба, либо ни одного "
             "(без них — режим «только мониторинг служб»)"
         )
-    if settings.panel_type not in {"3x-ui", "marzban", "remnawave", "s-ui", "hiddify"}:
+    if settings.panel_type not in {
+        "3x-ui",
+        "marzban",
+        "marzneshin",
+        "pasarguard",
+        "remnawave",
+        "s-ui",
+        "hiddify",
+        "outline",
+    }:
         problems.append(
-            "PANEL_TYPE: поддерживаются 3x-ui, marzban, remnawave, s-ui, hiddify"
+            "PANEL_TYPE: поддерживаются 3x-ui, marzban, marzneshin, pasarguard, "
+            "remnawave, s-ui, hiddify, outline"
         )
-    if settings.panel_type == "marzban":
+    if settings.panel_type in login_panels:
         has_login = bool(settings.panel_username and settings.panel_password)
         if settings.panel_url and not has_login:
             problems.append(
-                "PANEL_TYPE=marzban: нужны PANEL_USERNAME и PANEL_PASSWORD "
-                "(или очистите PANEL_URL для monitor-only)"
+                f"PANEL_TYPE={settings.panel_type}: нужны PANEL_USERNAME и "
+                "PANEL_PASSWORD (или очистите PANEL_URL для monitor-only)"
             )
         if not settings.panel_url and (
             settings.panel_username or settings.panel_password
         ):
-            problems.append("PANEL_TYPE=marzban: задан логин/пароль, но пуст PANEL_URL")
+            problems.append(
+                f"PANEL_TYPE={settings.panel_type}: задан логин/пароль, "
+                "но пуст PANEL_URL"
+            )
     if "://" in settings.panel_base_path:
         problems.append(
             "PANEL_BASE_PATH выглядит как адрес — здесь нужен только путь панели "

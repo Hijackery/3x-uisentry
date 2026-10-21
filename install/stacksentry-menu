@@ -58,7 +58,7 @@ MENU_ROWS=(
     "7|Чат для алертов"
     "s|"
     "g|Панель"
-    "8|Тип панели (3x-ui/marzban/remnawave/s-ui/hiddify)"
+    "8|Тип панели (3x-ui/marzban/marzneshin/pasarguard/remnawave/s-ui/hiddify/outline)"
     "9|Адрес панели (PANEL_URL)"
     "10|Путь панели / webBasePath"
     "11|API-токен панели"
@@ -77,7 +77,7 @@ MENU_ROWS=(
     "20|Уровень логирования"
     "21|Изменить любой ключ по имени"
     "22|Перезапустить бота"
-    "23|Перезапустить ядро панели (3X-UI/Marzban/S-UI)"
+    "23|Перезапустить ядро панели (3X-UI/Marzban/PasarGuard/S-UI)"
     "24|Обновить бота с GitHub"
     "s|"
     "25|Удалить бота"
@@ -188,7 +188,7 @@ declare -A KEY_HINT=(
     [PANEL_URL]="адрес панели, например https://panel.example.com:2053"
     [PANEL_BASE_PATH]="webBasePath 3X-UI; у S-UI/Hiddify путь обычно уже в PANEL_URL"
     [PANEL_API_TOKEN]="токен панели (3X-UI node-sync / Remnawave / S-UI / Hiddify)"
-    [PANEL_TYPE]="3x-ui, marzban, remnawave, s-ui или hiddify"
+    [PANEL_TYPE]="3x-ui, marzban, marzneshin, pasarguard, remnawave, s-ui, hiddify или outline"
     [PANEL_USERNAME]="логин администратора Marzban"
     [PANEL_PASSWORD]="пароль администратора Marzban"
     [SERVICES]="юниты под наблюдением, через запятую"
@@ -237,8 +237,8 @@ check_value() {
             ;;
         PANEL_TYPE)
             case "$value" in
-                3x-ui|marzban|remnawave|s-ui|hiddify) ;;
-                *) die "PANEL_TYPE: 3x-ui, marzban, remnawave, s-ui или hiddify" ;;
+                3x-ui|marzban|marzneshin|pasarguard|remnawave|s-ui|hiddify|outline) ;;
+                *) die "PANEL_TYPE: 3x-ui, marzban, marzneshin, pasarguard, remnawave, s-ui, hiddify или outline" ;;
             esac
             ;;
         PANEL_USERNAME)
@@ -601,12 +601,12 @@ cmd_restart_xray() {
             fi
             rm -f "$body"
             ;;
-        marzban)
-            local user pass login body code
+        marzban|pasarguard)
+            local user pass login body code endpoint
             user="$(env_peek PANEL_USERNAME)"
             pass="$(env_peek PANEL_PASSWORD)"
             if [ -z "$user" ] || [ -z "$pass" ]; then
-                die "для Marzban нужны PANEL_USERNAME и PANEL_PASSWORD"
+                die "для $ptype нужны PANEL_USERNAME и PANEL_PASSWORD"
             fi
             body="$(mktemp)"
             login="$(curl -sS --max-time 15 -o "$body" -w '%{http_code}' \
@@ -617,17 +617,30 @@ cmd_restart_xray() {
             token="$(sed -nE 's/.*"access_token":"([^"]+)".*/\1/p' "$body" 2>/dev/null | head -1)"
             if [ "$login" != "200" ] || [ -z "$token" ]; then
                 rm -f "$body"
-                die "Marzban отклонил логин/пароль (HTTP $login)"
+                die "$ptype отклонил логин/пароль (HTTP $login)"
+            fi
+            if [ "$ptype" = "pasarguard" ]; then
+                local core_id
+                core_id="$(curl -sS --max-time 10 -H "Authorization: Bearer $token" \
+                    "$url/api/cores?offset=0&limit=1" 2>/dev/null \
+                    | python3 -c 'import json,sys; print(json.load(sys.stdin)["cores"][0]["id"])' 2>/dev/null || true)"
+                [ -n "$core_id" ] || { rm -f "$body"; die "PasarGuard: не найден core для рестарта"; }
+                endpoint="$url/api/core/$core_id/restart"
+            else
+                endpoint="$url/api/core/restart"
             fi
             code="$(curl -sS --max-time 15 -o /dev/null -w '%{http_code}' -X POST \
                 -H "Authorization: Bearer $token" \
-                "$url/api/core/restart" 2>/dev/null || echo 000)"
+                "$endpoint" 2>/dev/null || echo 000)"
             rm -f "$body"
             case "$code" in
-                200) ok "ядро Marzban перезапущено" ;;
-                401|403) die "Marzban отклонил токен (HTTP $code)" ;;
-                *) warn "Marzban ответил HTTP $code" ;;
+                200|204) ok "ядро $ptype перезапущено" ;;
+                401|403) die "$ptype отклонил токен (HTTP $code)" ;;
+                *) warn "$ptype ответил HTTP $code" ;;
             esac
+            ;;
+        marzneshin|outline)
+            die "перезапуск ядра не поддерживается для PANEL_TYPE=$ptype"
             ;;
         *)
             die "перезапуск ядра не поддерживается для PANEL_TYPE=$ptype"
@@ -719,7 +732,7 @@ ${BOLD}stacksentry-menu${RESET} — панель управления StackSentr
   stacksentry-menu check KEY VALUE          проверить значение (без изменений)
   sudo stacksentry-menu set KEY VALUE       изменить настройку и подсказать рестарт
   sudo stacksentry-menu restart             перезапустить бота
-  sudo stacksentry-menu restart-xray        перезапустить ядро панели (3X-UI/Marzban/S-UI)
+  sudo stacksentry-menu restart-xray        перезапустить ядро панели (где поддерживается)
   sudo stacksentry-menu apt-logs [N]        журнал фоновых apt-обновлений
   sudo stacksentry-menu totp               TOTP-секрет и otpauth (только root)
   sudo stacksentry-menu logs [N]            журнал бота (по умолчанию 50 строк)

@@ -1012,17 +1012,23 @@ if [ -f "$ENV_FILE" ] && [ "$KEEP_CONFIG" -eq 1 ]; then
     _cfg_panel_type="$(env_get PANEL_TYPE)"
     [ -n "$_cfg_panel_type" ] || _cfg_panel_type="3x-ui"
     if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
-        if [ "$_cfg_panel_type" = "marzban" ]; then
-            for _key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
-                _value="$(env_get "$_key")"
-                [ -n "$_value" ] || CONFIG_COMPLETE=0
-            done
-        else
-            for _key in PANEL_URL PANEL_API_TOKEN; do
-                _value="$(env_get "$_key")"
-                [ -n "$_value" ] || CONFIG_COMPLETE=0
-            done
-        fi
+        case "$_cfg_panel_type" in
+            marzban|marzneshin|pasarguard)
+                for _key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
+                    _value="$(env_get "$_key")"
+                    [ -n "$_value" ] || CONFIG_COMPLETE=0
+                done
+                ;;
+            outline)
+                [ -n "$(env_get PANEL_URL)" ] || CONFIG_COMPLETE=0
+                ;;
+            *)
+                for _key in PANEL_URL PANEL_API_TOKEN; do
+                    _value="$(env_get "$_key")"
+                    [ -n "$_value" ] || CONFIG_COMPLETE=0
+                done
+                ;;
+        esac
     fi
     # --panel на monitor-only .env должен снова открыть мастер.
     if [ "$PANEL_MODE" = "1" ] && [ -z "$(env_get PANEL_URL)" ]; then
@@ -1056,8 +1062,8 @@ else
     fi
     case "$PANEL_TYPE_VALUE" in
         s-ui) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-2095}" ;;
-        marzban) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-8000}" ;;
-        hiddify) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-443}" ;;
+        marzban|marzneshin|pasarguard) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-8000}" ;;
+        hiddify|outline) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-443}" ;;
         remnawave) DEFAULT_PANEL_PORT="${DETECTED_PANEL_PORT:-3000}" ;;
         *) DEFAULT_PANEL_PORT="${DETECTED_PORT:-2053}" ;;
     esac
@@ -1164,12 +1170,12 @@ else
     PANEL_PASSWORD_VALUE="$(env_get PANEL_PASSWORD)"
     if [ "$PANEL_MODE" = "1" ]; then
     if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        question PANEL_TYPE_VALUE "Тип панели (3x-ui, marzban, remnawave, s-ui, hiddify)" "$PANEL_TYPE_VALUE"
+        question PANEL_TYPE_VALUE "Тип панели (3x-ui/marzban/marzneshin/pasarguard/remnawave/s-ui/hiddify/outline)" "$PANEL_TYPE_VALUE"
     fi
     PANEL_TYPE_VALUE="$(printf '%s' "$PANEL_TYPE_VALUE" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$PANEL_TYPE_VALUE" in
-        3x-ui|marzban|remnawave|s-ui|hiddify) ;;
-        *) fail "PANEL_TYPE: поддерживаются 3x-ui, marzban, remnawave, s-ui и hiddify" ;;
+        3x-ui|marzban|marzneshin|pasarguard|remnawave|s-ui|hiddify|outline) ;;
+        *) fail "PANEL_TYPE: поддерживаются 3x-ui, marzban, marzneshin, pasarguard, remnawave, s-ui, hiddify и outline" ;;
     esac
     if [ "$PANEL_TYPE_VALUE" = "3x-ui" ]; then
     PANEL_USERNAME_VALUE=""
@@ -1282,7 +1288,8 @@ else
     fi
 
     else
-        # Остальные панели: адрес (у S-UI и Hiddify — вместе с путём) и токен.
+        # Остальные панели: адрес (у S-UI/Hiddify/Outline — вместе с путём),
+        # затем токен либо логин/пароль в зависимости от типа.
         PANEL_USERNAME_VALUE=""
         PANEL_PASSWORD_VALUE=""
         case "$PANEL_TYPE_VALUE" in
@@ -1293,6 +1300,10 @@ else
             hiddify)
                 info "Hiddify: адрес вместе с admin proxy path, например https://host/AbCdEf"
                 question PANEL_URL_VALUE "Адрес Hiddify (с admin proxy path)" "$SUGGESTED_URL"
+                ;;
+            outline)
+                info "Outline: адрес вместе с секретным SB_API_PREFIX, например https://host:port/SecretPath"
+                question PANEL_URL_VALUE "Адрес Outline (с секретным путём API)" "$SUGGESTED_URL"
                 ;;
             *)
                 question PANEL_URL_VALUE "Адрес панели $PANEL_TYPE_VALUE" "$SUGGESTED_URL"
@@ -1312,76 +1323,95 @@ else
         else
             warn "Панель не ответила на $PROBE_URL/ — если адрес верный, это заметит самопроверка"
         fi
-        if [ "$PANEL_TYPE_VALUE" = "marzban" ]; then
-            question PANEL_USERNAME_VALUE "Логин администратора Marzban" "${PANEL_USERNAME_VALUE:-admin}"
-            [ -n "$PANEL_USERNAME_VALUE" ] || fail "Нужен логин администратора Marzban"
-            question PANEL_PASSWORD_VALUE "Пароль администратора Marzban" "$PANEL_PASSWORD_VALUE"
-            [ -n "$PANEL_PASSWORD_VALUE" ] || fail "Нужен пароль администратора Marzban"
-            _login_tmp="$(mktemp)"
-            _login_code="$(curl -sS --max-time 10 -o "$_login_tmp" -w '%{http_code}' \
-                --data-urlencode "username=$PANEL_USERNAME_VALUE" \
-                --data-urlencode "password=$PANEL_PASSWORD_VALUE" \
-                --data-urlencode "grant_type=password" \
-                "$PANEL_URL_VALUE/api/admin/token" 2>/dev/null || echo 000)"
-            _login_reply="$(cat "$_login_tmp" 2>/dev/null || true)"
-            rm -f "$_login_tmp"
-            if printf '%s' "$_login_reply" | grep -q '"access_token"'; then
-                ok "Marzban принял логин и пароль"
-            elif [ "$_login_code" = "401" ] || [ "$_login_code" = "403" ]; then
-                warn "Marzban отклонил логин/пароль (HTTP $_login_code) — проверьте учётную запись"
-            else
-                warn "Проверить логин Marzban не удалось (HTTP $_login_code) — это заметит самопроверка"
-            fi
-            PANEL_TOKEN=""
-        else
-            case "$PANEL_TYPE_VALUE" in
-                s-ui)
-                    info "S-UI: Admin → API Token; токен передаётся заголовком Token"
-                    ;;
-                hiddify)
-                    info "Hiddify: Settings → API; ключ — UUID администратора (Hiddify-API-Key)"
-                    ;;
-                *)
-                    info "Remnawave: API-токен создаётся в настройках панели"
-                    ;;
-            esac
-            question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
-            [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели $PANEL_TYPE_VALUE"
-            _probe_tmp="$(mktemp)"
-            case "$PANEL_TYPE_VALUE" in
-                s-ui)
-                    _probe_code="$(curl -sS --max-time 5 -o "$_probe_tmp" -w '%{http_code}' \
-                        -H "Token: $PANEL_TOKEN" \
-                        "$PANEL_URL_VALUE/apiv2/status?r=sbd" 2>/dev/null || echo 000)"
-                    if grep -q '"success":true' "$_probe_tmp" 2>/dev/null; then
-                        ok "S-UI приняла токен"
-                    else
-                        warn "S-UI не подтвердила токен (HTTP $_probe_code) — проверьте значение и путь панели"
-                    fi
-                    ;;
-                hiddify)
-                    _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
-                        -H "Hiddify-API-Key: $PANEL_TOKEN" \
-                        "$PANEL_URL_VALUE/api/v2/panel/info/" 2>/dev/null || echo 000)"
-                    case "$_probe_code" in
-                        200) ok "Hiddify принял API-ключ" ;;
-                        401|403) warn "Hiddify отклонил ключ (HTTP $_probe_code) — проверьте admin UUID и путь" ;;
-                        *) warn "Проверить Hiddify не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
-                    esac
-                    ;;
-                remnawave)
-                    _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
-                        -H "Authorization: Bearer $PANEL_TOKEN" \
-                        "$PANEL_URL_VALUE/api/users?size=1" 2>/dev/null || echo 000)"
-                    case "$_probe_code" in
-                        200) ok "Remnawave принял токен" ;;
-                        401|403) warn "Remnawave отклонил токен (HTTP $_probe_code)" ;;
-                        *) warn "Проверить Remnawave не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
-                    esac
-                    ;;
-            esac
-            rm -f "$_probe_tmp"
-        fi
+        case "$PANEL_TYPE_VALUE" in
+            marzban|marzneshin|pasarguard)
+                case "$PANEL_TYPE_VALUE" in
+                    marzneshin) _login_path="/api/admins/token"; _panel_title="Marzneshin" ;;
+                    pasarguard) _login_path="/api/admin/token"; _panel_title="PasarGuard" ;;
+                    *) _login_path="/api/admin/token"; _panel_title="Marzban" ;;
+                esac
+                question PANEL_USERNAME_VALUE "Логин администратора $_panel_title" "${PANEL_USERNAME_VALUE:-admin}"
+                [ -n "$PANEL_USERNAME_VALUE" ] || fail "Нужен логин администратора $_panel_title"
+                question PANEL_PASSWORD_VALUE "Пароль администратора $_panel_title" "$PANEL_PASSWORD_VALUE"
+                [ -n "$PANEL_PASSWORD_VALUE" ] || fail "Нужен пароль администратора $_panel_title"
+                _login_tmp="$(mktemp)"
+                _login_code="$(curl -sS --max-time 10 -o "$_login_tmp" -w '%{http_code}' \
+                    --data-urlencode "username=$PANEL_USERNAME_VALUE" \
+                    --data-urlencode "password=$PANEL_PASSWORD_VALUE" \
+                    --data-urlencode "grant_type=password" \
+                    "$PANEL_URL_VALUE$_login_path" 2>/dev/null || echo 000)"
+                _login_reply="$(cat "$_login_tmp" 2>/dev/null || true)"
+                rm -f "$_login_tmp"
+                if printf '%s' "$_login_reply" | grep -q '"access_token"'; then
+                    ok "$_panel_title принял логин и пароль"
+                elif [ "$_login_code" = "401" ] || [ "$_login_code" = "403" ]; then
+                    warn "$_panel_title отклонил логин/пароль (HTTP $_login_code) — проверьте учётную запись"
+                else
+                    warn "Проверить логин $_panel_title не удалось (HTTP $_login_code) — это заметит самопроверка"
+                fi
+                PANEL_TOKEN=""
+                ;;
+            outline)
+                # У Outline нет отдельного токена: доступ защищён секретным путём.
+                PANEL_TOKEN=""
+                _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                    "$PANEL_URL_VALUE/server" 2>/dev/null || echo 000)"
+                case "$_probe_code" in
+                    200) ok "Outline API ответил — секретный путь верный" ;;
+                    401|403|404) warn "Outline ответил HTTP $_probe_code — проверьте SB_API_PREFIX в адресе" ;;
+                    *) warn "Проверить Outline не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
+                esac
+                ;;
+            *)
+                case "$PANEL_TYPE_VALUE" in
+                    s-ui)
+                        info "S-UI: Admin → API Token; токен передаётся заголовком Token"
+                        ;;
+                    hiddify)
+                        info "Hiddify: Settings → API; ключ — UUID администратора (Hiddify-API-Key)"
+                        ;;
+                    *)
+                        info "Remnawave: API-токен создаётся в настройках панели"
+                        ;;
+                esac
+                question PANEL_TOKEN "API-токен панели" "${PANEL_API_TOKEN:-$(env_get PANEL_API_TOKEN)}"
+                [ -n "$PANEL_TOKEN" ] || fail "Нужен API-токен панели $PANEL_TYPE_VALUE"
+                _probe_tmp="$(mktemp)"
+                case "$PANEL_TYPE_VALUE" in
+                    s-ui)
+                        _probe_code="$(curl -sS --max-time 5 -o "$_probe_tmp" -w '%{http_code}' \
+                            -H "Token: $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/apiv2/status?r=sbd" 2>/dev/null || echo 000)"
+                        if grep -q '"success":true' "$_probe_tmp" 2>/dev/null; then
+                            ok "S-UI приняла токен"
+                        else
+                            warn "S-UI не подтвердила токен (HTTP $_probe_code) — проверьте значение и путь панели"
+                        fi
+                        ;;
+                    hiddify)
+                        _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                            -H "Hiddify-API-Key: $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/api/v2/panel/info/" 2>/dev/null || echo 000)"
+                        case "$_probe_code" in
+                            200) ok "Hiddify принял API-ключ" ;;
+                            401|403) warn "Hiddify отклонил ключ (HTTP $_probe_code) — проверьте admin UUID и путь" ;;
+                            *) warn "Проверить Hiddify не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
+                        esac
+                        ;;
+                    remnawave)
+                        _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                            -H "Authorization: Bearer $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/api/users?size=1" 2>/dev/null || echo 000)"
+                        case "$_probe_code" in
+                            200) ok "Remnawave принял токен" ;;
+                            401|403) warn "Remnawave отклонил токен (HTTP $_probe_code)" ;;
+                            *) warn "Проверить Remnawave не удалось (HTTP $_probe_code) — это заметит самопроверка" ;;
+                        esac
+                        ;;
+                esac
+                rm -f "$_probe_tmp"
+                ;;
+        esac
     fi
 
     else
@@ -1416,11 +1446,17 @@ else
     question START_CHAT "Чат для алертов (Enter — админам в личку)" "$(env_get ALERT_CHAT_ID)"
 
     if [ "$PANEL_MODE" = "1" ]; then
-        if [ "$PANEL_TYPE_VALUE" = "marzban" ]; then
-            _panel_auth="логин $PANEL_USERNAME_VALUE, пароль ***"
-        else
-            _panel_auth="токен ***${PANEL_TOKEN: -4}"
-        fi
+        case "$PANEL_TYPE_VALUE" in
+            marzban|marzneshin|pasarguard)
+                _panel_auth="логин $PANEL_USERNAME_VALUE, пароль ***"
+                ;;
+            outline)
+                _panel_auth="секретный путь API"
+                ;;
+            *)
+                _panel_auth="токен ***${PANEL_TOKEN: -4}"
+                ;;
+        esac
         info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_TYPE_VALUE $PANEL_URL_VALUE, сервисы $SERVICES_LIST, $_panel_auth"
     else
         info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель не настроена (monitor-only), сервисы $SERVICES_LIST"
@@ -1486,15 +1522,21 @@ done
 _final_panel_type="$(env_get PANEL_TYPE)"
 [ -n "$_final_panel_type" ] || _final_panel_type="3x-ui"
 if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
-    if [ "$_final_panel_type" = "marzban" ]; then
-        for key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
-            [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — для Marzban нужны адрес, логин и пароль"
-        done
-    else
-        for key in PANEL_URL PANEL_API_TOKEN; do
-            [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — задайте оба или очистите оба (monitor-only)"
-        done
-    fi
+    case "$_final_panel_type" in
+        marzban|marzneshin|pasarguard)
+            for key in PANEL_URL PANEL_USERNAME PANEL_PASSWORD; do
+                [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — для $_final_panel_type нужны адрес, логин и пароль"
+            done
+            ;;
+        outline)
+            [ -n "$(env_get PANEL_URL)" ] || fail "В $ENV_FILE пуст PANEL_URL — для Outline нужен адрес с SB_API_PREFIX"
+            ;;
+        *)
+            for key in PANEL_URL PANEL_API_TOKEN; do
+                [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — задайте оба или очистите оба (monitor-only)"
+            done
+            ;;
+    esac
 fi
 
 # Заглушка из .env.example: с ней бот стартует, но Telegram отвечает 401.
@@ -1699,9 +1741,9 @@ if [ "$INIT" = systemd ]; then
     # интерактивная аутентификация» — transient-юнит создать нельзя. А обычный
     # юнит с User=root запускается через systemctl и работает.
     for _pair in \
-        "stacksentry-apt-update:_apt_update_worker:apt update" \
-        "stacksentry-apt-upgrade:_apt_worker:apt full-upgrade" \
-        "stacksentry-apt-phased:_apt_worker_phased:apt phased upgrade" \
+        "stacksentry-apt-update:_apt_update_worker:package index update" \
+        "stacksentry-apt-upgrade:_apt_worker:package upgrade" \
+        "stacksentry-apt-phased:_apt_worker_phased:APT phased upgrade" \
         "stacksentry-release-upgrade:_release_upgrade_worker:do-release-upgrade"; do
         _apt_unit="${_pair%%:*}"
         _rest="${_pair#*:}"

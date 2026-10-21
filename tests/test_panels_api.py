@@ -10,6 +10,9 @@ import pytest
 from stacksentry.collectors.panels import (
     HiddifyClient,
     MarzbanClient,
+    MarzneshinClient,
+    OutlineClient,
+    PasarGuardClient,
     RemnawaveClient,
     SUIClient,
     build_panel,
@@ -205,7 +208,13 @@ async def test_hiddify_users_to_subscriptions(
 
 @pytest.mark.parametrize(
     ("panel_type", "expected"),
-    [("s-ui", SUIClient), ("hiddify", HiddifyClient)],
+    [
+        ("s-ui", SUIClient),
+        ("hiddify", HiddifyClient),
+        ("marzneshin", MarzneshinClient),
+        ("pasarguard", PasarGuardClient),
+        ("outline", OutlineClient),
+    ],
 )
 async def test_facade_builds_new_panel_clients(
     make_settings: Callable[..., Settings], panel_type: str, expected: type
@@ -216,3 +225,168 @@ async def test_facade_builds_new_panel_clients(
         assert isinstance(facade._impl, expected)
     finally:
         await facade.close()
+
+
+async def test_marzneshin_users_to_subscriptions(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = make_settings(
+        panel_type="marzneshin",
+        panel_url="https://marzneshin.example.com",
+        panel_username="admin",
+        panel_password="secret",
+    )
+    client = MarzneshinClient(settings)
+
+    async def fake(path: str) -> dict[str, object]:
+        assert path.startswith("/api/users?page=1")
+        return {
+            "items": [
+                {
+                    "username": "alice",
+                    "enabled": True,
+                    "is_active": True,
+                    "expire_date": "2030-01-01T00:00:00",
+                    "data_limit": 1000,
+                    "used_traffic": 250,
+                    "subscription_url": "https://sub/alice",
+                },
+                {"username": "bob", "enabled": False},
+            ],
+            "total": 2,
+            "page": 1,
+            "pages": 1,
+        }
+
+    monkeypatch.setattr(client, "_auth_get", fake)
+    try:
+        subs = await client.subscriptions()
+    finally:
+        await client.close()
+
+    alice = next(item for item in subs if item.email == "alice")
+    assert alice.enabled is True
+    assert alice.total_bytes == 1000
+    assert alice.used_bytes == 250
+    assert alice.expiry_time_ms > 0
+    bob = next(item for item in subs if item.email == "bob")
+    assert bob.enabled is False
+
+
+async def test_pasarguard_users_to_subscriptions(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = make_settings(
+        panel_type="pasarguard",
+        panel_url="https://pasarguard.example.com",
+        panel_username="admin",
+        panel_password="secret",
+    )
+    client = PasarGuardClient(settings)
+
+    async def fake(path: str) -> dict[str, object]:
+        assert path.startswith("/api/users?offset=0")
+        return {
+            "users": [
+                {
+                    "username": "carol",
+                    "status": "active",
+                    "expire": 1_700_000_000,
+                    "data_limit": 2000,
+                    "used_traffic": 500,
+                    "subscription_url": "https://sub/carol",
+                },
+                {"username": "dave", "status": "disabled"},
+            ],
+            "total": 2,
+        }
+
+    monkeypatch.setattr(client, "_auth_get", fake)
+    try:
+        subs = await client.subscriptions()
+    finally:
+        await client.close()
+
+    carol = next(item for item in subs if item.email == "carol")
+    assert carol.enabled is True
+    assert carol.total_bytes == 2000
+    assert carol.used_bytes == 500
+    assert carol.expiry_time_ms == 1_700_000_000_000
+    dave = next(item for item in subs if item.email == "dave")
+    assert dave.enabled is False
+
+
+async def test_outline_access_keys_and_transfer(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = make_settings(
+        panel_type="outline",
+        panel_url="https://outline.example.com/SecretPath",
+        panel_api_token="",
+    )
+    client = OutlineClient(settings)
+
+    async def fake(path: str, **_kwargs: object) -> object:
+        if path == "/access-keys":
+            return {
+                "accessKeys": [
+                    {
+                        "id": "0",
+                        "name": "Alice",
+                        "port": 1234,
+                        "method": "chacha20-ietf-poly1305",
+                        "accessUrl": "ss://alice",
+                        "dataLimit": {"bytes": 10_000},
+                    },
+                    {"id": "1", "name": "Bob"},
+                ]
+            }
+        if path == "/metrics/transfer":
+            return {"bytesTransferredByUserId": {"0": 4000}}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "get", fake)
+    try:
+        subs = await client.subscriptions()
+    finally:
+        await client.close()
+
+    alice = next(item for item in subs if item.email == "Alice")
+    assert alice.enabled is True
+    assert alice.total_bytes == 10_000
+    assert alice.used_bytes == 4000
+    assert alice.sub_id == "ss://alice"
+    bob = next(item for item in subs if item.email == "Bob")
+    assert bob.used_bytes == 0
+
+
+async def test_pasarguard_restart_uses_first_core(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = make_settings(
+        panel_type="pasarguard",
+        panel_url="https://pasarguard.example.com",
+        panel_username="admin",
+        panel_password="secret",
+    )
+    client = PasarGuardClient(settings)
+    client._token = "token"
+    posted: list[str] = []
+
+    async def fake_get(path: str, **_kwargs: object) -> dict[str, object]:
+        assert path.startswith("/api/cores")
+        return {"count": 1, "cores": [{"id": 7, "name": "default"}]}
+
+    async def fake_post(path: str, **_kwargs: object) -> dict[str, object]:
+        posted.append(path)
+        return {}
+
+    monkeypatch.setattr(client, "get", fake_get)
+    monkeypatch.setattr(client, "post", fake_post)
+    try:
+        result = await client.restart_xray()
+    finally:
+        await client.close()
+
+    assert result == {"success": True}
+    assert posted == ["/api/core/7/restart"]

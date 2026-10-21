@@ -64,7 +64,7 @@ STACK: tuple[StackItem, ...] = (
         ("marzneshin",),
         ("/opt/marzneshin", "/etc/marzneshin"),
         (8000,),
-        "служба/порт",
+        "API поддерживается",
     ),
     StackItem(
         "pasarguard",
@@ -73,7 +73,7 @@ STACK: tuple[StackItem, ...] = (
         ("pasarguard",),
         ("/opt/pasarguard", "/etc/pasarguard"),
         (8000,),
-        "служба/порт",
+        "API поддерживается",
     ),
     StackItem(
         "hiddify",
@@ -100,7 +100,7 @@ STACK: tuple[StackItem, ...] = (
         ("shadowbox", "outline-ss-server", "outline"),
         ("/opt/outline", "/etc/outline"),
         (443, 9000),
-        "служба/порт",
+        "API поддерживается",
     ),
     # --- прокси/ядра ---
     StackItem(
@@ -357,7 +357,16 @@ class Detected:
 
 #: Панели, для которых у бота есть рабочий API-адаптер.
 API_PANEL_TYPES: frozenset[str] = frozenset(
-    {"3x-ui", "s-ui", "marzban", "remnawave", "hiddify"}
+    {
+        "3x-ui",
+        "s-ui",
+        "marzban",
+        "marzneshin",
+        "pasarguard",
+        "remnawave",
+        "hiddify",
+        "outline",
+    }
 )
 
 

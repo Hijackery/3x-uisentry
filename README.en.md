@@ -217,8 +217,11 @@ missing values and offers the existing ones as defaults — no manual editing.
 | 3X-UI 2.x/3.x | Bearer API token | status, inbounds, subscriptions, traffic, xray restart |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | status, users, traffic, xray restart |
 | Remnawave | Bearer API token | status, users, traffic |
+| Marzneshin | username/password (OAuth2 `/api/admins/token`) | status, users, traffic |
+| PasarGuard | username/password (OAuth2 `/api/admin/token`) | status, users, traffic, core restart |
 | S-UI | `PANEL_API_TOKEN` in the `Token` header | status, clients, traffic, sing-box restart |
 | Hiddify | `PANEL_API_TOKEN` (admin UUID) in `Hiddify-API-Key` | status, users, traffic |
+| Outline | secret `SB_API_PREFIX` path in `PANEL_URL` | status, access keys, traffic |
 
 Switch with `sudo stacksentry-menu set PANEL_TYPE hiddify` (plus URL and token),
 then restart. Use `PANEL_API_TOKEN` for 3X-UI/Remnawave/S-UI/Hiddify and
@@ -229,6 +232,8 @@ URL notes:
   `http://host:2095/app`; the bot appends `/apiv2/`.
 - Hiddify: `PANEL_URL` is the root including the admin proxy path, e.g.
   `https://example.com/AbCdEf`; the bot appends `/api/v2/`.
+- Outline: `PANEL_URL` is the full address including the secret
+  `SB_API_PREFIX`, e.g. `https://host:port/SecretPath`; no separate token.
 - 3X-UI: `PANEL_BASE_PATH` is the panel webBasePath; the bot appends
   `/panel/api`.
 
@@ -542,7 +547,7 @@ over the file.
 | `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | “Panel URL” (`webBasePath`), if set |
 | `PANEL_API_TOKEN` | panel token (3X-UI `node-sync`, Remnawave, S-UI `Token`, Hiddify admin UUID) |
-| `PANEL_TYPE` | `3x-ui`, `marzban`, `remnawave`, `s-ui` or `hiddify` |
+| `PANEL_TYPE` | `3x-ui`, `marzban`, `marzneshin`, `pasarguard`, `remnawave`, `s-ui`, `hiddify` or `outline` |
 | `PANEL_USERNAME` | Marzban username (`PANEL_TYPE=marzban` only) |
 | `PANEL_PASSWORD` | Marzban password (`PANEL_TYPE=marzban` only) |
 | `PANEL_VERIFY_TLS` | verify the panel TLS certificate |

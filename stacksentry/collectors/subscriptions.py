@@ -26,7 +26,15 @@ class SubscriptionCollector:
         panel_type = getattr(
             getattr(self.panel, "settings", None), "panel_type", "3x-ui"
         )
-        if panel_type in {"marzban", "remnawave", "s-ui", "hiddify"}:
+        if panel_type in {
+            "marzban",
+            "marzneshin",
+            "pasarguard",
+            "remnawave",
+            "s-ui",
+            "hiddify",
+            "outline",
+        }:
             try:
                 subs = await self.panel.subscriptions()
             except PanelForbidden as exc:

@@ -36,11 +36,14 @@
 ### Возможности
 
 - API-адаптеры панелей: 3X-UI (как раньше), Marzban (OAuth2 логин/пароль,
-  пользователи/трафик, рестарт xray), Remnawave (Bearer API token,
-  пользователи/трафик), S-UI (`Token`-заголовок, клиенты/трафик, рестарт
-  sing-box) и Hiddify (`Hiddify-API-Key`, пользователи/трафик). Переключение
-  через `PANEL_TYPE`/`stacksentry-menu`; для S-UI/Hiddify адрес панели
-  указывается вместе с web/admin proxy path.
+  пользователи/трафик, рестарт xray), Marzneshin (`/api/admins/token`,
+  постраничные пользователи), PasarGuard (`/api/admin/token`, пользователи,
+  рестарт core), Remnawave (Bearer API token, пользователи/трафик), S-UI
+  (`Token`-заголовок, клиенты/трафик, рестарт sing-box), Hiddify
+  (`Hiddify-API-Key`, пользователи/трафик) и Outline (секретный
+  `SB_API_PREFIX`, access keys + `/metrics/transfer`). Переключение через
+  `PANEL_TYPE`/`stacksentry-menu`; у S-UI/Hiddify/Outline путь панели входит
+  в `PANEL_URL`.
 
 - Адаптация под сервер: установщик определяет ОС, пакетный менеджер, службы и
   тип панели (3X-UI/Marzban/Remnawave/S-UI/Hiddify) и предлагает только
@@ -48,7 +51,12 @@
   пункт «Что найдено на сервере», тип панели и доступы Marzban; рестарт ядра
   выбирает нужный endpoint. Главное меню бота скрывает «Трафик»/«Подписки» без
   API, кнопка рестарта ядра появляется только для поддерживаемых панелей, а
-  обслуживание показывает apt-действия только на APT-системах.
+  обслуживание показывает команды выбранного пакетного менеджера.
+
+- Обновления системы без привязки к APT: `stacksentry-ctl` определяет
+  `apt/dnf/yum/zypper/pacman/apk/xbps/emerge/eopkg/pkg` и выполняет
+  обновление индексов и пакетов его штатными командами. Phased- и
+  релиз-обновления остаются только для APT и скрываются на других системах.
 
 - Расширенный реестр стека: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
   Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,

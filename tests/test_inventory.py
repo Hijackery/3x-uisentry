@@ -115,3 +115,19 @@ def test_extra_units_include_security_and_web(monkeypatch) -> None:  # type: ign
     monkeypatch.setattr(inventory, "_units", lambda: {"fail2ban", "docker", "nginx"})
     services = inventory.watched_services()
     assert {"fail2ban", "docker", "nginx"} <= set(services)
+
+
+def test_platform_info_has_sane_defaults(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "detect_package_manager", lambda: "apt")
+    monkeypatch.setattr(inventory, "detect_init", lambda: "systemd")
+    info = inventory.platform_info()
+    assert info.package_manager == "apt"
+    assert info.init == "systemd"
+    assert isinstance(info.os_id, str)
+
+
+def test_panel_suggestion_prefers_supported_panel(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(inventory, "_units", lambda: {"marzneshin"})
+    monkeypatch.setattr(inventory, "_listening_ports", lambda: set())
+    monkeypatch.setattr(inventory, "_process_names", lambda: set())
+    assert inventory.panel_suggestion() == ("marzneshin", 8000)

@@ -308,7 +308,10 @@ def test_maintenance_menu_is_package_manager_aware() -> None:
         for button in row
     ]
     assert any("apt update" in text for text in apt)
+    assert any("phased" in text for text in apt)
     assert not any("apt" in text for text in dnf)
+    assert any("dnf makecache" in text for text in dnf)
+    assert any("dnf upgrade" in text for text in dnf)
     assert any("Выполнить команду" in text for text in dnf)
     assert any("Перезагрузить сервер" in text for text in dnf)
 

@@ -1,4 +1,5 @@
-"""Адаптеры API панелей: 3X-UI, Marzban, Remnawave, S-UI, Hiddify.
+"""Адаптеры API панелей: 3X-UI, Marzban, Marzneshin, PasarGuard,
+Remnawave, S-UI, Hiddify и Outline.
 
 Единый фасад для Monitor/ActionManager. 3X-UI остаётся на существующем
 PanelClient; другие панели читают пользователей и отдают Subscription.
@@ -33,6 +34,9 @@ def _expiry_ms(value: Any) -> int:
         parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return 0
+    # Панели отдают naive-время в UTC; не зависим от часового пояса сервера.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
     return int(parsed.timestamp() * 1000)
 
 
@@ -57,6 +61,8 @@ def _hiddify_expiry_ms(user: dict[str, Any]) -> int:
         parsed = dt.datetime.fromisoformat(str(start).replace("Z", "+00:00"))
     except ValueError:
         return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
     return int((parsed + dt.timedelta(days=days)).timestamp() * 1000)
 
 
@@ -280,6 +286,271 @@ class RemnawaveClient(_HttpClient):
         raise PanelError("Remnawave: рестарт xray из бота не поддерживается")
 
 
+class MarzneshinClient(_HttpClient):
+    """Marzneshin: OAuth2 на ``/api/admins/token``, пользователи по страницам."""
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self._token = ""
+
+    async def _login(self) -> str:
+        payload = await self.post(
+            "/api/admins/token",
+            data={
+                "username": self.settings.panel_username,
+                "password": self.settings.panel_password,
+                "grant_type": "password",
+            },
+        )
+        token = (
+            str(payload.get("access_token", "")) if isinstance(payload, dict) else ""
+        )
+        if not token:
+            raise PanelForbidden("Marzneshin не выдал access_token")
+        self._token = token
+        return token
+
+    async def _auth_get(self, path: str) -> Any:
+        token = self._token or await self._login()
+        try:
+            return await self.get(path, headers={"Authorization": f"Bearer {token}"})
+        except PanelForbidden:
+            token = await self._login()
+            return await self.get(path, headers={"Authorization": f"Bearer {token}"})
+
+    async def health(self) -> PanelHealth:
+        try:
+            await self._auth_get("/api/admins/current")
+        except PanelForbidden as exc:
+            return PanelHealth(
+                reachable=True,
+                status_code=None,
+                latency_ms=None,
+                error=f"Marzneshin: {exc}",
+                api_authorized=False,
+            )
+        except (PanelError, httpx.HTTPError) as exc:
+            return PanelHealth(
+                reachable=False, status_code=None, latency_ms=None, error=str(exc)
+            )
+        return PanelHealth(
+            reachable=True,
+            status_code=200,
+            latency_ms=None,
+            error=None,
+            api_authorized=True,
+        )
+
+    async def subscriptions(self) -> list[Subscription]:
+        result: list[Subscription] = []
+        page_number = 1
+        while True:
+            page = await self._auth_get(f"/api/users?page={page_number}&size=1000")
+            users = page.get("items", []) if isinstance(page, dict) else []
+            pages = _int(page.get("pages", 0)) if isinstance(page, dict) else 0
+            if pages <= 0 and isinstance(page, dict):
+                total = _int(page.get("total", 0))
+                size = _int(page.get("size", len(users))) or len(users) or 1000
+                pages = (total + size - 1) // size
+            for user in users:
+                if not isinstance(user, dict):
+                    continue
+                status = bool(user.get("enabled", user.get("is_active", True)))
+                result.append(
+                    Subscription(
+                        email=str(user.get("username", "")),
+                        inbound_remark="marzneshin",
+                        enabled=status,
+                        expiry_time_ms=_expiry_ms(user.get("expire_date")),
+                        total_bytes=_int(user.get("data_limit")),
+                        used_bytes=_int(user.get("used_traffic")),
+                        sub_id=str(
+                            user.get("subscription_url") or user.get("username", "")
+                        ),
+                    )
+                )
+            if not users or page_number >= pages:
+                return result
+            page_number += 1
+
+    async def restart_xray(self) -> dict[str, Any]:
+        raise PanelError("Marzneshin: рестарт ядра из бота не поддерживается")
+
+
+class PasarGuardClient(_HttpClient):
+    """PasarGuard: Marzban-совместимый OAuth2, ``/api/users`` и ``/api/cores``."""
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self._token = ""
+
+    async def _login(self) -> str:
+        payload = await self.post(
+            "/api/admin/token",
+            data={
+                "username": self.settings.panel_username,
+                "password": self.settings.panel_password,
+                "grant_type": "password",
+            },
+        )
+        token = (
+            str(payload.get("access_token", "")) if isinstance(payload, dict) else ""
+        )
+        if not token:
+            raise PanelForbidden("PasarGuard не выдал access_token")
+        self._token = token
+        return token
+
+    async def _auth_get(self, path: str) -> Any:
+        token = self._token or await self._login()
+        try:
+            return await self.get(path, headers={"Authorization": f"Bearer {token}"})
+        except PanelForbidden:
+            token = await self._login()
+            return await self.get(path, headers={"Authorization": f"Bearer {token}"})
+
+    async def health(self) -> PanelHealth:
+        try:
+            await self._auth_get("/api/system")
+        except PanelForbidden as exc:
+            return PanelHealth(
+                reachable=True,
+                status_code=None,
+                latency_ms=None,
+                error=f"PasarGuard: {exc}",
+                api_authorized=False,
+            )
+        except (PanelError, httpx.HTTPError) as exc:
+            return PanelHealth(
+                reachable=False, status_code=None, latency_ms=None, error=str(exc)
+            )
+        return PanelHealth(
+            reachable=True,
+            status_code=200,
+            latency_ms=None,
+            error=None,
+            api_authorized=True,
+        )
+
+    async def subscriptions(self) -> list[Subscription]:
+        result: list[Subscription] = []
+        offset = 0
+        while True:
+            page = await self._auth_get(f"/api/users?offset={offset}&limit=1000")
+            users = page.get("users", []) if isinstance(page, dict) else []
+            total = _int(page.get("total", 0)) if isinstance(page, dict) else 0
+            for user in users:
+                if not isinstance(user, dict):
+                    continue
+                status = str(user.get("status", ""))
+                result.append(
+                    Subscription(
+                        email=str(user.get("username", "")),
+                        inbound_remark="pasarguard",
+                        enabled=status.lower() == "active",
+                        expiry_time_ms=_expiry_ms(user.get("expire")),
+                        total_bytes=_int(user.get("data_limit")),
+                        used_bytes=_int(user.get("used_traffic")),
+                        sub_id=str(
+                            user.get("subscription_url") or user.get("username", "")
+                        ),
+                    )
+                )
+            offset += len(users)
+            if not users or offset >= total:
+                return result
+
+    async def restart_xray(self) -> dict[str, Any]:
+        token = self._token or await self._login()
+        headers = {"Authorization": f"Bearer {token}"}
+        cores = await self.get("/api/cores?offset=0&limit=1", headers=headers)
+        items = cores.get("cores", []) if isinstance(cores, dict) else []
+        if not items or not isinstance(items[0], dict):
+            raise PanelError("PasarGuard: не найден core для рестарта")
+        core_id = _int(items[0].get("id"))
+        if core_id <= 0:
+            raise PanelError("PasarGuard: core без id")
+        await self.post(f"/api/core/{core_id}/restart", headers=headers)
+        return {"success": True}
+
+
+class OutlineClient(_HttpClient):
+    """Outline Server API.
+
+    ``PANEL_URL`` — полный адрес вместе с секретным ``SB_API_PREFIX``
+    (например ``https://host:port/SecretPath``); отдельного токена нет,
+    доступ защищён самим путём.
+    """
+
+    async def health(self) -> PanelHealth:
+        version = ""
+        try:
+            info = await self.get("/server")
+            if isinstance(info, dict):
+                version = str(info.get("version", ""))
+        except PanelForbidden as exc:
+            return PanelHealth(
+                reachable=True,
+                status_code=None,
+                latency_ms=None,
+                error=f"Outline: {exc}",
+                api_authorized=False,
+            )
+        except (PanelError, httpx.HTTPError) as exc:
+            return PanelHealth(
+                reachable=False, status_code=None, latency_ms=None, error=str(exc)
+            )
+        return PanelHealth(
+            reachable=True,
+            status_code=200,
+            latency_ms=None,
+            error=None,
+            panel_version=version,
+            api_authorized=True,
+        )
+
+    async def subscriptions(self) -> list[Subscription]:
+        try:
+            payload = await self.get("/access-keys")
+        except (PanelError, httpx.HTTPError):
+            return []
+        keys = payload.get("accessKeys", []) if isinstance(payload, dict) else []
+        transferred: dict[str, Any] = {}
+        try:
+            metrics = await self.get("/metrics/transfer")
+            if isinstance(metrics, dict):
+                raw = metrics.get("bytesTransferredByUserId")
+                if isinstance(raw, dict):
+                    transferred = raw
+        except (PanelError, httpx.HTTPError):
+            transferred = {}
+        result: list[Subscription] = []
+        for key in keys:
+            if not isinstance(key, dict):
+                continue
+            key_id = str(key.get("id", ""))
+            name = str(key.get("name") or key_id)
+            limit = key.get("dataLimit")
+            total = 0
+            if isinstance(limit, dict):
+                total = _int(limit.get("bytes"))
+            result.append(
+                Subscription(
+                    email=name,
+                    inbound_remark="outline",
+                    enabled=True,
+                    expiry_time_ms=0,
+                    total_bytes=total,
+                    used_bytes=_int(transferred.get(key_id)),
+                    sub_id=str(key.get("accessUrl") or key_id),
+                )
+            )
+        return result
+
+    async def restart_xray(self) -> dict[str, Any]:
+        raise PanelError("Outline: рестарт ядра из бота не поддерживается")
+
+
 class SUIClient(_HttpClient):
     """S-UI REST API v2.
 
@@ -450,12 +721,18 @@ class PanelFacade:
         self._three = PanelClient(settings) if settings.panel_type == "3x-ui" else None
         if settings.panel_type == "marzban":
             self._impl: Any = MarzbanClient(settings)
+        elif settings.panel_type == "marzneshin":
+            self._impl = MarzneshinClient(settings)
+        elif settings.panel_type == "pasarguard":
+            self._impl = PasarGuardClient(settings)
         elif settings.panel_type == "remnawave":
             self._impl = RemnawaveClient(settings)
         elif settings.panel_type == "s-ui":
             self._impl = SUIClient(settings)
         elif settings.panel_type == "hiddify":
             self._impl = HiddifyClient(settings)
+        elif settings.panel_type == "outline":
+            self._impl = OutlineClient(settings)
         else:
             self._impl = None
 

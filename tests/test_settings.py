@@ -156,3 +156,37 @@ def test_marzban_credentials_without_url_are_rejected(tmp_path: Path) -> None:
                 PANEL_PASSWORD="secret",
             )
         )
+
+
+@pytest.mark.parametrize("panel_type", ["marzneshin", "pasarguard"])
+def test_login_panel_types_are_accepted(tmp_path: Path, panel_type: str) -> None:
+    settings = load_settings(
+        write_env(
+            tmp_path,
+            PANEL_TYPE=panel_type,
+            PANEL_API_TOKEN="",
+            PANEL_USERNAME="admin",
+            PANEL_PASSWORD="secret",
+        )
+    )
+    assert settings.panel_type == panel_type
+    assert settings.panel_enabled is True
+
+
+def test_outline_needs_only_url(tmp_path: Path) -> None:
+    settings = load_settings(
+        write_env(
+            tmp_path,
+            PANEL_TYPE="outline",
+            PANEL_URL="https://outline.example.com/SecretPath",
+            PANEL_API_TOKEN="",
+        )
+    )
+    assert settings.panel_enabled is True
+
+
+def test_outline_without_url_is_monitor_only(tmp_path: Path) -> None:
+    settings = load_settings(
+        write_env(tmp_path, PANEL_TYPE="outline", PANEL_URL="", PANEL_API_TOKEN="")
+    )
+    assert settings.panel_enabled is False

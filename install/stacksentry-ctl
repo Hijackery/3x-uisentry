@@ -41,6 +41,32 @@ safe_int() {
     printf '%s' "$value"
 }
 
+#: Пакетный менеджер определяется по факту наличия. PKG_BACKEND позволяет
+#: зафиксировать его для тестов, как SVC_BACKEND для менеджера служб.
+PKG_KIND=""
+pkg_backend() {
+    if [ -n "${PKG_BACKEND:-}" ]; then
+        case "$PKG_BACKEND" in
+            apt|dnf|yum|zypper|pacman|apk|xbps|emerge|eopkg|pkg)
+                PKG_KIND="$PKG_BACKEND"; return 0 ;;
+            *) die "PKG_BACKEND=$PKG_BACKEND не поддерживается" ;;
+        esac
+    fi
+    if command -v apt-get >/dev/null 2>&1; then PKG_KIND=apt
+    elif command -v dnf >/dev/null 2>&1; then PKG_KIND=dnf
+    elif command -v yum >/dev/null 2>&1; then PKG_KIND=yum
+    elif command -v zypper >/dev/null 2>&1; then PKG_KIND=zypper
+    elif command -v pacman >/dev/null 2>&1; then PKG_KIND=pacman
+    elif command -v apk >/dev/null 2>&1; then PKG_KIND=apk
+    elif command -v xbps-install >/dev/null 2>&1; then PKG_KIND=xbps
+    elif command -v emerge >/dev/null 2>&1; then PKG_KIND=emerge
+    elif command -v eopkg >/dev/null 2>&1; then PKG_KIND=eopkg
+    elif command -v pkg >/dev/null 2>&1; then PKG_KIND=pkg
+    else
+        die "не найден поддерживаемый пакетный менеджер"
+    fi
+}
+
 apt_enqueue() {
     # $1 — имя transient-юнита, $2 — внутренняя подкоманда воркера,
     # $3 — описание для systemd, $4 — имя лог-файла для фонового режима.
@@ -237,21 +263,31 @@ case "$cmd" in
         [ "$(id -u)" -eq 0 ] || die "_apt_worker требует root"
         [ -z "${SUDO_USER:-}" ] || die "_apt_worker недоступен через sudo"
         require_no_extra_args 0 "$@"
+        pkg_backend
         export DEBIAN_FRONTEND=noninteractive
         rc=0
-        apt-get update || rc=$?
-        if [ "$rc" -eq 0 ]; then
-            apt-get -y -o Dpkg::Options::=--force-confdef \
-                -o Dpkg::Options::=--force-confold full-upgrade || rc=$?
-        fi
-        if [ "$rc" -eq 0 ]; then
-            apt-get -y autoremove || rc=$?
-        fi
-        if [ "$rc" -eq 0 ]; then
-            apt-get clean || rc=$?
-        fi
+        case "$PKG_KIND" in
+            apt)
+                apt-get update || rc=$?
+                if [ "$rc" -eq 0 ]; then
+                    apt-get -y -o Dpkg::Options::=--force-confdef \
+                        -o Dpkg::Options::=--force-confold full-upgrade || rc=$?
+                fi
+                if [ "$rc" -eq 0 ]; then apt-get -y autoremove || rc=$?; fi
+                if [ "$rc" -eq 0 ]; then apt-get clean || rc=$?; fi
+                ;;
+            dnf)   dnf -y upgrade || rc=$? ;;
+            yum)   yum -y update || rc=$? ;;
+            zypper) zypper --non-interactive update || rc=$? ;;
+            pacman) pacman -Syu --noconfirm || rc=$? ;;
+            apk)   apk upgrade || rc=$? ;;
+            xbps)  xbps-install -Su || rc=$? ;;
+            emerge) emerge -uDN @world || rc=$? ;;
+            eopkg) eopkg upgrade -y || rc=$? ;;
+            pkg)   pkg upgrade -y || rc=$? ;;
+        esac
         apt_status_write upgrade "$rc"
-        echo "full-upgrade завершён (код $rc)"
+        echo "$PKG_KIND: обновление завершено (код $rc)"
         exit "$rc"
         ;;
 
@@ -292,10 +328,22 @@ case "$cmd" in
         [ "$(id -u)" -eq 0 ] || die "_apt_update_worker требует root"
         [ -z "${SUDO_USER:-}" ] || die "_apt_update_worker недоступен через sudo"
         require_no_extra_args 0 "$@"
+        pkg_backend
         export DEBIAN_FRONTEND=noninteractive
         rc=0
-        apt-get update || rc=$?
-        if [ "$rc" -eq 0 ]; then
+        case "$PKG_KIND" in
+            apt)    apt-get update || rc=$? ;;
+            dnf)    dnf -y makecache || rc=$? ;;
+            yum)    yum -y makecache || rc=$? ;;
+            zypper) zypper --non-interactive refresh || rc=$? ;;
+            pacman) pacman -Sy --noconfirm || rc=$? ;;
+            apk)    apk update || rc=$? ;;
+            xbps)   xbps-install -S || rc=$? ;;
+            emerge) emerge --sync || rc=$? ;;
+            eopkg)  eopkg update-repo -y || rc=$? ;;
+            pkg)    pkg update -y || rc=$? ;;
+        esac
+        if [ "$rc" -eq 0 ] && [ "$PKG_KIND" = "apt" ]; then
             # Показываем не только «индексы обновлены», но и что именно
             # доступно к обновлению. Одна строка — чтобы не резать отчёт.
             _pkgs="$(apt list --upgradable 2>/dev/null | sed -n '2,$p' \
@@ -306,9 +354,11 @@ case "$cmd" in
             else
                 echo "К обновлению ($_count): $(printf '%s' "$_pkgs" | tr '\n' ' ')"
             fi
+        elif [ "$rc" -eq 0 ]; then
+            echo "Индексы пакетов обновлены ($PKG_KIND)."
         fi
         apt_status_write update "$rc"
-        echo "apt update завершён (код $rc)"
+        echo "$PKG_KIND: обновление индексов завершено (код $rc)"
         exit "$rc"
         ;;
 
@@ -317,6 +367,8 @@ case "$cmd" in
         [ "$(id -u)" -eq 0 ] || die "_apt_worker_phased требует root"
         [ -z "${SUDO_USER:-}" ] || die "_apt_worker_phased недоступен через sudo"
         require_no_extra_args 0 "$@"
+        pkg_backend
+        [ "$PKG_KIND" = "apt" ] || { echo "phased-обновления поддерживаются только APT."; exit 0; }
         export DEBIAN_FRONTEND=noninteractive
         rc=0
         apt-get update || rc=$?
@@ -337,6 +389,11 @@ case "$cmd" in
 
     dist_upgrade)
         require_no_extra_args 0 "$@"
+        pkg_backend
+        if [ "$PKG_KIND" != "apt" ]; then
+            echo "Проверка релиз-обновления реализована только для APT (Debian/Ubuntu)."
+            exit 0
+        fi
         export DEBIAN_FRONTEND=noninteractive
         if ! command -v do-release-upgrade >/dev/null 2>&1; then
             echo "do-release-upgrade не установлен (это не Ubuntu либо пакет update-manager отсутствует)"
@@ -367,6 +424,11 @@ case "$cmd" in
     release_upgrade)
         # Отдельное действие: запуск самого do-release-upgrade, а не проверки.
         require_no_extra_args 0 "$@"
+        pkg_backend
+        if [ "$PKG_KIND" != "apt" ]; then
+            echo "Релиз-обновление реализовано только для APT (Debian/Ubuntu)."
+            exit 0
+        fi
         unit="stacksentry-release-upgrade"
         log "do-release-upgrade requested"
         if ! command -v do-release-upgrade >/dev/null 2>&1; then
