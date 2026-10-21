@@ -161,6 +161,10 @@ class Settings:
     expiring_soon_days: int
     disk_path: str
 
+    panel_type: str = "3x-ui"
+    panel_username: str = ""
+    panel_password: str = ""
+
     #: 2FA для опасных действий (step-up). Пустой секрет = 2FA выключена.
     totp_secret: str = ""
     require_2fa: bool = False
@@ -182,6 +186,8 @@ class Settings:
     @property
     def panel_enabled(self) -> bool:
         """API панели настроен. Пусто — режим «только мониторинг служб»."""
+        if self.panel_type == "marzban":
+            return bool(self.panel_url and self.panel_username and self.panel_password)
         return bool(self.panel_url and self.panel_api_token)
 
     @property
@@ -198,6 +204,8 @@ class Settings:
         """Корень API панели с учётом webBasePath: .../panel/api."""
         if not self.panel_url:
             return ""
+        if self.panel_type != "3x-ui":
+            return self.panel_url.rstrip("/")
         return f"{self.panel_web_base}/panel/api"
 
 
@@ -232,6 +240,9 @@ def _build_settings() -> Settings:
         # «https://host:5580/» или «/panel/», адрес API склеится без «//».
         panel_url=env_str("PANEL_URL").rstrip("/"),
         panel_api_token=env_str("PANEL_API_TOKEN"),
+        panel_type=env_str("PANEL_TYPE", "3x-ui").strip() or "3x-ui",
+        panel_username=env_str("PANEL_USERNAME").strip(),
+        panel_password=env_str("PANEL_PASSWORD"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
         panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),

@@ -169,7 +169,7 @@ need_env() {
 #: Ключи, которые безопасно менять из меню (значения проверяются ниже).
 EDITABLE_KEYS=(
     TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS ALERT_CHAT_ID TELEGRAM_API_URL
-    PANEL_URL PANEL_BASE_PATH PANEL_API_TOKEN PANEL_VERIFY_TLS PANEL_CA_BUNDLE
+    PANEL_URL PANEL_BASE_PATH PANEL_API_TOKEN PANEL_TYPE PANEL_USERNAME PANEL_PASSWORD PANEL_VERIFY_TLS PANEL_CA_BUNDLE
     SERVICES DISK_PATH PANEL_TIMEOUT
     CPU_WARN CPU_CRIT MEM_WARN MEM_CRIT DISK_WARN DISK_CRIT
     ALERT_HYSTERESIS ALERT_COOLDOWN EXPIRING_SOON_DAYS
@@ -184,7 +184,10 @@ declare -A KEY_HINT=(
     [ALERT_CHAT_ID]="ID чата для алертов (число, у групп отрицательное) или пусто — тогда админам в личку"
     [PANEL_URL]="адрес панели, например https://panel.example.com:2053"
     [PANEL_BASE_PATH]="webBasePath панели (пусто, если не задан)"
-    [PANEL_API_TOKEN]="токен панели со scope node-sync"
+    [PANEL_API_TOKEN]="токен панели (3X-UI node-sync / Remnawave API token)"
+    [PANEL_TYPE]="3x-ui, marzban или remnawave"
+    [PANEL_USERNAME]="логин Marzban"
+    [PANEL_PASSWORD]="пароль Marzban"
     [SERVICES]="юниты под наблюдением, через запятую"
     [LOG_LEVEL]="DEBUG, INFO, WARNING или ERROR"
 )
@@ -229,6 +232,18 @@ check_value() {
         ALERT_COOLDOWN|EXPIRING_SOON_DAYS|CHECK_INTERVAL|ACTION_COOLDOWN|CONFIRM_TTL|COMMAND_TIMEOUT)
             printf '%s' "$value" | grep -qE '^[0-9]+$' || die "$key — целое число"
             ;;
+        PANEL_TYPE)
+            case "$value" in
+                3x-ui|marzban|remnawave) ;;
+                *) die "PANEL_TYPE: 3x-ui, marzban или remnawave" ;;
+            esac
+            ;;
+        PANEL_USERNAME)
+            [ -n "$value" ] || die "PANEL_USERNAME не должен быть пустым"
+            ;;
+        PANEL_PASSWORD)
+            case "$value" in *$'\n'*) die "пароль не должен содержать перевод строки" ;; esac
+            ;;
         PANEL_VERIFY_TLS)
             case "$value" in
                 true|false) ;;
@@ -249,7 +264,7 @@ show_setting() {
     local key="$1" value
     value="$(sed -n "s/^${key}=//p" "$ENV_FILE" 2>/dev/null | head -1)"
     case "$key" in
-        TELEGRAM_BOT_TOKEN|PANEL_API_TOKEN)
+        TELEGRAM_BOT_TOKEN|PANEL_API_TOKEN|PANEL_PASSWORD)
             # Короткое значение маскируем целиком: иначе «первые 6 + последние 4»
             # покажут почти весь секрет.
             if [ -z "$value" ]; then

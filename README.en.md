@@ -210,6 +210,18 @@ missing values and offers the existing ones as defaults — no manual editing.
 
 ## Connecting to the panel
 
+### Panel APIs
+
+| Panel | Auth | What it gives |
+|---|---|---|
+| 3X-UI 2.x/3.x | Bearer API token | status, inbounds, subscriptions, traffic, xray restart |
+| Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | status, users, traffic, xray restart |
+| Remnawave | Bearer API token | status, users, traffic |
+| S-UI, Hiddify, etc. | — | detected and monitored as service/port; no API yet |
+
+Switch with `sudo stacksentry-menu set PANEL_TYPE marzban` (plus username and
+password), then restart. For 3X-UI/Remnawave use `PANEL_API_TOKEN`.
+
 ### What is detected
 
 Panels: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
@@ -505,7 +517,10 @@ over the file.
 | `TELEGRAM_API_URL` | custom Bot API or proxy (official by default) |
 | `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | “Panel URL” (`webBasePath`), if set |
-| `PANEL_API_TOKEN` | panel token (`node-sync` scope) |
+| `PANEL_API_TOKEN` | panel token (3X-UI `node-sync`; Remnawave API token) |
+| `PANEL_TYPE` | `3x-ui`, `marzban` or `remnawave` |
+| `PANEL_USERNAME` | Marzban username (`PANEL_TYPE=marzban` only) |
+| `PANEL_PASSWORD` | Marzban password (`PANEL_TYPE=marzban` only) |
 | `PANEL_VERIFY_TLS` | verify the panel TLS certificate |
 | `PANEL_CA_BUNDLE` | custom CA file (PEM); overrides `PANEL_VERIFY_TLS` |
 | `PANEL_TIMEOUT` | panel request timeout, seconds |

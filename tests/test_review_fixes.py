@@ -69,7 +69,7 @@ async def test_restart_xray_respects_cooldown(
         async def close(self) -> None:
             return None
 
-    monkeypatch.setattr("stacksentry.actions.PanelClient", FakePanel)
+    monkeypatch.setattr("stacksentry.actions.build_panel", FakePanel)
     actions = ActionManager(make_settings(action_cooldown=3600))
 
     await actions.restart_xray()

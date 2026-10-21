@@ -6,13 +6,14 @@ from dataclasses import replace
 from typing import Any
 
 from ..models import InboundSummary, Subscription
-from .panel import PanelClient, PanelError, PanelForbidden, parse_inbound
+from .panel import PanelError, PanelForbidden, parse_inbound
+from .panels import PanelFacade
 
 
 class SubscriptionCollector:
     """Превращает ответ ``/panel/api/inbounds/list`` в сводки и подписки."""
 
-    def __init__(self, panel: PanelClient) -> None:
+    def __init__(self, panel: PanelFacade) -> None:
         self.panel = panel
         self.last_error: str | None = None
         self.forbidden = False
@@ -22,6 +23,20 @@ class SubscriptionCollector:
     ) -> tuple[list[InboundSummary], list[Subscription]]:
         self.last_error = None
         self.forbidden = False
+        panel_type = getattr(
+            getattr(self.panel, "settings", None), "panel_type", "3x-ui"
+        )
+        if panel_type in {"marzban", "remnawave"}:
+            try:
+                subs = await self.panel.subscriptions()
+            except PanelForbidden as exc:
+                self.forbidden = True
+                self.last_error = str(exc)
+                return [], []
+            except PanelError as exc:
+                self.last_error = str(exc)
+                return [], []
+            return [], subs
         try:
             raw_inbounds = await self.panel.inbounds()
         except PanelForbidden as exc:

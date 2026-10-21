@@ -35,6 +35,10 @@
 
 ### Возможности
 
+- API-адаптеры панелей: 3X-UI (как раньше), Marzban (OAuth2 логин/пароль,
+  пользователи/трафик, рестарт xray) и Remnawave (Bearer API token,
+  пользователи/трафик). Переключение через `PANEL_TYPE`/`stacksentry-menu`.
+
 - Расширенный реестр стека: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
   Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,
   Mieru, ShadowTLS, Brook, mtg, Shadowsocks, Squid, Dante, 3proxy, GOST;
@@ -257,6 +261,10 @@ tags are published — the current version is always the `main` branch; update v
 `sudo stacksentry-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- Panel API adapters: 3X-UI (unchanged), Marzban (OAuth2 username/password,
+  users/traffic, xray restart) and Remnawave (Bearer API token, users/traffic).
+  Switch via `PANEL_TYPE`/`stacksentry-menu`.
 
 - Expanded stack registry: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
   Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,

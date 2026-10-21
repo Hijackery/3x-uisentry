@@ -206,6 +206,18 @@ sudo env \
 
 ## Подключение к панели
 
+### API панелей
+
+| Панель | Авторизация | Что даёт |
+|---|---|---|
+| 3X-UI 2.x/3.x | Bearer API token | статус, inbound'ы, подписки, трафик, рестарт xray |
+| Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | статус, пользователи, трафик, рестарт xray |
+| Remnawave | Bearer API token | статус, пользователи, трафик |
+| S-UI, Hiddify и др. | — | детект и мониторинг службы/порта; API пока нет |
+
+Переключение: `sudo stacksentry-menu set PANEL_TYPE marzban` (и логин/пароль),
+затем рестарт. Для 3X-UI/Remnawave — `PANEL_API_TOKEN`.
+
 ### Что детектируется
 
 Панели: 3X-UI, S-UI, Marzban, Marzneshin, PasarGuard, Hiddify, Remnawave,
@@ -502,7 +514,10 @@ sudo stacksentry-menu apt-logs 100
 | `TELEGRAM_API_URL` | свой Bot API или прокси (по умолчанию официальный) |
 | `PANEL_URL` | адрес панели, например `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | «URL панели» (`webBasePath`), если задан |
-| `PANEL_API_TOKEN` | токен панели (scope `node-sync`) |
+| `PANEL_API_TOKEN` | токен панели (3X-UI `node-sync`; Remnawave API token) |
+| `PANEL_TYPE` | `3x-ui`, `marzban` или `remnawave` |
+| `PANEL_USERNAME` | логин Marzban (только для `PANEL_TYPE=marzban`) |
+| `PANEL_PASSWORD` | пароль Marzban (только для `PANEL_TYPE=marzban`) |
 | `PANEL_VERIFY_TLS` | проверять TLS-сертификат панели |
 | `PANEL_CA_BUNDLE` | свой CA-файл (PEM); перекрывает `PANEL_VERIFY_TLS` |
 | `PANEL_TIMEOUT` | таймаут запросов к панели, сек |

@@ -13,7 +13,8 @@ import secrets
 import time
 from dataclasses import dataclass
 
-from .collectors.panel import PanelClient, PanelError
+from .collectors.panel import PanelError
+from .collectors.panels import build_panel
 from .command import run_command
 from .models import CommandResult
 from .settings import Settings
@@ -185,7 +186,7 @@ class ActionManager:
         """
         async with self._lock:
             self._check_cooldown(ACTION_RESTART_XRAY)
-            panel = PanelClient(self.settings)
+            panel = build_panel(self.settings)
             try:
                 await panel.restart_xray()
             except PanelError as exc:

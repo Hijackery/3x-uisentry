@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .collectors.panel import PanelClient
+from .collectors.panels import build_panel
 from .collectors.services import ServiceCollector
 from .collectors.subscriptions import SubscriptionCollector
 from .collectors.system import SystemCollector
@@ -65,7 +65,7 @@ class Monitor:
         self.settings = settings
         self.system = SystemCollector(settings.disk_path)
         self.services = ServiceCollector(settings.services)
-        self.panel = PanelClient(settings)
+        self.panel = build_panel(settings)
         self.subscriptions = SubscriptionCollector(self.panel)
 
     async def close(self) -> None:
