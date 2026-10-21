@@ -193,6 +193,8 @@ class AlertEngine:
     def _panel(self, snapshot: MonitorSnapshot) -> list[Finding]:
         findings: list[Finding] = []
         panel = snapshot.panel
+        if panel.disabled:
+            return findings
 
         if not panel.reachable:
             findings.append(

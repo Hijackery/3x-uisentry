@@ -128,6 +128,14 @@ class Monitor:
     async def _collect_panel_health(
         self, warnings: list[str], unavailable: set[str]
     ) -> PanelHealth:
+        if not self.settings.panel_enabled:
+            return PanelHealth(
+                reachable=False,
+                status_code=None,
+                latency_ms=None,
+                error=None,
+                disabled=True,
+            )
         try:
             return await self.panel.health()
         except Exception as exc:
@@ -141,6 +149,8 @@ class Monitor:
     async def _collect_subscriptions(
         self, warnings: list[str], unavailable: set[str]
     ) -> tuple[list[InboundSummary], list[Subscription]]:
+        if not self.settings.panel_enabled:
+            return [], []
         try:
             inbounds, subs = await self.subscriptions.collect()
         except Exception as exc:  # сборщик не должен ронять весь срез

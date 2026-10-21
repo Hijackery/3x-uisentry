@@ -74,6 +74,11 @@ class PanelClient:
         return f"{self.base}/{path.lstrip('/')}"
 
     async def _request(self, path: str, method: str = "GET") -> Any:
+        if not self.settings.panel_enabled:
+            raise PanelError(
+                "API панели не настроен — заполните PANEL_URL и PANEL_API_TOKEN "
+                "(или используйте режим monitor-only)"
+            )
         session = self._session()
         url = self._url(path)
 

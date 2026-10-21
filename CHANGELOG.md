@@ -6,9 +6,16 @@
 
 ## [Unreleased]
 
+### Ребрендинг
+
+- Продукт называется **StackSentry** (панели + VPN + службы + сервер). Технические
+  идентификаторы `uisentry`, `uisentry-bot`, `uisentry-menu`, `uisentry-ctl`
+  сохранены для совместимости с уже установленными ботами; полный технический
+  rename — отдельным обновлением с миграцией.
+
 ### Переименование
 
-- Проект теперь **3X-UI Sentry**: репозиторий `Hijackery/3x-uisentry`,
+- Проект теперь **StackSentry**: репозиторий `Hijackery/3x-uisentry`,
   Python-пакет `uisentry`, служба `uisentry-bot`, пользователь `uisentry`,
   команды `uisentry-menu` и `uisentry-ctl`, состояние в `/var/lib/uisentry`.
   Установщик автоматически переносит `.env` и базу из старой установки
@@ -27,6 +34,10 @@
   и `visudo -cf` для sudoers, сгенерированного из реальных имён юнитов и ключей.
 
 ### Возможности
+
+- Monitor-only: без API 3X-UI бот наблюдает службы, VPN-стек и железо;
+  `PANEL_URL`/`PANEL_API_TOKEN` можно оставить пустыми (оба сразу), установщик
+  сам определяет 3X-UI и спрашивает, настраивать ли API. `--no-panel`/`--panel`.
 
 - 2FA (TOTP) для опасных действий бота: step-up — просмотр без кода, рестарты и
   apt update после кода с разблокировкой на 15 минут, обновления ОС и
@@ -201,9 +212,16 @@
 
 ## English
 
+### Rebrand
+
+- The product is now **StackSentry** (panels + VPN + services + server). The
+  technical `uisentry`, `uisentry-bot`, `uisentry-menu`, `uisentry-ctl`
+  identifiers are kept for compatibility with existing installs; a full technical
+  rename will be a separate update with migration.
+
 ### Rename
 
-- The project is now **3X-UI Sentry**: repository `Hijackery/3x-uisentry`,
+- The project is now **StackSentry**: repository `Hijackery/3x-uisentry`,
   Python package `uisentry`, service `uisentry-bot`, user `uisentry`, commands
   `uisentry-menu` and `uisentry-ctl`, state in `/var/lib/uisentry`. The installer
   migrates `.env` and the database from the old `xui-monitor-bot` installation
@@ -215,6 +233,10 @@ tags are published — the current version is always the `main` branch; update v
 `sudo uisentry-menu` (item 21) or by re-running the installer.
 
 ### Added
+
+- Monitor-only: without the 3X-UI API the bot watches services, the VPN stack and
+  hardware; `PANEL_URL`/`PANEL_API_TOKEN` may both be empty, the installer detects
+  3X-UI and asks whether to configure the API. `--no-panel`/`--panel`.
 
 - TOTP 2FA for dangerous bot actions: step-up — read-only without a code,
   restarts and apt update after a code with a 15-minute unlock, OS upgrades and

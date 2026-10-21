@@ -94,3 +94,16 @@ def test_environment_overrides_env_file(
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:AAfromenv")
     settings = load_settings(write_env(tmp_path))
     assert settings.telegram_token == "123456789:AAfromenv"
+
+
+def test_monitor_only_mode_without_panel(tmp_path: Path) -> None:
+    """Без 3X-UI бот работает как монитор служб: оба поля пусты."""
+    settings = load_settings(write_env(tmp_path, PANEL_URL="", PANEL_API_TOKEN=""))
+    assert settings.panel_enabled is False
+    assert settings.api_base == ""
+    assert settings.panel_web_base == ""
+
+
+def test_panel_url_and_token_must_be_set_together(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="задаются вместе"):
+        load_settings(write_env(tmp_path, PANEL_API_TOKEN=""))

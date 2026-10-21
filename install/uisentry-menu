@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# uisentry-menu — консольная панель 3X-UI Sentry.
+# uisentry-menu — консольная панель StackSentry.
 #
 # Запуск:  sudo uisentry-menu            # интерактивное меню
 #          sudo uisentry-menu status     # состояние службы
@@ -94,7 +94,7 @@ menu_max() {
 }
 
 draw_menu() {
-    local status="$1" title="3X-UI Sentry — панель управления"
+    local status="$1" title="StackSentry — панель управления"
     local -a rows=("$title" "$status") kinds=("title" "status")
     local spec kind payload
     for spec in "${MENU_ROWS[@]}"; do
@@ -605,7 +605,7 @@ menu() {
 
 usage() {
     cat <<EOF
-${BOLD}uisentry-menu${RESET} — панель управления 3X-UI Sentry
+${BOLD}uisentry-menu${RESET} — панель управления StackSentry
 
   sudo uisentry-menu                     интерактивное меню
   sudo uisentry-menu status              состояние службы и последние ошибки

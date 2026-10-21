@@ -358,7 +358,7 @@ class MonitorBot:
         # отказом — это только вводит в заблуждение.
         await self._reply_screen(
             message,
-            "🛰 <b>3X-UI Sentry</b> — бот мониторинга сервера и панели 3X-UI.\n\n"
+            "🛰 <b>StackSentry</b> — бот мониторинга сервера и панели 3X-UI.\n\n"
             + (
                 "Показывает состояние системы, сервисов, панели, подписок и "
                 "трафика, а также позволяет перезапускать сервисы и обновлять "
@@ -436,11 +436,13 @@ class MonitorBot:
         if message is None or not await self._guard(message, update.effective_user):
             return
         text = ui.render_panel(await self.snapshot())
-        try:
-            update_info = await self.monitor.panel.panel_update_info()
-        except Exception as exc:  # доп. информация не критична
-            logger.info("getPanelUpdateInfo недоступен: %s", exc)
-            update_info = {}
+        update_info: dict[str, Any] = {}
+        if self.settings.panel_enabled:
+            try:
+                update_info = await self.monitor.panel.panel_update_info()
+            except Exception as exc:  # доп. информация не критична
+                logger.info("getPanelUpdateInfo недоступен: %s", exc)
+                update_info = {}
         if update_info:
             latest = update_info.get("tagName") or update_info.get("version") or "?"
             text += f"\nПоследний релиз панели: {ui.esc(latest)}"

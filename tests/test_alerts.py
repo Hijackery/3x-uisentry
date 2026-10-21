@@ -237,3 +237,24 @@ def test_unavailable_services_do_not_fake_recovery(
     out = alerts.update(alerts.evaluate(failed), unavailable=failed.unavailable)
 
     assert not any("восстановлено" in finding.title for finding in out)
+
+
+def test_disabled_panel_produces_no_panel_findings(
+    make_settings: Callable[..., Settings], storage: Storage
+) -> None:
+    from uisentry.alerts import Rule
+
+    alerts = engine(make_settings, storage)
+    disabled = panel(
+        reachable=False, error=None, panel_version="", api_authorized=False
+    )
+    disabled = PanelHealth(
+        reachable=False,
+        status_code=None,
+        latency_ms=None,
+        error=None,
+        disabled=True,
+    )
+    findings = alerts.evaluate(snapshot(system=metrics(10.0), panel_health=disabled))
+    assert not any(finding.rule is Rule.panel for finding in findings)
+    assert not any("восстановлено" in finding.title for finding in findings)

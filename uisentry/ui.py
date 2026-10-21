@@ -107,7 +107,7 @@ def render_overview(
     metrics = snapshot.system
     # Без повторов: одна причина — одна строка.
     problems = list(dict.fromkeys(snapshot.warnings))
-    if snapshot.panel.reachable is False:
+    if snapshot.panel.reachable is False and not snapshot.panel.disabled:
         problems.append("панель недоступна")
     if metrics is None:
         # Без метрик вердикт «всё в норме» был бы враньём.
@@ -135,7 +135,9 @@ def render_overview(
     )
     if services_bit:
         bits.append(services_bit)
-    if snapshot.panel.reachable:
+    if snapshot.panel.disabled:
+        bits.append("панель ⚪")
+    elif snapshot.panel.reachable:
         bits.append("панель 🟢")
     elif snapshot.panel.reachable is False:
         bits.append("панель 🔴")
@@ -287,6 +289,14 @@ def render_services(snapshot: MonitorSnapshot) -> str:
 
 def render_panel(snapshot: MonitorSnapshot) -> str:
     panel = snapshot.panel
+    if panel.disabled:
+        return (
+            "\n🌐 <b>Панель</b>\n"
+            "⚪ API панели не настроен — режим «только мониторинг служб».\n\n"
+            "Службы и VPN-стек наблюдаются; inbound'ы и подписки недоступны.\n"
+            "Настроить API 3X-UI: <code>sudo uisentry-menu</code> → "
+            "адрес панели и токен."
+        )
     if not panel.reachable:
         reason = esc(panel.error or "нет ответа")
         return f"\n🌐 <b>Панель 3X-UI</b>\n🔴 недоступна: {reason}"
@@ -312,6 +322,13 @@ def render_panel(snapshot: MonitorSnapshot) -> str:
 def render_traffic(snapshot: MonitorSnapshot) -> str:
     """Трафик: итоги по inbound'ам и топ клиентов (в отличие от «Подписок»)."""
     if not snapshot.inbounds and not snapshot.subscriptions:
+        if snapshot.panel.disabled:
+            return (
+                "\n📊 <b>Трафик</b>\n"
+                "API панели не настроен — inbound'ы и трафик недоступны.\n"
+                "Службы и VPN-стек наблюдаются. Настроить: "
+                "<code>sudo uisentry-menu</code>."
+            )
         return (
             "\n📊 <b>Трафик</b>\n"
             "Панель не отдала inbound'ы и клиентов — показывать нечего.\n\n"
@@ -928,7 +945,7 @@ def render_command_help(allowlist: tuple[str, ...]) -> str:
 def render_help(is_admin: bool) -> str:
     """Полная инструкция простыми словами: разделы, действия, настройки."""
     lines_out = [
-        "🛰 <b>3X-UI Sentry</b>",
+        "🛰 <b>StackSentry</b>",
         "Следит за сервером и панелью и пишет, когда что-то сломалось. "
         "Всё управление — кнопками; команды можно не помнить.",
         "",

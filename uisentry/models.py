@@ -56,6 +56,8 @@ class PanelHealth:
     xray_version: str = ""
     xray_state: str = ""
     api_authorized: bool = False
+    #: API панели сознательно не настроен (monitor-only).
+    disabled: bool = False
 
 
 @dataclass(frozen=True, slots=True)

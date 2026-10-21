@@ -1,5 +1,5 @@
 [Unit]
-Description=3X-UI Sentry — Telegram monitor bot
+Description=StackSentry — Telegram monitor bot
 After=network-online.target x-ui.service
 Wants=network-online.target
 

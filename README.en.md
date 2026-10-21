@@ -1,4 +1,7 @@
-# 3X-UI Sentry
+# StackSentry
+
+> VPS, panel and VPN monitoring in Telegram. The product name is **StackSentry**;
+> the technical `uisentry`/`uisentry-*` identifiers are kept for compatibility.
 
 [![CI](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/3x-uisentry/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
@@ -7,8 +10,10 @@
 
 [Русский](README.md) · **English**
 
-**3X-UI Sentry** is a Telegram bot for a server running the **3X-UI** panel: it watches the hardware,
-services and the panel, sends clear alerts and shows subscriptions. Risky actions
+**StackSentry** is a Telegram bot for VPS: it watches hardware, services,
+panels (3X-UI, S-UI, Marzban, Hiddify) and VPN stacks (WireGuard, OpenVPN,
+AmneziaWG, sing-box, Xray, Shadowsocks, Tailscale), sends clear alerts and shows
+subscriptions. Risky actions
 — restart, system upgrade, reboot — happen only from a confirmed button and only
 for an administrator.
 
@@ -64,7 +69,7 @@ matters to Telegram and stays quiet when everything is fine.
 
 | | |
 |---|---|
-| **Monitoring** | CPU, RAM, swap, disk, network, load average; services; panel and xray; inbounds, subscriptions and client traffic |
+| **Monitoring** | CPU, RAM, swap, disk, network, load; services; panel and xray; panel/VPN inventory; inbounds, subscriptions and traffic |
 | **Alerts** | hysteresis without flapping, cooldown, an “I know, until morning” mute; restart and log buttons right on the alert |
 | **Actions** | service and xray restart, `apt` full/phased, release upgrade check, reboot, allow-listed diagnostic commands |
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
@@ -204,6 +209,14 @@ If an incomplete `.env` is left from an aborted run, the wizard fills in the
 missing values and offers the existing ones as defaults — no manual editing.
 
 ## Connecting to the panel
+
+### No 3X-UI: monitor-only
+
+The installer detects panels/VPN by services, paths and ports. If 3X-UI is not
+found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty — the bot then monitors
+services, the VPN stack, hardware and alerts, while panel/subscription screens
+honestly say the API is not configured. Enable it later via `sudo uisentry-menu`
+(panel address and token) or reinstall with `--panel`.
 
 ### 3X-UI token
 

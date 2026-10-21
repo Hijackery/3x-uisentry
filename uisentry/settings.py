@@ -174,8 +174,15 @@ class Settings:
         return telegram_id is not None and telegram_id in self.admin_ids
 
     @property
+    def panel_enabled(self) -> bool:
+        """API панели настроен. Пусто — режим «только мониторинг служб»."""
+        return bool(self.panel_url and self.panel_api_token)
+
+    @property
     def panel_web_base(self) -> str:
         """Корень веб-панели: ``PANEL_URL`` + ``PANEL_BASE_PATH`` (webBasePath)."""
+        if not self.panel_url:
+            return ""
         base = self.panel_url.rstrip("/")
         prefix = self.panel_base_path.strip("/")
         return f"{base}/{prefix}" if prefix else base
@@ -183,6 +190,8 @@ class Settings:
     @property
     def api_base(self) -> str:
         """Корень API панели с учётом webBasePath: .../panel/api."""
+        if not self.panel_url:
+            return ""
         return f"{self.panel_web_base}/panel/api"
 
 
@@ -215,7 +224,7 @@ def _build_settings() -> Settings:
         log_level=env_str("LOG_LEVEL", "INFO").upper(),
         # Нормализуем сразу при чтении: даже если в .env вручную вписали
         # «https://host:5580/» или «/panel/», адрес API склеится без «//».
-        panel_url=env_str("PANEL_URL", "https://127.0.0.1:2053").rstrip("/"),
+        panel_url=env_str("PANEL_URL").rstrip("/"),
         panel_api_token=env_str("PANEL_API_TOKEN"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
         panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
@@ -286,12 +295,15 @@ def _validate(settings: Settings) -> list[str]:
         problems.append("TELEGRAM_API_URL должен начинаться с http:// или https://")
     if not settings.admin_ids:
         problems.append("TELEGRAM_ADMIN_IDS пуст: ботом никто не сможет управлять")
-    if not settings.panel_url:
-        problems.append("PANEL_URL не задан")
-    elif not settings.panel_url.startswith(("http://", "https://")):
+    if settings.panel_url and not settings.panel_url.startswith(
+        ("http://", "https://")
+    ):
         problems.append("PANEL_URL должен начинаться с http:// или https://")
-    if not settings.panel_api_token:
-        problems.append("PANEL_API_TOKEN не задан (создайте токен в 3X-UI)")
+    if bool(settings.panel_url) != bool(settings.panel_api_token):
+        problems.append(
+            "PANEL_URL и PANEL_API_TOKEN задаются вместе: либо оба, либо ни одного "
+            "(без них — режим «только мониторинг служб»)"
+        )
     if "://" in settings.panel_base_path:
         problems.append(
             "PANEL_BASE_PATH выглядит как адрес — здесь нужен только путь панели "

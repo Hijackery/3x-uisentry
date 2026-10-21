@@ -208,3 +208,19 @@ def test_missing_unit_is_reported(
 ) -> None:
     settings: Settings = make_settings()
     assert settings.services  # конфигурация услуг не пустая
+
+
+async def test_monitor_only_panel_health(
+    make_settings: Callable[..., Settings],
+) -> None:
+    from uisentry.monitor import Monitor
+
+    monitor = Monitor(make_settings(panel_url="", panel_api_token=""))
+    try:
+        health = await monitor._collect_panel_health([], set())
+        assert health.disabled is True
+        assert health.reachable is False
+        inbounds, subs = await monitor._collect_subscriptions([], set())
+        assert inbounds == [] and subs == []
+    finally:
+        await monitor.close()

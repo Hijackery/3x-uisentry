@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 3X-UI Sentry — установка на Linux-сервер одной командой.
+# StackSentry — установка на Linux-сервер одной командой.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Hijackery/3x-uisentry/main/install.sh | sudo bash
 #
@@ -218,6 +218,7 @@ TERMINAL_ALLOW_ROOT=0
 TERMINAL_ORIGIN=""
 ENABLE_2FA=0
 DISABLE_2FA=0
+PANEL_MODE="auto"
 INIT="${INIT:-}"
 ASSUME_YES=0
 KEEP_CONFIG=1
@@ -228,7 +229,7 @@ PRINT_SOURCE=0
 
 usage() {
     cat <<EOF
-${BOLD}Установка 3X-UI Sentry${RESET}
+${BOLD}Установка StackSentry${RESET}
 
   sudo bash install.sh [опции]
 
@@ -255,6 +256,8 @@ ${BOLD}Установка 3X-UI Sentry${RESET}
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
   --2fa            включить 2FA (TOTP) для опасных действий
   --no-2fa         выключить 2FA (секрет сохраняется)
+  --panel          настроить API 3X-UI (по умолчанию — автоопределение)
+  --no-panel       не настраивать API панели (только мониторинг служб)
   --help           эта справка
 
 Переменные окружения (для --yes и unattended-установки):
@@ -267,6 +270,7 @@ ${BOLD}English${RESET}
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
             --terminal · --root-terminal · --terminal-origin URL · --2fa · --no-2fa
+            --panel · --no-panel
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -295,6 +299,8 @@ while [ $# -gt 0 ]; do
         --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; shift 2 ;;
         --2fa)          ENABLE_2FA=1; shift ;;
         --no-2fa)       DISABLE_2FA=1; shift ;;
+        --panel)        PANEL_MODE=1; shift ;;
+        --no-panel)     PANEL_MODE=0; shift ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -428,7 +434,7 @@ interactive_menu() {
     if [ "$INTERACTIVE" -eq 0 ]; then
         fail "--menu требует терминал. Без него: --yes (установка) или --uninstall."
     fi
-    printf '\n%s3X-UI Sentry — установка%s\n\n' "$BOLD" "$RESET"
+    printf '\n%sStackSentry — установка%s\n\n' "$BOLD" "$RESET"
     printf '  1) Установить или обновить бота\n'
     printf '  2) Удалить бота целиком (код, база, пользователь)\n'
     printf '  3) Удалить бота, оставив базу и пользователя\n'
@@ -1047,6 +1053,28 @@ else
         [ -n "$(env_get TOTP_SECRET)" ] || set_env TOTP_SECRET ""
     fi
 
+    # --- API панели: автоопределение 3X-UI ---
+    if [ "$PANEL_MODE" = "auto" ]; then
+        if [ -n "$(env_get PANEL_URL)" ]; then
+            PANEL_MODE=1
+        else
+            _stack_json="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --json 2>/dev/null || true)"
+            case "$_stack_json" in
+                *'"key": "3x-ui"'*) PANEL_MODE=1 ;;
+                *) PANEL_MODE=0 ;;
+            esac
+        fi
+    fi
+    if [ "$PANEL_MODE" = "0" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        ask "3X-UI API не найден. Настроить адрес и токен вручную? [y/N] "
+        read -r _panel_answer <&$READ_FD || _panel_answer=""
+        case "$_panel_answer" in
+            [yYдД]*) PANEL_MODE=1 ;;
+            *) PANEL_MODE=0 ;;
+        esac
+    fi
+
+    if [ "$PANEL_MODE" = "1" ]; then
     question PANEL_URL_VALUE "Адрес панели 3X-UI (хост и порт)" "$SUGGESTED_URL"
     PANEL_URL_VALUE="$(normalize_url "$PANEL_URL_VALUE")"
     # Адрес можно вставлять прямо из браузера, вместе с путём — отделяем путь.
@@ -1152,6 +1180,15 @@ else
         fi
     fi
 
+    else
+        PANEL_URL_VALUE=""
+        PANEL_BASE=""
+        PANEL_TOKEN=""
+        PROBE_URL=""
+        info "API панели не настроен — режим «только мониторинг служб»."
+        info "Позже: sudo uisentry-menu → адрес панели и API-токен."
+    fi
+
     # Автоопределение панелей и VPN-стека (stdlib, работает до venv).
     DETECTED_SERVICES="$(PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" -m uisentry.inventory --services 2>/dev/null || true)"
     [ -n "$DETECTED_SERVICES" ] || DETECTED_SERVICES="x-ui"
@@ -1168,7 +1205,11 @@ else
     info "сообщение и посмотрите ID у @userinfobot или @getidsbot."
     question START_CHAT "Чат для алертов (Enter — админам в личку)" ""
 
-    info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_URL_VALUE${PANEL_BASE:+/$PANEL_BASE}, сервисы $SERVICES_LIST, токен панели ***${PANEL_TOKEN: -4}"
+    if [ "$PANEL_MODE" = "1" ]; then
+        info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель $PANEL_URL_VALUE${PANEL_BASE:+/$PANEL_BASE}, сервисы $SERVICES_LIST, токен панели ***${PANEL_TOKEN: -4}"
+    else
+        info "Итого: бот ${TG_USERNAME:+@$TG_USERNAME }<$ADMIN_IDS>, панель не настроена (monitor-only), сервисы $SERVICES_LIST"
+    fi
 
     set_env TELEGRAM_BOT_TOKEN "$TG_TOKEN"
     set_env TELEGRAM_ADMIN_IDS "$ADMIN_IDS"
@@ -1192,9 +1233,14 @@ fi
 chown root:"${SERVICE_GROUP:-$SERVICE_USER}" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
-for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS PANEL_URL PANEL_API_TOKEN; do
+for key in TELEGRAM_BOT_TOKEN TELEGRAM_ADMIN_IDS; do
     [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — дозаполните: sudo uisentry-menu (или повторите установку)"
 done
+if [ -n "$(env_get PANEL_URL)" ] || [ -n "$(env_get PANEL_API_TOKEN)" ]; then
+    for key in PANEL_URL PANEL_API_TOKEN; do
+        [ -n "$(env_get "$key")" ] || fail "В $ENV_FILE пусто $key — задайте оба или очистите оба (monitor-only)"
+    done
+fi
 
 # Заглушка из .env.example: с ней бот стартует, но Telegram отвечает 401.
 case "$(env_get TELEGRAM_BOT_TOKEN)" in
@@ -1488,7 +1534,7 @@ install_terminal() {
 
     if ! id "$TERM_USER" >/dev/null 2>&1; then
         useradd --system --no-create-home --home-dir "$TERM_HOME" \
-            --shell /bin/bash --comment "3X-UI Sentry terminal" "$TERM_USER" \
+            --shell /bin/bash --comment "StackSentry terminal" "$TERM_USER" \
             || { warn "Не удалось создать $TERM_USER"; return 1; }
     fi
     TERM_GROUP="$(id -gn "$TERM_USER")"
@@ -1542,7 +1588,7 @@ EOF
 
     cat > "$TERM_UNIT" <<EOF
 [Unit]
-Description=3X-UI Sentry — web terminal (TOTP)
+Description=StackSentry — web terminal (TOTP)
 After=network-online.target
 Wants=network-online.target
 
@@ -1696,7 +1742,9 @@ if [ "$CFG_OK" -eq 1 ]; then
         "$PY" -c 'from uisentry.settings import load_settings; print(load_settings().api_base)' 2>/dev/null || true
     )"
     PANEL_TOKEN_VALUE="$(env_get PANEL_API_TOKEN)"
-    if [ -n "$PANEL_API" ] && [ -n "$PANEL_TOKEN_VALUE" ]; then
+    if [ -z "$(env_get PANEL_URL)" ] && [ -z "$(env_get PANEL_API_TOKEN)" ]; then
+        check_ok "API панели не настроен — monitor-only (службы наблюдаются)"
+    elif [ -n "$PANEL_API" ] && [ -n "$PANEL_TOKEN_VALUE" ]; then
         # Без -f: HTTP-код нужен, чтобы отличить «токен не принят» (401/403)
         # от «путь не тот» (404) и «панель недоступна» (000/сеть).
         PANEL_HTTP_DIR="$(mktemp -d)"
