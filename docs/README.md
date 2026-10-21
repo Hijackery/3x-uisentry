@@ -9,7 +9,6 @@
 | [COMPATIBILITY.md](COMPATIBILITY.md) | ОС, init-системы, пакетные менеджеры, панели и протоколы |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Компоненты, поток данных, границы безопасности, расширение |
 | [RELEASING.md](RELEASING.md) | Версии, проверка и установка обновлений, откат |
-| [../ROADMAP.md](../ROADMAP.md) | Направления развития |
 | [../SUPPORT.md](../SUPPORT.md) | Куда обращаться и что приложить |
 | [../SECURITY.md](../SECURITY.md) | Политика безопасности и модель угроз |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Как собрать, проверить и прислать изменения |
