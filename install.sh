@@ -732,7 +732,12 @@ migrate_legacy_install() {
         warn "Найдена старая установка $old_prefix, но путь $PREFIX нестандартный — миграцию пропускаю"
         return 0
     fi
-    info "Найдена старая установка $old_prefix — переношу конфиг и состояние"
+    if [ "$PREFIX" = "$old_prefix" ]; then
+        warn "Установка остаётся в старом каталоге $old_prefix."
+        warn "Для полного переименования запустите установщик без --prefix: /opt/uisentry"
+    else
+        info "Найдена старая установка $old_prefix — переношу конфиг и состояние"
+    fi
     if command -v systemctl >/dev/null 2>&1; then
         systemctl disable --now "$old_service" >/dev/null 2>&1 || true
     fi
@@ -759,12 +764,15 @@ migrate_legacy_install() {
         /etc/systemd/system/xui-monitor-apt-phased.service \
         /etc/systemd/system/xui-monitor-release-upgrade.service \
         "/etc/sudoers.d/${old_service}" \
+        "/etc/sudoers.d/${old_service}.invalid" \
         /usr/local/bin/xui-ctl /usr/local/bin/xui-menu \
         "/etc/init.d/${old_service}"
     if command -v systemctl >/dev/null 2>&1; then
         systemctl daemon-reload >/dev/null 2>&1 || true
     fi
-    [ "$old_prefix" != "$PREFIX" ] && rm -rf "$old_prefix"
+    if [ "$old_prefix" != "$PREFIX" ] && [ -f "$PREFIX/.env" ]; then
+        rm -rf "$old_prefix"
+    fi
     [ "$old_state" != "$STATE_DIR" ] && rm -rf "$old_state"
     if id "$old_user" >/dev/null 2>&1; then
         userdel "$old_user" >/dev/null 2>&1 || true
