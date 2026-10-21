@@ -36,8 +36,11 @@
 ### Возможности
 
 - API-адаптеры панелей: 3X-UI (как раньше), Marzban (OAuth2 логин/пароль,
-  пользователи/трафик, рестарт xray) и Remnawave (Bearer API token,
-  пользователи/трафик). Переключение через `PANEL_TYPE`/`stacksentry-menu`.
+  пользователи/трафик, рестарт xray), Remnawave (Bearer API token,
+  пользователи/трафик), S-UI (`Token`-заголовок, клиенты/трафик, рестарт
+  sing-box) и Hiddify (`Hiddify-API-Key`, пользователи/трафик). Переключение
+  через `PANEL_TYPE`/`stacksentry-menu`; для S-UI/Hiddify адрес панели
+  указывается вместе с web/admin proxy path.
 
 - Расширенный реестр стека: S-UI, Marzban, Marzneshin, PasarGuard, Hiddify,
   Remnawave, Outline; Xray, V2Ray, sing-box, Hysteria, TUIC, Trojan, NaiveProxy,

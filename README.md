@@ -213,10 +213,19 @@ sudo env \
 | 3X-UI 2.x/3.x | Bearer API token | статус, inbound'ы, подписки, трафик, рестарт xray |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | статус, пользователи, трафик, рестарт xray |
 | Remnawave | Bearer API token | статус, пользователи, трафик |
-| S-UI, Hiddify и др. | — | детект и мониторинг службы/порта; API пока нет |
+| S-UI | `PANEL_API_TOKEN` в заголовке `Token` | статус, клиенты, трафик, рестарт sing-box |
+| Hiddify | `PANEL_API_TOKEN` (admin UUID) в `Hiddify-API-Key` | статус, пользователи, трафик |
 
-Переключение: `sudo stacksentry-menu set PANEL_TYPE marzban` (и логин/пароль),
-затем рестарт. Для 3X-UI/Remnawave — `PANEL_API_TOKEN`.
+Переключение: `sudo stacksentry-menu set PANEL_TYPE s-ui` (и адрес/токен),
+затем рестарт. Для 3X-UI/Remnawave/S-UI/Hiddify — `PANEL_API_TOKEN`,
+для Marzban — логин/пароль.
+
+Особенности адресов:
+- S-UI: `PANEL_URL` — корень панели вместе с её web path, например
+  `http://host:2095/app`; бот сам добавит `/apiv2/`.
+- Hiddify: `PANEL_URL` — корень вместе с admin proxy path, например
+  `https://example.com/AbCdEf`; бот сам добавит `/api/v2/`.
+- 3X-UI: `PANEL_BASE_PATH` — webBasePath панели; `/panel/api` добавит бот.
 
 ### Что детектируется
 
@@ -227,9 +236,10 @@ WireGuard, AmneziaWG, OpenVPN, IPsec/StrongSwan, SoftEther, Tailscale, ZeroTier,
 NetBird, Headscale, Nebula.
 
 Определение — по юнитам (systemd/OpenRC/SysV), путям конфигов и именам
-процессов (`ps`). API-интеграция сейчас только у 3X-UI (inbound'ы, подписки,
-рестарт xray); остальные показываются как службы/порты и честно помечаются
-«API не поддерживается». Docker-контейнеры видны как служба `docker`, но не
+процессов (`ps`). API-интеграция есть у 3X-UI (inbound'ы, подписки, рестарт
+xray), Marzban, Remnawave, S-UI и Hiddify (пользователи/клиенты, трафик);
+остальные показываются как службы/порты и честно помечаются «API не
+поддерживается». Docker-контейнеры видны как служба `docker`, но не
 опрашиваются через Docker API (это дало бы боту root-эквивалентные права).
 
 ### Если 3X-UI нет: monitor-only
@@ -514,8 +524,8 @@ sudo stacksentry-menu apt-logs 100
 | `TELEGRAM_API_URL` | свой Bot API или прокси (по умолчанию официальный) |
 | `PANEL_URL` | адрес панели, например `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | «URL панели» (`webBasePath`), если задан |
-| `PANEL_API_TOKEN` | токен панели (3X-UI `node-sync`; Remnawave API token) |
-| `PANEL_TYPE` | `3x-ui`, `marzban` или `remnawave` |
+| `PANEL_API_TOKEN` | токен панели (3X-UI `node-sync`, Remnawave, S-UI `Token`, Hiddify admin UUID) |
+| `PANEL_TYPE` | `3x-ui`, `marzban`, `remnawave`, `s-ui` или `hiddify` |
 | `PANEL_USERNAME` | логин Marzban (только для `PANEL_TYPE=marzban`) |
 | `PANEL_PASSWORD` | пароль Marzban (только для `PANEL_TYPE=marzban`) |
 | `PANEL_VERIFY_TLS` | проверять TLS-сертификат панели |

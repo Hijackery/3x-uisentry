@@ -26,7 +26,7 @@ class SubscriptionCollector:
         panel_type = getattr(
             getattr(self.panel, "settings", None), "panel_type", "3x-ui"
         )
-        if panel_type in {"marzban", "remnawave"}:
+        if panel_type in {"marzban", "remnawave", "s-ui", "hiddify"}:
             try:
                 subs = await self.panel.subscriptions()
             except PanelForbidden as exc:
@@ -102,6 +102,7 @@ class SubscriptionCollector:
         subscriptions: list[Subscription],
         *,
         expiring_soon_days: int,
+        inbound_api: bool = True,
     ) -> list[str]:
         """Что требует внимания: истёкшие, на исходе, исчерпавшие трафик."""
         issues: list[str] = []
@@ -128,7 +129,9 @@ class SubscriptionCollector:
         if depleted:
             issues.append(f"трафик исчерпан: {len(depleted)}")
 
-        if not any(item.enabled for item in inbounds):
+        # У Marzban/Remnawave/S-UI/Hiddify нет inbound'ов в нашем смысле:
+        # пустой список там ожидаем и не должен выглядеть аварией.
+        if inbound_api and not any(item.enabled for item in inbounds):
             issues.append("нет включённых inbound'ов")
         return issues
 

@@ -113,3 +113,20 @@ def test_panel_url_and_token_must_be_set_together(tmp_path: Path) -> None:
 def test_empty_services_is_allowed(tmp_path: Path) -> None:
     settings = load_settings(write_env(tmp_path, SERVICES=""))
     assert settings.services == ()
+
+
+@pytest.mark.parametrize("panel_type", ["s-ui", "hiddify", "remnawave"])
+def test_token_panel_types_are_accepted(tmp_path: Path, panel_type: str) -> None:
+    settings = load_settings(write_env(tmp_path, PANEL_TYPE=panel_type))
+    assert settings.panel_type == panel_type
+    assert settings.panel_enabled is True
+
+
+def test_panel_type_is_normalized(tmp_path: Path) -> None:
+    settings = load_settings(write_env(tmp_path, PANEL_TYPE="S-UI"))
+    assert settings.panel_type == "s-ui"
+
+
+def test_unknown_panel_type_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="PANEL_TYPE"):
+        load_settings(write_env(tmp_path, PANEL_TYPE="unknown"))

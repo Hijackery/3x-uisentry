@@ -86,6 +86,7 @@ class Monitor:
                     inbounds,
                     subs,
                     expiring_soon_days=self.settings.expiring_soon_days,
+                    inbound_api=self.settings.panel_type == "3x-ui",
                 )
             )
 
@@ -159,10 +160,16 @@ class Monitor:
             unavailable.add("subs")
             return [], []
         if self.subscriptions.forbidden:
-            warnings.append(
-                "список inbound'ов недоступен: у токена нет области node-sync/admin "
-                f"({self.subscriptions.last_error})"
-            )
+            if self.settings.panel_type == "3x-ui":
+                warnings.append(
+                    "список inbound'ов недоступен: у токена нет области "
+                    f"node-sync/admin ({self.subscriptions.last_error})"
+                )
+            else:
+                warnings.append(
+                    f"API панели {self.settings.panel_type} отвергла запрос: "
+                    f"{self.subscriptions.last_error}"
+                )
         elif self.subscriptions.last_error:
             warnings.append(f"подписки не собраны: {self.subscriptions.last_error}")
         return inbounds, subs

@@ -184,8 +184,8 @@ declare -A KEY_HINT=(
     [ALERT_CHAT_ID]="ID чата для алертов (число, у групп отрицательное) или пусто — тогда админам в личку"
     [PANEL_URL]="адрес панели, например https://panel.example.com:2053"
     [PANEL_BASE_PATH]="webBasePath панели (пусто, если не задан)"
-    [PANEL_API_TOKEN]="токен панели (3X-UI node-sync / Remnawave API token)"
-    [PANEL_TYPE]="3x-ui, marzban или remnawave"
+    [PANEL_API_TOKEN]="токен панели (3X-UI node-sync / Remnawave / S-UI / Hiddify)"
+    [PANEL_TYPE]="3x-ui, marzban, remnawave, s-ui или hiddify"
     [PANEL_USERNAME]="логин Marzban"
     [PANEL_PASSWORD]="пароль Marzban"
     [SERVICES]="юниты под наблюдением, через запятую"
@@ -234,8 +234,8 @@ check_value() {
             ;;
         PANEL_TYPE)
             case "$value" in
-                3x-ui|marzban|remnawave) ;;
-                *) die "PANEL_TYPE: 3x-ui, marzban или remnawave" ;;
+                3x-ui|marzban|remnawave|s-ui|hiddify) ;;
+                *) die "PANEL_TYPE: 3x-ui, marzban, remnawave, s-ui или hiddify" ;;
             esac
             ;;
         PANEL_USERNAME)

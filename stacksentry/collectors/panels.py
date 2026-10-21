@@ -1,7 +1,7 @@
-"""Адаптеры API панелей: 3X-UI, Marzban, Remnawave.
+"""Адаптеры API панелей: 3X-UI, Marzban, Remnawave, S-UI, Hiddify.
 
 Единый фасад для Monitor/ActionManager. 3X-UI остаётся на существующем
-PanelClient; Marzban и Remnawave читают пользователей и отдают Subscription.
+PanelClient; другие панели читают пользователей и отдают Subscription.
 """
 
 from __future__ import annotations
@@ -36,13 +36,37 @@ def _expiry_ms(value: Any) -> int:
     return int(parsed.timestamp() * 1000)
 
 
+def _gigabytes_to_bytes(value: Any) -> int:
+    """Hiddify отдаёт лимит/расход в гигабайтах (1 GB = 1024**3)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if number <= 0:
+        return 0
+    return int(number * 1024**3)
+
+
+def _hiddify_expiry_ms(user: dict[str, Any]) -> int:
+    """Срок = start_date + package_days; 0 дней/нет даты — без срока."""
+    days = user.get("package_days")
+    start = user.get("start_date")
+    if not isinstance(days, int) or days <= 0 or not start:
+        return 0
+    try:
+        parsed = dt.datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    return int((parsed + dt.timedelta(days=days)).timestamp() * 1000)
+
+
 class _HttpClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, api_prefix: str = "") -> None:
         self.settings = settings
         verify: bool | str = settings.panel_verify_tls
         if settings.panel_ca_bundle:
             verify = settings.panel_ca_bundle
-        self.base = settings.panel_url.rstrip("/")
+        self.base = f"{settings.panel_url.rstrip('/')}{api_prefix}"
         self._client = httpx.AsyncClient(
             timeout=settings.panel_timeout,
             verify=verify,
@@ -57,11 +81,21 @@ class _HttpClient:
         return self._parse(response, path)
 
     async def post(
-        self, path: str, *, headers: dict[str, str] | None = None, data: Any = None
+        self,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        data: Any = None,
+        json: Any = None,
     ) -> Any:
-        response = await self._client.post(
-            f"{self.base}{path}", headers=headers, data=data
-        )
+        if json is not None:
+            response = await self._client.post(
+                f"{self.base}{path}", headers=headers, json=json
+            )
+        else:
+            response = await self._client.post(
+                f"{self.base}{path}", headers=headers, data=data
+            )
         return self._parse(response, path)
 
     def _parse(self, response: httpx.Response, path: str) -> Any:
@@ -210,17 +244,30 @@ class RemnawaveClient(_HttpClient):
                 status = str(user.get("status", ""))
                 result.append(
                     Subscription(
-                        email=str(user.get("username", "")),
+                        email=str(
+                            user.get("username", "")
+                            or user.get("email", "")
+                            or user.get("uuid", "")
+                        ),
                         inbound_remark="remnawave",
                         enabled=status.upper() == "ACTIVE",
-                        expiry_time_ms=_expiry_ms(user.get("expireAt")),
-                        total_bytes=_int(user.get("trafficLimitBytes")),
+                        expiry_time_ms=_expiry_ms(
+                            user.get("expireAt")
+                            or user.get("expireDate")
+                            or user.get("expiryTime")
+                        ),
+                        total_bytes=_int(
+                            user.get("trafficLimitBytes") or user.get("dataLimit")
+                        ),
                         used_bytes=_int(
-                            user.get("trafficUsedBytes") or user.get("usedTrafficBytes")
+                            user.get("trafficUsedBytes")
+                            or user.get("usedTrafficBytes")
+                            or user.get("usedTraffic")
                         ),
                         sub_id=str(
                             user.get("subscriptionUrl")
                             or user.get("shortUuid")
+                            or user.get("uuid")
                             or user.get("username", "")
                         ),
                     )
@@ -233,6 +280,170 @@ class RemnawaveClient(_HttpClient):
         raise PanelError("Remnawave: рестарт xray из бота не поддерживается")
 
 
+class SUIClient(_HttpClient):
+    """S-UI REST API v2.
+
+    База: ``<PANEL_URL>/<webPath>`` (по умолчанию ``http://host:2095/app``),
+    запросы уходят в ``/apiv2/...`` с заголовком ``Token``. Ошибки приходят
+    с HTTP 200 и ``success=false`` — это проверяется отдельно.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings, api_prefix="/apiv2")
+
+    def _headers(self) -> dict[str, str]:
+        return {"Token": self.settings.panel_api_token}
+
+    def _parse(self, response: httpx.Response, path: str) -> Any:
+        payload = super()._parse(response, path)
+        if isinstance(payload, dict) and payload.get("success") is False:
+            msg = str(payload.get("msg", "")).strip() or "ошибка панели"
+            lowered = msg.lower()
+            if "token" in lowered or "unauthorized" in lowered or "login" in lowered:
+                raise PanelForbidden(f"S-UI: {msg}")
+            raise PanelError(f"S-UI: {msg}")
+        if isinstance(payload, dict) and "obj" in payload:
+            return payload["obj"]
+        return payload
+
+    async def health(self) -> PanelHealth:
+        try:
+            await self.get("/status?r=sbd", headers=self._headers())
+        except PanelForbidden as exc:
+            return PanelHealth(
+                reachable=True,
+                status_code=None,
+                latency_ms=None,
+                error=f"S-UI: {exc}",
+                api_authorized=False,
+            )
+        except (PanelError, httpx.HTTPError) as exc:
+            return PanelHealth(
+                reachable=False, status_code=None, latency_ms=None, error=str(exc)
+            )
+        return PanelHealth(
+            reachable=True,
+            status_code=200,
+            latency_ms=None,
+            error=None,
+            api_authorized=True,
+        )
+
+    async def subscriptions(self) -> list[Subscription]:
+        result: list[Subscription] = []
+        try:
+            data = await self.get("/clients", headers=self._headers())
+        except (PanelError, httpx.HTTPError):
+            return []
+        clients: list[Any] = []
+        if isinstance(data, dict):
+            raw = data.get("clients")
+            clients = raw if isinstance(raw, list) else []
+        elif isinstance(data, list):
+            clients = data
+        for client in clients:
+            if not isinstance(client, dict):
+                continue
+            name = str(client.get("name") or client.get("remark") or "")
+            expiry_seconds = _int(client.get("expiry"))
+            result.append(
+                Subscription(
+                    email=name,
+                    inbound_remark="s-ui",
+                    enabled=bool(client.get("enable", True)),
+                    expiry_time_ms=expiry_seconds * 1000 if expiry_seconds > 0 else 0,
+                    total_bytes=_int(client.get("volume")),
+                    used_bytes=_int(client.get("up")) + _int(client.get("down")),
+                    sub_id=str(client.get("name") or client.get("id") or name),
+                )
+            )
+        return result
+
+    async def restart_xray(self) -> dict[str, Any]:
+        try:
+            await self.post("/restartSb", headers=self._headers())
+        except (PanelError, httpx.HTTPError) as exc:
+            raise PanelError(f"S-UI: {exc}") from exc
+        return {"success": True}
+
+
+class HiddifyClient(_HttpClient):
+    """Hiddify Manager API v2.
+
+    ``PANEL_URL`` должен включать admin proxy path, например
+    ``https://example.com/AbCdEf``; запросы идут в ``/api/v2/...``
+    с заголовком ``Hiddify-API-Key``.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings, api_prefix="/api/v2")
+
+    def _headers(self) -> dict[str, str]:
+        return {"Hiddify-API-Key": self.settings.panel_api_token}
+
+    async def health(self) -> PanelHealth:
+        version = ""
+        try:
+            info = await self.get("/panel/info/", headers=self._headers())
+            if isinstance(info, dict):
+                version = str(info.get("version", ""))
+        except PanelForbidden as exc:
+            return PanelHealth(
+                reachable=True,
+                status_code=None,
+                latency_ms=None,
+                error=f"Hiddify: {exc}",
+                api_authorized=False,
+            )
+        except (PanelError, httpx.HTTPError) as exc:
+            return PanelHealth(
+                reachable=False, status_code=None, latency_ms=None, error=str(exc)
+            )
+        return PanelHealth(
+            reachable=True,
+            status_code=200,
+            latency_ms=None,
+            error=None,
+            panel_version=version,
+            api_authorized=True,
+        )
+
+    async def subscriptions(self) -> list[Subscription]:
+        result: list[Subscription] = []
+        try:
+            users = await self.get("/admin/users/", headers=self._headers())
+        except (PanelError, httpx.HTTPError):
+            return []
+        if isinstance(users, dict):
+            raw = users.get("users") or users.get("items") or users.get("obj")
+            items = raw if isinstance(raw, list) else []
+        elif isinstance(users, list):
+            items = users
+        else:
+            items = []
+        for user in items:
+            if not isinstance(user, dict):
+                continue
+            name = str(
+                user.get("name") or user.get("uuid") or user.get("username") or ""
+            )
+            result.append(
+                Subscription(
+                    email=name,
+                    inbound_remark="hiddify",
+                    enabled=bool(user.get("enable", user.get("is_active", True))),
+                    expiry_time_ms=_hiddify_expiry_ms(user),
+                    total_bytes=_gigabytes_to_bytes(user.get("usage_limit_GB")),
+                    used_bytes=_gigabytes_to_bytes(user.get("current_usage_GB")),
+                    sub_id=str(user.get("uuid") or name),
+                )
+            )
+        return result
+
+    async def restart_xray(self) -> dict[str, Any]:
+        raise PanelError("Hiddify: рестарт xray из бота не поддерживается")
+
+
 class PanelFacade:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -241,6 +452,10 @@ class PanelFacade:
             self._impl: Any = MarzbanClient(settings)
         elif settings.panel_type == "remnawave":
             self._impl = RemnawaveClient(settings)
+        elif settings.panel_type == "s-ui":
+            self._impl = SUIClient(settings)
+        elif settings.panel_type == "hiddify":
+            self._impl = HiddifyClient(settings)
         else:
             self._impl = None
 
@@ -253,7 +468,13 @@ class PanelFacade:
     async def health(self) -> PanelHealth:
         if self._three is not None:
             return await self._three.health()
-        assert self._impl is not None
+        if self._impl is None:
+            return PanelHealth(
+                reachable=False,
+                status_code=None,
+                latency_ms=None,
+                error="неизвестный panel_type",
+            )
         return cast(PanelHealth, await self._impl.health())
 
     async def inbounds(self) -> list[dict[str, Any]]:
@@ -275,7 +496,8 @@ class PanelFacade:
     async def restart_xray(self) -> dict[str, Any]:
         if self._three is not None:
             return await self._three.restart_xray()
-        assert self._impl is not None
+        if self._impl is None:
+            raise PanelError("рестарт недоступен")
         return cast(dict[str, Any], await self._impl.restart_xray())
 
 

@@ -240,7 +240,7 @@ def _build_settings() -> Settings:
         # «https://host:5580/» или «/panel/», адрес API склеится без «//».
         panel_url=env_str("PANEL_URL").rstrip("/"),
         panel_api_token=env_str("PANEL_API_TOKEN"),
-        panel_type=env_str("PANEL_TYPE", "3x-ui").strip() or "3x-ui",
+        panel_type=env_str("PANEL_TYPE", "3x-ui").strip().lower() or "3x-ui",
         panel_username=env_str("PANEL_USERNAME").strip(),
         panel_password=env_str("PANEL_PASSWORD"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
@@ -322,10 +322,17 @@ def _validate(settings: Settings) -> list[str]:
         ("http://", "https://")
     ):
         problems.append("PANEL_URL должен начинаться с http:// или https://")
-    if bool(settings.panel_url) != bool(settings.panel_api_token):
+    if (
+        bool(settings.panel_url) != bool(settings.panel_api_token)
+        and settings.panel_type != "marzban"
+    ):
         problems.append(
             "PANEL_URL и PANEL_API_TOKEN задаются вместе: либо оба, либо ни одного "
             "(без них — режим «только мониторинг служб»)"
+        )
+    if settings.panel_type not in {"3x-ui", "marzban", "remnawave", "s-ui", "hiddify"}:
+        problems.append(
+            "PANEL_TYPE: поддерживаются 3x-ui, marzban, remnawave, s-ui, hiddify"
         )
     if "://" in settings.panel_base_path:
         problems.append(

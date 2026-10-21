@@ -217,10 +217,20 @@ missing values and offers the existing ones as defaults — no manual editing.
 | 3X-UI 2.x/3.x | Bearer API token | status, inbounds, subscriptions, traffic, xray restart |
 | Marzban | `PANEL_USERNAME` + `PANEL_PASSWORD` (OAuth2) | status, users, traffic, xray restart |
 | Remnawave | Bearer API token | status, users, traffic |
-| S-UI, Hiddify, etc. | — | detected and monitored as service/port; no API yet |
+| S-UI | `PANEL_API_TOKEN` in the `Token` header | status, clients, traffic, sing-box restart |
+| Hiddify | `PANEL_API_TOKEN` (admin UUID) in `Hiddify-API-Key` | status, users, traffic |
 
-Switch with `sudo stacksentry-menu set PANEL_TYPE marzban` (plus username and
-password), then restart. For 3X-UI/Remnawave use `PANEL_API_TOKEN`.
+Switch with `sudo stacksentry-menu set PANEL_TYPE hiddify` (plus URL and token),
+then restart. Use `PANEL_API_TOKEN` for 3X-UI/Remnawave/S-UI/Hiddify and
+username/password for Marzban.
+
+URL notes:
+- S-UI: `PANEL_URL` is the panel root including its web path, e.g.
+  `http://host:2095/app`; the bot appends `/apiv2/`.
+- Hiddify: `PANEL_URL` is the root including the admin proxy path, e.g.
+  `https://example.com/AbCdEf`; the bot appends `/api/v2/`.
+- 3X-UI: `PANEL_BASE_PATH` is the panel webBasePath; the bot appends
+  `/panel/api`.
 
 ### What is detected
 
@@ -231,8 +241,9 @@ GOST. VPN/mesh: WireGuard, AmneziaWG, OpenVPN, IPsec/StrongSwan, SoftEther,
 Tailscale, ZeroTier, NetBird, Headscale, Nebula.
 
 Detection uses units (systemd/OpenRC/SysV), config paths and process names
-(`ps`). Only 3X-UI has API integration (inbounds, subscriptions, xray restart);
-the rest are shown as service/port and honestly marked “API not supported”.
+(`ps`). API integration exists for 3X-UI (inbounds, subscriptions, xray
+restart), Marzban, Remnawave, S-UI and Hiddify (users/clients, traffic); the
+rest are shown as service/port and honestly marked “API not supported”.
 Docker containers are visible as the `docker` service but are not queried via the
 Docker API (that would give the bot root-equivalent rights).
 
@@ -517,8 +528,8 @@ over the file.
 | `TELEGRAM_API_URL` | custom Bot API or proxy (official by default) |
 | `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | “Panel URL” (`webBasePath`), if set |
-| `PANEL_API_TOKEN` | panel token (3X-UI `node-sync`; Remnawave API token) |
-| `PANEL_TYPE` | `3x-ui`, `marzban` or `remnawave` |
+| `PANEL_API_TOKEN` | panel token (3X-UI `node-sync`, Remnawave, S-UI `Token`, Hiddify admin UUID) |
+| `PANEL_TYPE` | `3x-ui`, `marzban`, `remnawave`, `s-ui` or `hiddify` |
 | `PANEL_USERNAME` | Marzban username (`PANEL_TYPE=marzban` only) |
 | `PANEL_PASSWORD` | Marzban password (`PANEL_TYPE=marzban` only) |
 | `PANEL_VERIFY_TLS` | verify the panel TLS certificate |
