@@ -333,12 +333,30 @@ cmd_check() {
     esac
 }
 
+is_secret_key() {
+    case "$1" in
+        *TOKEN* | *PASSWORD* | *SECRET*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 cmd_set() {
-    local key="${1:-}" value="${2:-}"
+    local key value from_stdin=0
+    if [ "${1:-}" = "--stdin" ]; then
+        from_stdin=1
+        key="${2:-}"
+    else
+        key="${1:-}"
+    fi
+    value="${3:-}"
     need_root "set"
     need_env
     [ -n "$key" ] || die "set: укажите ключ и значение"
     is_editable "$key" || die "ключ $key менять нельзя (см. stacksentry-menu keys)"
+    if [ "$from_stdin" -eq 1 ]; then
+        IFS= read -r value || value=""
+    fi
+    [ -n "$value" ] || die "set: значение не должно быть пустым"
     # Приводим адрес и путь к каноническому виду: без пробелов и лишних слешей,
     # иначе бот получит «https://host:5580//» и панель ответит 404.
     case "$key" in
@@ -448,41 +466,43 @@ cmd_update_check() {
     PYTHONPATH="$PREFIX" "$py" -m stacksentry.updates
 }
 
+read_update_pin() {
+    # Конфиг root-owned; значение задаёт оператор. Без pinned SHA256 обновление
+    # запрещено: иначе root скачивал бы и исполнял mutable main.
+    local conf="${PREFIX_CONF:-/etc/stacksentry.conf}"
+    [ -r "$conf" ] || return 1
+    (
+        # shellcheck disable=SC1090
+        . "$conf"
+        printf '%s\n%s\n' "${UPDATE_SHA256:-}" "${UPDATE_REF:-main}"
+    )
+}
+
 cmd_update() {
     need_root "update"
-    # Сначала пробуем свежий установщик из main: локальная копия в PREFIX — это
-    # версия, которая ставила бота, и она сама себя не обновит.
-    # Переменная глобальная: trap EXIT срабатывает уже после выхода из функции,
-    # и local там был бы unbound (set -u).
-    local slug=""
-    installer=""
-    if command -v curl >/dev/null 2>&1; then
-        slug="$(printf '%s' "$REPO_URL" | sed -E 's#.*github\.com/##; s#\.git$##')"
-        info "Скачиваю установщик: $slug@$REPO_REF"
-        installer="$(mktemp)"
-        _auth=()
-        _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-        [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token")
-        if curl -fsSL --max-time 60 "${_auth[@]}" \
-            "https://raw.githubusercontent.com/${slug}/${REPO_REF}/install.sh" \
-            -o "$installer"; then
-            trap 'rm -f "${installer:-}"' EXIT
-        else
-            warn "не удалось скачать установщик, беру локальную копию"
-            rm -f "$installer"
-            installer=""
-        fi
-    fi
-    if [ -z "$installer" ]; then
-        for candidate in "$PREFIX/install.sh" "$PWD/install.sh"; do
-            [ -f "$candidate" ] && installer="$candidate" && break
-        done
-    fi
-    [ -n "$installer" ] || die "не найден install.sh и нет curl"
+    # Не скачиваем установщик из main: подмена одного файла = root RCE.
+    # Используем только локальную root-owned копию и pinned SHA256 архива.
+    local installer="$PREFIX/install.sh"
+    [ -f "$installer" ] || die "не найден $installer — переустановите бота"
+    [ "$(stat -c '%u' "$installer" 2>/dev/null || echo '')" = "0" ] \
+        || die "$installer должен принадлежать root"
+    local mode
+    mode="$(stat -c '%a' "$installer" 2>/dev/null || echo '')"
+    case "$mode" in
+        *[2367]) die "$installer доступен на запись группе/другим" ;;
+    esac
 
-    info "Запускаю установщик (он же выполняет обновление)"
+    local sha ref
+    { read -r sha; read -r ref; } < <(read_update_pin) || true
+    [ -n "${sha:-}" ] || die "не задан UPDATE_SHA256 в /etc/stacksentry.conf
+  Добавьте: UPDATE_SHA256=<sha256 архива> и при необходимости UPDATE_REF=<тег>.
+  Обновление без pinned SHA256 запрещено."
+    [ -n "${ref:-}" ] || ref="main"
+
+    info "Запускаю установщик (ref=$ref, sha=${sha:0:12}…)"
     local prefix="$PREFIX"
-    PREFIX="$prefix" bash "$installer" --prefix "$prefix"
+    PREFIX="$prefix" bash "$installer" --yes --update \
+        --prefix "$prefix" --ref "$ref" --sha256 "$sha"
 }
 
 cmd_uninstall() {
@@ -501,12 +521,18 @@ cmd_uninstall() {
 ask() { printf '      %s' "$1"; }
 
 ask_value() {
-    # ask_value ПЕРЕМЕННАЯ "подсказка" "текущее"
-    local var="$1" prompt="$2" current="$3" answer=""
+    # ask_value ПЕРЕМЕННАЯ "подсказка" "текущее" [secret]
+    local var="$1" prompt="$2" current="$3" secret="${4:-0}" answer=""
     ask "$prompt"
-    [ -n "$current" ] && printf ' %s[%s]%s' "$DIM" "$current" "$RESET"
-    printf ' '
-    read -r answer <&$READ_FD || answer=""
+    if [ "$secret" -eq 1 ]; then
+        printf ' %s(ввод скрыт, Enter — оставить)%s ' "$DIM" "$RESET"
+        read -rs answer <&$READ_FD || answer=""
+        printf '\n'
+    else
+        [ -n "$current" ] && printf ' %s[%s]%s' "$DIM" "$current" "$RESET"
+        printf ' '
+        read -r answer <&$READ_FD || answer=""
+    fi
     printf -v "$var" '%s' "${answer:-$current}"
 }
 
@@ -518,9 +544,14 @@ menu_edit_key() {
     current="$(sed -n "s/^${key}=//p" "$ENV_FILE" | head -1)"
     hint="${KEY_HINT[$key]:-новое значение}"
     info "$key — $hint"
-    local value=""
-    ask_value value "Значение:" "$current"
-    cmd_set "$key" "$value"
+    local value="" secret=0
+    is_secret_key "$key" && secret=1
+    ask_value value "Значение:" "$current" "$secret"
+    if [ "$secret" -eq 1 ]; then
+        printf '%s\n' "$value" | cmd_set --stdin "$key"
+    else
+        cmd_set "$key" "$value"
+    fi
     local answer=""
     ask "Перезапустить бота сейчас? [Y/n] "
     read -r answer <&$READ_FD || answer=""

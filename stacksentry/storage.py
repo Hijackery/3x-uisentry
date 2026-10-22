@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS elevations (
     until REAL NOT NULL,
     created_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS replay_keys (
+    key TEXT PRIMARY KEY,
+    expires REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_replay_expires ON replay_keys(expires);
 """
 
 
@@ -345,6 +352,29 @@ class Storage:
                     result,
                 ),
             )
+
+    def prune_audit(self, older_than: float) -> None:
+        """Удаляет старые записи журнала: ПДн не должны храниться вечно."""
+        with self._lock:
+            self.conn.execute("DELETE FROM audit_log WHERE ts < ?", (older_than,))
+
+    # ------------------------------------------------------------ replay guard
+
+    def claim_replay(self, key: str, ttl: float) -> bool:
+        """Атомарно занимает одноразовый ключ (TOTP/initData).
+
+        Хранится в SQLite, поэтому повторный код не пройдёт после перезапуска
+        процесса и между ботом, Mini App и терминалом (если у них общая база).
+        """
+        now = time.time()
+        expires = now + max(1.0, ttl)
+        with self._lock:
+            self.conn.execute("DELETE FROM replay_keys WHERE expires <= ?", (now,))
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO replay_keys (key, expires) VALUES (?, ?)",
+                (key, expires),
+            )
+            return cur.rowcount == 1
 
     def recent_audit(self, limit: int = 15, *, only: str = "") -> list[sqlite3.Row]:
         """Последние записи журнала.

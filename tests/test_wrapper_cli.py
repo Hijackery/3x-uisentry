@@ -126,7 +126,11 @@ def test_apt_upgrade_is_queued_as_transient_unit(tmp_path: Path) -> None:
     )
     shim.chmod(0o755)
 
-    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}")
+    env = dict(
+        os.environ,
+        STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STATE_DIR=str(tmp_path / "state"),
+    )
     result = subprocess.run(
         ["bash", str(WRAPPER), "apt_upgrade"],
         capture_output=True,
@@ -158,7 +162,7 @@ def test_apt_upgrade_refuses_to_queue_twice(tmp_path: Path) -> None:
     shim.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
     shim.chmod(0o755)
 
-    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}")
+    env = dict(os.environ, STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}")
     result = subprocess.run(
         ["bash", str(WRAPPER), "apt_upgrade"],
         capture_output=True,
@@ -195,7 +199,7 @@ def test_apt_upgrade_falls_back_when_systemd_run_denied(tmp_path: Path) -> None:
     state = tmp_path / "state"
     env = dict(
         os.environ,
-        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}",
         STATE_DIR=str(state),
     )
     result = subprocess.run(
@@ -209,7 +213,7 @@ def test_apt_upgrade_falls_back_when_systemd_run_denied(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "в фоне" in result.stdout
-    assert (state / "apt-upgrade.log").exists()
+    assert (state / "root" / "apt-upgrade.log").exists()
 
 
 def test_dist_upgrade_uses_writable_home(tmp_path: Path) -> None:
@@ -224,7 +228,7 @@ def test_dist_upgrade_uses_writable_home(tmp_path: Path) -> None:
     state = tmp_path / "state"
     env = dict(
         os.environ,
-        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}",
         STATE_DIR=str(state),
     )
     result = subprocess.run(
@@ -237,7 +241,7 @@ def test_dist_upgrade_uses_writable_home(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"HOME={state}/release-upgrade" in result.stdout
+    assert f"HOME={state}/root/release-upgrade" in result.stdout
     assert "Доступно релиз-обновление" in result.stdout
 
 
@@ -268,8 +272,9 @@ def test_apt_upgrade_prefers_persistent_unit(tmp_path: Path) -> None:
 
     env = dict(
         os.environ,
-        PATH=f"{shim_dir}:{os.environ['PATH']}",
+        STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}",
         SYSTEMD_UNIT_DIR=str(unit_dir),
+        STATE_DIR=str(tmp_path / "state"),
     )
     result = subprocess.run(
         ["bash", str(WRAPPER), "apt_upgrade"],
@@ -297,7 +302,7 @@ def test_safe_command_aliases_are_mapped(tmp_path: Path) -> None:
     )
     (shim_dir / "journalctl").chmod(0o755)
 
-    env = dict(os.environ, PATH=f"{shim_dir}:{os.environ['PATH']}")
+    env = dict(os.environ, STACKSENTRY_CTL_PATH=f"{shim_dir}:{os.environ['PATH']}")
     result = subprocess.run(
         ["bash", str(WRAPPER), "run_command", "os_logs"],
         capture_output=True,

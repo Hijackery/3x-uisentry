@@ -130,6 +130,36 @@ step() {
     STEP=$((STEP + 1))
     printf '\n%s[%d/%d] %s%s\n' "$BOLD$BLUE" "$STEP" "$TOTAL_STEPS" "$1" "$RESET"
 }
+# Секреты (токены, пароли, подписанные URL) не должны попадать в argv:
+# /proc/<pid>/cmdline и ps видны другим пользователям. Передаём URL и
+# заголовки curl через stdin-конфиг (-K -), оставляя в argv только флаги.
+curl_cfg_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\r\n'
+}
+
+curl_secure() {
+    # curl_secure "Заголовок" "URL" [аргументы curl...]
+    local _header="$1" _url="$2"
+    shift 2
+    {
+        [ -n "$_header" ] \
+            && printf 'header = "%s"\n' "$(curl_cfg_escape "$_header")"
+        printf 'url = "%s"\n' "$(curl_cfg_escape "$_url")"
+    } | curl -K - "$@"
+}
+
+curl_secure_form() {
+    # curl_secure_form "URL" "логин" "пароль" [аргументы curl...]
+    local _url="$1" _user="$2" _password="$3"
+    shift 3
+    {
+        printf 'url = "%s"\n' "$(curl_cfg_escape "$_url")"
+        printf 'data-urlencode = "username=%s"\n' "$(curl_cfg_escape "$_user")"
+        printf 'data-urlencode = "password=%s"\n' "$(curl_cfg_escape "$_password")"
+        printf 'data-urlencode = "grant_type=password"\n'
+    } | curl -K - "$@"
+}
+
 info()  { printf '      %s\n' "$1"; }
 ok()    { printf '      %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 warn()  { printf '      %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
@@ -334,6 +364,10 @@ SERVICE_USER="${SERVICE_USER:-stacksentry}"
 # Каталог состояния (база SQLite и файл лога) живёт отдельно от кода:
 # код принадлежит root, состояние — сервисному пользователю.
 STATE_DIR="${STATE_DIR:-/var/lib/stacksentry}"
+# Mini App — отдельный пользователь без sudo: компрометация веб-слоя не даёт
+# доступ к обёртке root-операций и ключам терминала.
+WEBAPP_USER="${WEBAPP_USER:-stacksentry-webapp}"
+WEBAPP_HOME="${WEBAPP_HOME:-/var/lib/stacksentry-webapp}"
 SERVICE_NAME="stacksentry-bot"
 WRAPPER_PATH="${WRAPPER_PATH:-/usr/local/bin/stacksentry-ctl}"
 MENU_PATH="${MENU_PATH:-/usr/local/bin/stacksentry-menu}"
@@ -374,6 +408,7 @@ UNINSTALL=0
 KEEP_STATE=0
 MENU=0
 PRINT_SOURCE=0
+UPDATE=0
 
 usage() {
     cat <<EOF
@@ -389,6 +424,7 @@ ${BOLD}Установка StackSentry${RESET}
   --ref BRANCH     ветка или тег репозитория (по умолчанию main)
   --print-source   показать, откуда будут взяты исходники, и выйти
   --sha256 HASH    сверить скачанный архив с контрольной суммой (привязка к версии)
+  --update         обновление: требует --sha256, иначе отказ (fail-closed)
   --menu           меню: установить/обновить, удалить, справка
                    (после установки для правок настроек: sudo stacksentry-menu)
   --uninstall      удалить бота целиком: служба, sudoers, обёртка, меню, код,
@@ -445,6 +481,7 @@ while [ $# -gt 0 ]; do
         --ref)          REPO_REF="${2:?--ref требует ветку или тег}"; shift 2 ;;
         --print-source) PRINT_SOURCE=1; shift ;;
         --sha256)       SOURCE_SHA256="${2:?--sha256 требует хеш}"; shift 2 ;;
+        --update)       UPDATE=1; ASSUME_YES=1; shift ;;
         --menu|-m)      MENU=1; shift ;;
         --uninstall)    UNINSTALL=1; shift ;;
         --purge)        UNINSTALL=1; shift ;;   # синоним: удаление и так полное
@@ -500,6 +537,15 @@ if [ "${ALLOW_UNSAFE_PREFIX:-0}" != "1" ]; then
 fi
 
 resolve_repo
+
+# Обновление исполняет новый код от root. Без явной привязки к SHA256 архив
+# можно подменить через скомпрометированный репозиторий/CDN/DNS, поэтому
+# обновление fail-closed: оператор обязан передать ожидаемый хеш.
+if [ "$UPDATE" -eq 1 ] && [ -z "$SOURCE_SHA256" ]; then
+    fail "Обновление без контрольной суммы запрещено.
+  Укажите ожидаемый SHA256 архива: --sha256 HASH
+  Или задайте UPDATE_SHA256 в /etc/stacksentry.conf для stacksentry-menu."
+fi
 
 # Диагностика без правки системы: удобно проверять адреса и тесты.
 if [ "$PRINT_SOURCE" -eq 1 ]; then
@@ -602,10 +648,13 @@ uninstall() {
     rm -rf "$PREFIX"
 
     if [ "$KEEP_STATE" -eq 1 ]; then
-        warn "По --keep-state оставлены база и пользователь: $STATE_DIR, $SERVICE_USER"
+        warn "По --keep-state оставлены база и пользователи: $STATE_DIR, $SERVICE_USER, $WEBAPP_USER"
     else
         # По умолчанию вычищаем под ноль: база и логи больше не нужны.
-        rm -rf "$STATE_DIR"
+        rm -rf "$STATE_DIR" "$WEBAPP_HOME"
+        if id "$WEBAPP_USER" >/dev/null 2>&1; then
+            userdel "$WEBAPP_USER" >/dev/null 2>&1 || true
+        fi
         if id "$SERVICE_USER" >/dev/null 2>&1; then
             userdel "$SERVICE_USER" >/dev/null 2>&1 \
                 || warn "Пользователя $SERVICE_USER удалить не удалось"
@@ -840,13 +889,14 @@ if [ -z "$SOURCE_DIR" ]; then
                     ;;
             esac
             info "Скачиваю исходники: $_candidate"
-            _auth=()
+            _auth_header=""
             _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
             case "$_fetch_url" in
                 https://github.com/*|https://codeload.github.com/*)
-                    [ -n "$_gh_token" ] && _auth=(-H "Authorization: Bearer $_gh_token") ;;
+                    [ -n "$_gh_token" ] && _auth_header="Authorization: Bearer $_gh_token" ;;
             esac
-            if curl -fsSL --max-time 120 "${_auth[@]}" "$_fetch_url" -o "$TMP_DIR/src.tar.gz" \
+            if curl_secure "$_auth_header" "$_fetch_url" \
+                -fsSL --max-time 120 -o "$TMP_DIR/src.tar.gz" \
                 && verify_archive "$TMP_DIR/src.tar.gz" \
                 && tar -xzf "$TMP_DIR/src.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
                 SOURCE_DIR="$(find "$TMP_DIR" -maxdepth 2 -name stacksentry \
@@ -906,12 +956,12 @@ source_commit() {
     [ -n "$sha" ] && { printf '%s' "$sha"; return 0; }
     command -v curl >/dev/null 2>&1 || return 0
     case "$REPO_OWNER" in ""|OWNER|your-name) return 0 ;; esac
-    local auth=()
+    local auth_header=""
     _gh_token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-    [ -n "$_gh_token" ] && auth=(-H "Authorization: Bearer $_gh_token")
-    curl -fsSL --max-time 10 "${auth[@]}" \
-        -H "Accept: application/vnd.github+json" \
+    [ -n "$_gh_token" ] && auth_header="Authorization: Bearer $_gh_token"
+    curl_secure "$auth_header" \
         "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${REPO_REF}" \
+        -fsSL --max-time 10 -H "Accept: application/vnd.github+json" \
         2>/dev/null | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin).get("sha",""))' \
         2>/dev/null || true
 }
@@ -1147,15 +1197,25 @@ fi
 
 question() {
     # question ПЕРЕМЕННАЯ "подсказка" "значение по умолчанию"
-    local __var="$1" __prompt="$2" __default="$3" __answer=""
+    local __var="$1" __prompt="$2" __default="$3" __answer="" __secret=0
+    case "$__var" in
+        *TOKEN* | *PASSWORD* | *SECRET*) __secret=1 ;;
+    esac
     if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         ask "${BOLD}${__prompt}${RESET}"
-        if [ -n "$__default" ]; then
-            printf ' %s[%s]%s ' "$DIM" "$__default" "$RESET"
+        if [ "$__secret" -eq 1 ]; then
+            # Не показываем текущий секрет и не оставляем его в истории ввода.
+            printf ' %s(ввод скрыт, Enter — оставить прежнее)%s ' "$DIM" "$RESET"
+            read -rs __answer <&$READ_FD || __answer=""
+            printf '\n'
         else
-            printf ' '
+            if [ -n "$__default" ]; then
+                printf ' %s[%s]%s ' "$DIM" "$__default" "$RESET"
+            else
+                printf ' '
+            fi
+            read -r __answer <&$READ_FD || __answer=""
         fi
-        read -r __answer <&$READ_FD || __answer=""
     fi
     printf -v "$__var" '%s' "${__answer:-$__default}"
 }
@@ -1330,7 +1390,8 @@ else
     # Первичная сверка с Telegram: ошибка токена видна сразу, а не после
     # всей установки. При отсутствии сети просто предупреждаем.
     TG_API_VALUE="${TELEGRAM_API_URL:-https://api.telegram.org}"
-    TG_PROBE="$(curl -sS --max-time 15 "${TG_API_VALUE%/}/bot${TG_TOKEN}/getMe" 2>/dev/null || true)"
+    TG_PROBE="$(curl_secure "" "${TG_API_VALUE%/}/bot${TG_TOKEN}/getMe" \
+        -sS --max-time 15 2>/dev/null || true)"
     if printf '%s' "$TG_PROBE" | grep -q '"ok":true'; then
         TG_USERNAME="$(printf '%s' "$TG_PROBE" | sed -E 's/.*"username":"([^"]+)".*/\1/')"
         ok "Telegram принял токен: бот @$TG_USERNAME"
@@ -1465,9 +1526,9 @@ else
     # области доступа), и бот потом ругался «токен не принят».
     if [ -n "$PANEL_TOKEN" ] && [ -n "$PROBE_URL" ]; then
         _tok_tmp="$(mktemp)"
-        _token_http="$(curl -sS --max-time 5 -o "$_tok_tmp" -w '%{http_code}' \
-            -H "Authorization: Bearer $PANEL_TOKEN" \
-            "${PROBE_URL}/panel/api/server/status" 2>/dev/null || echo 000)"
+        _token_http="$(curl_secure "Authorization: Bearer $PANEL_TOKEN" \
+            "${PROBE_URL}/panel/api/server/status" \
+            -sS --max-time 5 -o "$_tok_tmp" -w '%{http_code}' 2>/dev/null || echo 000)"
         _token_reply="$(cat "$_tok_tmp" 2>/dev/null || true)"
         rm -f "$_tok_tmp"
         if printf '%s' "$_token_reply" | grep -q '"success":true'; then
@@ -1541,11 +1602,11 @@ else
                 question PANEL_PASSWORD_VALUE "Пароль администратора $_panel_title" "$PANEL_PASSWORD_VALUE"
                 [ -n "$PANEL_PASSWORD_VALUE" ] || fail "Нужен пароль администратора $_panel_title"
                 _login_tmp="$(mktemp)"
-                _login_code="$(curl -sS --max-time 10 -o "$_login_tmp" -w '%{http_code}' \
-                    --data-urlencode "username=$PANEL_USERNAME_VALUE" \
-                    --data-urlencode "password=$PANEL_PASSWORD_VALUE" \
-                    --data-urlencode "grant_type=password" \
-                    "$PANEL_URL_VALUE$_login_path" 2>/dev/null || echo 000)"
+                _login_code="$(curl_secure_form \
+                    "$PANEL_URL_VALUE$_login_path" \
+                    "$PANEL_USERNAME_VALUE" "$PANEL_PASSWORD_VALUE" \
+                    -sS --max-time 10 -o "$_login_tmp" -w '%{http_code}' \
+                    2>/dev/null || echo 000)"
                 _login_reply="$(cat "$_login_tmp" 2>/dev/null || true)"
                 rm -f "$_login_tmp"
                 if printf '%s' "$_login_reply" | grep -q '"access_token"'; then
@@ -1560,8 +1621,9 @@ else
             outline)
                 # У Outline нет отдельного токена: доступ защищён секретным путём.
                 PANEL_TOKEN=""
-                _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
-                    "$PANEL_URL_VALUE/server" 2>/dev/null || echo 000)"
+                _probe_code="$(curl_secure "" "$PANEL_URL_VALUE/server" \
+                    -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                    2>/dev/null || echo 000)"
                 case "$_probe_code" in
                     200) ok "Outline API ответил — секретный путь верный" ;;
                     401|403|404) warn "Outline ответил HTTP $_probe_code — проверьте SB_API_PREFIX в адресе" ;;
@@ -1585,9 +1647,10 @@ else
                 _probe_tmp="$(mktemp)"
                 case "$PANEL_TYPE_VALUE" in
                     s-ui)
-                        _probe_code="$(curl -sS --max-time 5 -o "$_probe_tmp" -w '%{http_code}' \
-                            -H "Token: $PANEL_TOKEN" \
-                            "$PANEL_URL_VALUE/apiv2/status?r=sbd" 2>/dev/null || echo 000)"
+                        _probe_code="$(curl_secure "Token: $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/apiv2/status?r=sbd" \
+                            -sS --max-time 5 -o "$_probe_tmp" -w '%{http_code}' \
+                            2>/dev/null || echo 000)"
                         if grep -q '"success":true' "$_probe_tmp" 2>/dev/null; then
                             ok "S-UI приняла токен"
                         else
@@ -1595,9 +1658,10 @@ else
                         fi
                         ;;
                     hiddify)
-                        _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
-                            -H "Hiddify-API-Key: $PANEL_TOKEN" \
-                            "$PANEL_URL_VALUE/api/v2/panel/info/" 2>/dev/null || echo 000)"
+                        _probe_code="$(curl_secure "Hiddify-API-Key: $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/api/v2/panel/info/" \
+                            -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                            2>/dev/null || echo 000)"
                         case "$_probe_code" in
                             200) ok "Hiddify принял API-ключ" ;;
                             401|403) warn "Hiddify отклонил ключ (HTTP $_probe_code) — проверьте admin UUID и путь" ;;
@@ -1605,9 +1669,10 @@ else
                         esac
                         ;;
                     remnawave)
-                        _probe_code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
-                            -H "Authorization: Bearer $PANEL_TOKEN" \
-                            "$PANEL_URL_VALUE/api/users?size=1" 2>/dev/null || echo 000)"
+                        _probe_code="$(curl_secure "Authorization: Bearer $PANEL_TOKEN" \
+                            "$PANEL_URL_VALUE/api/users?size=1" \
+                            -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+                            2>/dev/null || echo 000)"
                         case "$_probe_code" in
                             200) ok "Remnawave принял токен" ;;
                             401|403) warn "Remnawave отклонил токен (HTTP $_probe_code)" ;;
@@ -1790,6 +1855,10 @@ fi
 # Каталог состояния создаёт и пересоздаёт systemd (StateDirectory=), но на
 # этапе установки он нужен уже сейчас — самопроверка пишет в базу.
 install -d -m 0750 -o "$SERVICE_USER" -g "${SERVICE_GROUP:-$SERVICE_USER}" "$STATE_DIR"
+# Root-воркеры (apt/release) пишут только в отдельный root-owned каталог.
+install -d -m 0700 -o root -g root "$STATE_DIR/root"
+rm -f "$STATE_DIR"/apt-*.status "$STATE_DIR"/apt-*.packages "$STATE_DIR"/apt-*.log 2>/dev/null || true
+rm -rf "$STATE_DIR/release-upgrade" 2>/dev/null || true
 ok "Файлы на месте (код — root, состояние — $SERVICE_USER в $STATE_DIR)"
 
 step "Создаём venv и ставим Python-зависимости"
@@ -1959,6 +2028,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+Environment=STATE_DIR=${STATE_DIR}
 ExecStart=${WRAPPER_PATH} ${_apt_worker}
 EOF
         chmod 644 "/etc/systemd/system/${_apt_unit}.service"
@@ -2216,6 +2286,7 @@ TERMINAL_SSH_HOST=127.0.0.1
 TERMINAL_SSH_PORT=22
 TERMINAL_SSH_KNOWN_HOSTS=$TERM_SSH_KNOWN_HOSTS
 TERMINAL_ENV=$TERM_ENV
+TERMINAL_REPLAY_DB=$TERM_HOME/replay.db
 EOF
     chown root:root "$TERM_ENV"
     chmod 600 "$TERM_ENV"
@@ -2859,6 +2930,22 @@ install_webapp() {
         systemctl try-restart stacksentry-terminal >/dev/null 2>&1 || true
     fi
 
+    if id "$WEBAPP_USER" >/dev/null 2>&1; then
+        ok "Пользователь Mini App $WEBAPP_USER уже есть"
+    elif [ "$WEBAPP_USER" = "root" ]; then
+        fail "WEBAPP_USER=root — Mini App получил бы полные права"
+    else
+        useradd --system --no-create-home --home-dir "$WEBAPP_HOME" \
+            --shell "$NOLOGIN_SHELL" --comment "StackSentry Mini App" \
+            "$WEBAPP_USER" || fail "Не удалось создать пользователя $WEBAPP_USER"
+        ok "Создан отдельный пользователь Mini App: $WEBAPP_USER"
+    fi
+    WEBAPP_GROUP="$(id -gn "$WEBAPP_USER" 2>/dev/null || printf '%s' "$WEBAPP_USER")"
+    # .env принадлежит root:SERVICE_GROUP (0640). Webapp читает его только как
+    # член этой группы, но не получает прав на sudo-обёртку или ключи терминала.
+    usermod -aG "${SERVICE_GROUP:-$SERVICE_USER}" "$WEBAPP_USER" 2>/dev/null || true
+    install -d -m 0750 -o "$WEBAPP_USER" -g "$WEBAPP_GROUP" "$WEBAPP_HOME"
+
     cat > /etc/systemd/system/stacksentry-webapp.service <<EOF
 [Unit]
 Description=StackSentry — read-only Mini App
@@ -2867,16 +2954,19 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=$SERVICE_USER
-Group=${SERVICE_GROUP:-$SERVICE_USER}
+User=$WEBAPP_USER
+Group=$WEBAPP_GROUP
+SupplementaryGroups=${SERVICE_GROUP:-$SERVICE_USER}
 WorkingDirectory=$PREFIX
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
+# Своя база: веб-слой не пишет в аудит/состояние бота.
+Environment=STATE_PATH=$WEBAPP_HOME/state.db
 ExecStart=$PREFIX/.venv/bin/uvicorn --factory stacksentry.webapp:create_app_from_env --host 127.0.0.1 --port 8787 --no-access-log
 Restart=on-failure
 RestartSec=5
 ProtectSystem=strict
-ReadWritePaths=$STATE_DIR
+ReadWritePaths=$WEBAPP_HOME
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
@@ -2997,7 +3087,8 @@ TG_TOKEN_VALUE="$(env_get TELEGRAM_BOT_TOKEN)"
 TG_API_URL_VALUE="$(env_get TELEGRAM_API_URL)"
 [ -n "$TG_API_URL_VALUE" ] || TG_API_URL_VALUE="https://api.telegram.org"
 # Без -f: на HTTP 401 тело ответа («Unauthorized») как раз нужно для диагноза.
-TG_RESULT="$(curl -sS --max-time 15 "${TG_API_URL_VALUE%/}/bot${TG_TOKEN_VALUE}/getMe" 2>/dev/null || true)"
+TG_RESULT="$(curl_secure "" "${TG_API_URL_VALUE%/}/bot${TG_TOKEN_VALUE}/getMe" \
+    -sS --max-time 15 2>/dev/null || true)"
 if printf '%s' "$TG_RESULT" | grep -q '"ok":true'; then
     TG_NAME="$(printf '%s' "$TG_RESULT" | sed -E 's/.*"username":"([^"]+)".*/\1/')"
     check_ok "Telegram отвечает, бот @$TG_NAME"
@@ -3023,9 +3114,10 @@ if [ "$CFG_OK" -eq 1 ]; then
         # от «путь не тот» (404) и «панель недоступна» (000/сеть).
         PANEL_HTTP_DIR="$(mktemp -d)"
         panel_http() {
-            curl -sS --max-time 15 -o "$PANEL_HTTP_DIR/body" -w '%{http_code}' \
-                -H "Authorization: Bearer ${PANEL_TOKEN_VALUE}" \
-                "${PANEL_API}/$1" 2>/dev/null || echo 000
+            curl_secure "Authorization: Bearer ${PANEL_TOKEN_VALUE}" \
+                "${PANEL_API}/$1" \
+                -sS --max-time 15 -o "$PANEL_HTTP_DIR/body" -w '%{http_code}' \
+                2>/dev/null || echo 000
         }
         STATUS_CODE="$(panel_http server/status)"
         PANEL_VER="$(sed -n 's/.*"panelVersion":"\([^"]*\)".*/\1/p' "$PANEL_HTTP_DIR/body" | head -1)"

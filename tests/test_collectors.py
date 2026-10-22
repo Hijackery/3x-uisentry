@@ -49,6 +49,93 @@ async def test_arguments_are_not_shell_interpreted() -> None:
     assert result.stdout.strip() == "; rm -rf /"
 
 
+async def test_collect_queries_all_services_in_one_systemctl_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collector = ServiceCollector(("x-ui", "fail2ban"))
+    calls: list[list[str]] = []
+
+    async def fake_run(argv: list[str], **kwargs: object) -> CommandResult:
+        calls.append(argv)
+        return CommandResult(
+            action="status",
+            command=" ".join(argv),
+            returncode=0,
+            stdout=(
+                "ActiveState=active\nSubState=running\nLoadState=loaded\n"
+                "CPUUsageNSec=1000000000\n"
+                "\n"
+                "ActiveState=inactive\nSubState=dead\nLoadState=loaded\n"
+                "CPUUsageNSec=0\n"
+            ),
+            stderr="",
+            duration=0.0,
+        )
+
+    monkeypatch.setattr(
+        "stacksentry.collectors.services.shutil.which", lambda _: "systemctl"
+    )
+    monkeypatch.setattr("stacksentry.collectors.services.run_command", fake_run)
+
+    result = await collector.collect()
+
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["x-ui", "fail2ban"]
+    assert [item.name for item in result] == ["x-ui", "fail2ban"]
+    assert result[0].active is True
+    assert result[1].active is False
+
+
+async def test_monitor_snapshot_runs_sources_concurrently(
+    make_settings: Callable[..., Settings],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stacksentry.models import PanelHealth
+    from stacksentry.monitor import Monitor
+
+    monitor = Monitor(make_settings(panel_url="", panel_api_token=""))
+    started = 0
+    all_started = asyncio.Event()
+
+    async def source() -> None:
+        nonlocal started
+        started += 1
+        if started == 3:
+            all_started.set()
+        await asyncio.wait_for(all_started.wait(), timeout=1.0)
+
+    async def metrics(_warnings: list[str], _unavailable: set[str]) -> None:
+        await source()
+        return None
+
+    async def services(_warnings: list[str], _unavailable: set[str]) -> list[object]:
+        await source()
+        return []
+
+    async def panel(
+        _warnings: list[str], _unavailable: set[str]
+    ) -> tuple[PanelHealth, list[object], list[object]]:
+        await source()
+        return (
+            PanelHealth(reachable=False, status_code=None, latency_ms=None, error=None),
+            [],
+            [],
+        )
+
+    monkeypatch.setattr(monitor, "_collect_metrics", metrics)
+    monkeypatch.setattr(monitor, "_collect_services", services)
+    monkeypatch.setattr(monitor, "_collect_panel_bundle", panel)
+    try:
+        snapshot = await monitor.snapshot()
+    finally:
+        await monitor.close()
+
+    assert snapshot.system is None
+    assert snapshot.services == []
+    assert snapshot.inbounds == []
+    assert snapshot.subscriptions == []
+
+
 def test_parse_properties() -> None:
     props = _parse_properties("ActiveState=active\nSubState=running\nпустая строка\n")
     assert props["ActiveState"] == "active"

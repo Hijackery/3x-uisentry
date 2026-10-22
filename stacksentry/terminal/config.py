@@ -46,6 +46,7 @@ def _read_env(path: Path) -> dict[str, str]:
         "TERMINAL_TOTP_SECRET",
         "TERMINAL_ACCESS_TOKEN",
         "TERMINAL_ACCESS_USER",
+        "TERMINAL_REPLAY_DB",
         "TERMINAL_ALLOW_ROOT",
         "TERMINAL_HOST",
         "TERMINAL_PORT",
@@ -120,6 +121,7 @@ class TerminalSettings:
     ssh_host: str
     ssh_port: int
     ssh_known_hosts: str
+    replay_db: str = ""
 
     @classmethod
     def load(cls, path: Path | None = None) -> TerminalSettings:
@@ -230,4 +232,5 @@ class TerminalSettings:
             or "127.0.0.1",
             ssh_port=_int(values, "TERMINAL_SSH_PORT", 22, 1),
             ssh_known_hosts=ssh_known_hosts,
+            replay_db=values.get("TERMINAL_REPLAY_DB", "").strip(),
         )

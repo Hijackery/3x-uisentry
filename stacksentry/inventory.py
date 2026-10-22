@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 from contextlib import suppress
@@ -458,16 +460,27 @@ def panel_suggestion() -> tuple[str, int]:
 
 def _run(argv: list[str], timeout: float = 5.0) -> str:
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             argv,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
-            timeout=timeout,
-            check=False,
+            start_new_session=True,
         )
+    except OSError:
+        return ""
+    try:
+        stdout, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Гасим всю группу: systemctl/ss могли оставить детей с открытыми пайпами.
+        with suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        with suppress(subprocess.SubprocessError, OSError):
+            process.communicate(timeout=2)
+        return ""
     except (OSError, subprocess.SubprocessError):
         return ""
-    return result.stdout
+    return stdout or ""
 
 
 def _units() -> set[str]:

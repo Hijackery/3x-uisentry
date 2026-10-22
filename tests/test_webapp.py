@@ -43,10 +43,12 @@ def _config(
     )
 
 
-def _init_data(token: str, user_id: int = ADMIN_ID) -> str:
+def _init_data(
+    token: str, user_id: int = ADMIN_ID, *, nonce: str = "webapp-test"
+) -> str:
     data = {
         "auth_date": str(int(time.time())),
-        "query_id": "webapp-test",
+        "query_id": nonce,
         "user": json.dumps(
             {"id": user_id, "first_name": "Admin"}, separators=(",", ":")
         ),
@@ -260,7 +262,8 @@ def test_cookie_flags(make_settings: Callable[..., Settings], storage: Storage) 
         storage=storage,
     )
     secure_response = TestClient(secure_app).post(
-        "/api/session", json={"initData": _init_data(settings.telegram_token)}
+        "/api/session",
+        json={"initData": _init_data(settings.telegram_token, nonce="secure")},
     )
     secure_cookie = secure_response.headers.get("set-cookie", "").lower()
     assert "secure" in secure_cookie

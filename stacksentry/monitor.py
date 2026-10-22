@@ -72,14 +72,21 @@ class Monitor:
         await self.panel.close()
 
     async def snapshot(self) -> MonitorSnapshot:
-        warnings: list[str] = []
-        unavailable: set[str] = set()
+        metrics_warnings: list[str] = []
+        services_warnings: list[str] = []
+        panel_warnings: list[str] = []
+        metrics_unavailable: set[str] = set()
+        services_unavailable: set[str] = set()
+        panel_unavailable: set[str] = set()
 
-        metrics = await self._collect_metrics(warnings, unavailable)
-        services = await self._collect_services(warnings, unavailable)
-        health = await self._collect_panel_health(warnings, unavailable)
-        inbounds, subs = await self._collect_subscriptions(warnings, unavailable)
+        metrics, services, panel_bundle = await asyncio.gather(
+            self._collect_metrics(metrics_warnings, metrics_unavailable),
+            self._collect_services(services_warnings, services_unavailable),
+            self._collect_panel_bundle(panel_warnings, panel_unavailable),
+        )
+        health, inbounds, subs = panel_bundle
 
+        warnings = [*metrics_warnings, *services_warnings, *panel_warnings]
         if subs or inbounds:
             warnings.extend(
                 SubscriptionCollector.problems(
@@ -97,8 +104,33 @@ class Monitor:
             inbounds=inbounds,
             subscriptions=subs,
             warnings=warnings,
-            unavailable=frozenset(unavailable),
+            unavailable=frozenset(
+                metrics_unavailable | services_unavailable | panel_unavailable
+            ),
         )
+
+    async def _collect_panel_bundle(
+        self, warnings: list[str], unavailable: set[str]
+    ) -> tuple[PanelHealth, list[InboundSummary], list[Subscription]]:
+        """Проверка панели и подписки идут параллельно.
+
+        У них общий HTTP-клиент, поэтому после подготовки сессии запросы можно
+        запускать одновременно: медленный health больше не задерживает сбор
+        подписок и наоборот.
+        """
+        health_warnings: list[str] = []
+        subs_warnings: list[str] = []
+        health_unavailable: set[str] = set()
+        subs_unavailable: set[str] = set()
+        health, (inbounds, subs) = await asyncio.gather(
+            self._collect_panel_health(health_warnings, health_unavailable),
+            self._collect_subscriptions(subs_warnings, subs_unavailable),
+        )
+        warnings.extend(health_warnings)
+        warnings.extend(subs_warnings)
+        unavailable.update(health_unavailable)
+        unavailable.update(subs_unavailable)
+        return health, inbounds, subs
 
     async def _collect_metrics(
         self, warnings: list[str], unavailable: set[str]

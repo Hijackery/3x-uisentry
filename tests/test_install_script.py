@@ -863,3 +863,27 @@ def test_self_update_is_exposed_through_the_narrow_sudoers() -> None:
     assert "/etc/stacksentry.conf" in text
     # Метаданные для проверки обновлений.
     assert ".stacksentry-install" in text
+
+
+def test_webapp_has_separate_user_and_state() -> None:
+    """Веб-слой не должен работать под пользователем бота и писать его базу."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'WEBAPP_USER="${WEBAPP_USER:-stacksentry-webapp}"' in text
+    assert "User=$WEBAPP_USER" in text
+    assert "SupplementaryGroups=${SERVICE_GROUP:-$SERVICE_USER}" in text
+    assert "Environment=STATE_PATH=$WEBAPP_HOME/state.db" in text
+    assert "ReadWritePaths=$WEBAPP_HOME" in text
+    assert 'useradd --system --no-create-home --home-dir "$WEBAPP_HOME"' in text
+
+
+def test_installer_does_not_put_secrets_in_curl_argv() -> None:
+    """Токены и подписанные URL передаются curl через stdin-конфиг."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "curl_secure()" in text
+    assert "curl_secure_form()" in text
+    assert 'TG_PROBE="$(curl -sS' not in text
+    assert 'TG_RESULT="$(curl -sS' not in text
+    assert '-H "Authorization: Bearer $PANEL_TOKEN"' not in text
+    assert '-H "Token: $PANEL_TOKEN"' not in text
+    assert '-H "Hiddify-API-Key: $PANEL_TOKEN"' not in text
+    assert '--data-urlencode "password=$PANEL_PASSWORD_VALUE"' not in text

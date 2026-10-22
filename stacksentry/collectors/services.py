@@ -40,12 +40,39 @@ class ServiceCollector:
         self._prev_cpu: dict[str, tuple[float, int]] = {}
 
     async def collect(self) -> list[ServiceStatus]:
+        if not self.units:
+            return []
         if shutil.which("systemctl") is None:
             raise RuntimeError(
                 "нет systemd: состояние служб недоступно "
                 "(бот работает, управление службами — через init-скрипт)"
             )
-        return [await self.status(unit) for unit in self.units]
+        # Один запрос на все юниты: раньше на каждый сервис запускался
+        # отдельный systemctl, и при десяти службах сбор заметно тормозил.
+        result = await run_command(
+            [
+                "systemctl",
+                "show",
+                "--no-pager",
+                f"--property={','.join(SHOW_PROPERTIES)}",
+                *self.units,
+            ],
+            timeout=20.0,
+            action="status",
+        )
+        if not result.ok:
+            error = result.summary(limit=300)
+            return [_failed(unit, error) for unit in self.units]
+
+        blocks = _split_unit_blocks(result.stdout)
+        if len(blocks) != len(self.units):
+            # Экзотическая версия systemd или обрезанный вывод: не сопоставляем
+            # блоки наугад, а честно опрашиваем каждый юнит отдельно.
+            return [await self.status(unit) for unit in self.units]
+        return [
+            self._from_properties(unit, _parse_properties(block))
+            for unit, block in zip(self.units, blocks, strict=True)
+        ]
 
     async def status(self, unit: str) -> ServiceStatus:
         result = await run_command(
@@ -61,8 +88,9 @@ class ServiceCollector:
         )
         if not result.ok:
             return _failed(unit, result.summary(limit=300))
+        return self._from_properties(unit, _parse_properties(result.stdout))
 
-        props = _parse_properties(result.stdout)
+    def _from_properties(self, unit: str, props: dict[str, str]) -> ServiceStatus:
         load_state = props.get("LoadState", "unknown")
         active_state = props.get("ActiveState", "unknown")
         if load_state == "not-found":
@@ -152,6 +180,21 @@ def _failed(unit: str, error: str) -> ServiceStatus:
         cpu_percent=0.0,
         error=error,
     )
+
+
+def _split_unit_blocks(output: str) -> list[str]:
+    """Делит вывод ``systemctl show u1 u2`` на блоки свойств по пустой строке."""
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in output.splitlines():
+        if line.strip():
+            current.append(line)
+        elif current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
 
 
 def _parse_properties(output: str) -> dict[str, str]:

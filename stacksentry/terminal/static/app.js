@@ -14,12 +14,27 @@
   const modeEl = $("mode");
   const connEl = $("conn");
 
-  // Telegram Mini App передаёт initData в hash фрагменте — без внешних скриптов.
+  // initData приходит из Telegram (hash) или от родительского Mini App через
+  // postMessage. В URL его не оставляем — это одноразовый админ-креденшел.
   const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
-  const initData = hash.get("tgWebAppData") || "";
+  let initData = hash.get("tgWebAppData") || "";
   if (initData) {
     tokenRow.hidden = true;
+    history.replaceState(null, "", location.pathname + location.search);
   }
+  const parentOrigin = (() => {
+    try {
+      return new URL(document.referrer).origin;
+    } catch (_) {
+      return "";
+    }
+  })();
+  window.addEventListener("message", (event) => {
+    if (!event.data || event.data.type !== "stacksentry-init") return;
+    if (parentOrigin && event.origin !== parentOrigin) return;
+    initData = String(event.data.initData || "").slice(0, 8192);
+    if (initData) tokenRow.hidden = true;
+  });
 
   let socket = null;
   let term = null;

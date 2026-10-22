@@ -10,6 +10,10 @@
   const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
   const tg = window.Telegram && window.Telegram.WebApp;
   const initData = hash.get("tgWebAppData") || (tg && tg.initData) || "";
+  // initData — одноразовый админ-креденшел: не оставляем его в адресной строке.
+  if (location.hash) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
   const BASE_TABS = [
     ["overview", "Обзор"], ["services", "Службы"], ["panel", "Панель"],
     ["traffic", "Трафик"], ["subs", "Подписки"], ["history", "История"],
@@ -636,9 +640,7 @@
     if (terminalView.querySelector("iframe.terminal-frame")) return;
     let href = state.terminalOrigin;
     try {
-      const url = new URL(state.terminalOrigin);
-      if (initData) url.hash = `tgWebAppData=${encodeURIComponent(initData)}`;
-      href = url.href;
+      href = new URL(state.terminalOrigin).href;
     } catch (_) { /* оставляем исходный адрес */ }
     terminalView.dataset.mode = "frame";
     terminalView.innerHTML = `<div class="terminal-shell">
@@ -653,6 +655,18 @@
     </div>`;
     const frame = terminalView.querySelector("iframe.terminal-frame");
     const loader = $("terminal-loader");
+    // Передаём initData через postMessage, а не через URL: не попадает в
+    // историю, referrer, логи прокси и не утекает при копировании ссылки.
+    frame.addEventListener("load", () => {
+      if (!initData) return;
+      try {
+        const origin = new URL(state.terminalOrigin).origin;
+        frame.contentWindow.postMessage(
+          { type: "stacksentry-init", initData },
+          origin,
+        );
+      } catch (_) { /* iframe сам покажет форму входа */ }
+    });
     if (frame && loader) {
       frame.addEventListener("load", () => loader.classList.add("hidden"), { once: true });
     }

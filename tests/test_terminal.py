@@ -302,3 +302,31 @@ def test_config_falls_back_to_pty_when_ssh_key_unreadable(  # type: ignore[no-un
     monkeypatch.setattr(Path, "is_file", deny)
     settings = TerminalSettings.load(env)
     assert settings.ssh_key == ""
+
+
+def test_replay_is_durable_across_app_restarts(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    env = tmp_path / "terminal.env"
+    env.write_text(
+        "\n".join(
+            [
+                f"TELEGRAM_BOT_TOKEN={TOKEN}",
+                "TELEGRAM_ADMIN_IDS=42",
+                "TERMINAL_SECRET=" + "s" * 40,
+                f"TERMINAL_TOTP_SECRET={TOTP_SECRET}",
+                f"TERMINAL_REPLAY_DB={tmp_path / 'replay.db'}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = TerminalSettings.load(env)
+    code = totp_code(settings.totp_secret)
+    init_data = _init_data()
+    first = TestClient(create_app(settings)).post(
+        "/api/session", json={"initData": init_data, "totp": code}
+    )
+    assert first.status_code == 200, first.text
+    second = TestClient(create_app(settings)).post(
+        "/api/session", json={"initData": init_data, "totp": code}
+    )
+    assert second.status_code == 401
+    assert "уже использован" in second.text

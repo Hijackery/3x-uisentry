@@ -13,6 +13,13 @@ set -euo pipefail
 #: Каталог установки. Установщик пишет его в /etc/stacksentry.conf, чтобы
 #: self-update работал и при нестандартном --prefix.
 PREFIX_CONF="${PREFIX_CONF:-/etc/stacksentry.conf}"
+# Не доверяем PATH окружения: root-обёртка ищет «фиксированные» бинарники.
+# STACKSENTRY_CTL_PATH — только для тестового стенда, в бою не задаётся.
+if [ -n "${STACKSENTRY_CTL_PATH:-}" ]; then
+    export PATH="$STACKSENTRY_CTL_PATH"
+else
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+fi
 
 log() {
     logger -t stacksentry-ctl -- "$*" 2>/dev/null || true
@@ -43,6 +50,17 @@ safe_int() {
     local value="$1"
     [[ "$value" =~ ^[0-9]{1,6}$ ]] || die "ожидалось число: $value"
     printf '%s' "$value"
+}
+
+update_pin() {
+    # Пин обновления хранится в root-owned конфиге и задаётся оператором.
+    # Без него self-update не запускается: иначе root выполнял бы mutable main.
+    [ -r "$PREFIX_CONF" ] || return 1
+    (
+        # shellcheck disable=SC1090
+        . "$PREFIX_CONF"
+        printf '%s\n%s\n' "${UPDATE_SHA256:-}" "${UPDATE_REF:-main}"
+    )
 }
 
 install_prefix() {
@@ -94,6 +112,28 @@ pkg_backend() {
     fi
 }
 
+priv_state_dir() {
+    # Root-воркеры пишут сюда, а не в STATE_DIR сервисного пользователя:
+    # иначе подложенный symlink (apt-upgrade.status -> /etc/sudoers) заставил бы
+    # root писать в чужой файл. Каталог root-owned 0700, сервис его не меняет.
+    local dir="${STATE_DIR:-/var/lib/stacksentry}/root"
+    mkdir -p "$dir" 2>/dev/null || die "не удалось создать $dir"
+    chown root:root "$dir" 2>/dev/null || true
+    chmod 0700 "$dir" 2>/dev/null || true
+    printf '%s' "$dir"
+}
+
+safe_write() {
+    # Атомарная запись: mktemp в root-owned каталоге + mv. mv заменяет
+    # symlink, а не идёт по нему, поэтому TOCTOU/symlink-атака не срабатывает.
+    local target="$1" dir tmp
+    dir="$(dirname "$target")"
+    tmp="$(mktemp "$dir/.tmp.XXXXXX")" || return 1
+    cat >"$tmp" || { rm -f "$tmp"; return 1; }
+    chmod 0600 "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$target"
+}
+
 apt_enqueue() {
     # $1 — имя transient-юнита, $2 — внутренняя подкоманда воркера,
     # $3 — описание для systemd, $4 — имя лог-файла для фонового режима.
@@ -102,8 +142,8 @@ apt_enqueue() {
     # аутентификацию — падаем в фоновый запуск отдельной сессией. Иначе кнопка
     # «Обновить систему» молча не работала.
     local unit="$1" worker="$2" description="$3" log_name="$4" kind="$5"
-    local apt_dir="${STATE_DIR:-/var/lib/stacksentry}"
-    mkdir -p "$apt_dir" 2>/dev/null || true
+    local apt_dir
+    apt_dir="$(priv_state_dir)"
     rm -f "$apt_dir/apt-${kind}.status" "$apt_dir/apt-${kind}.packages" \
         2>/dev/null || true
     # 1) Постоянный юнит (ставится установщиком). Это надёжнее transient-юнита:
@@ -142,9 +182,9 @@ apt_enqueue() {
 apt_status_write() {
     # $1 — вид обновления, $2 — код возврата. Нужен для систем без systemd,
     # где нельзя спросить состояние юнита у systemctl.
-    local dir="${STATE_DIR:-/var/lib/stacksentry}"
-    mkdir -p "$dir" 2>/dev/null || true
-    printf 'EXIT=%s\n' "$2" >"$dir/apt-$1.status" 2>/dev/null || true
+    local dir
+    dir="$(priv_state_dir)"
+    printf 'EXIT=%s\n' "$2" | safe_write "$dir/apt-$1.status" 2>/dev/null || true
 }
 
 #: Менеджер служб выбирается по факту наличия: одна и та же обёртка работает в
@@ -358,7 +398,7 @@ case "$cmd" in
         require_no_extra_args 0 "$@"
         pkg_backend
         export DEBIAN_FRONTEND=noninteractive
-        rm -f "${STATE_DIR:-/var/lib/stacksentry}/apt-update.packages" \
+        rm -f "$(priv_state_dir)/apt-update.packages" \
             2>/dev/null || true
         rc=0
         case "$PKG_KIND" in
@@ -380,10 +420,10 @@ case "$cmd" in
             _pkgs="$(apt list --upgradable 2>/dev/null | sed -n '2,$p' \
                 | cut -d/ -f1 | sed '/^$/d')"
             _count="$(printf '%s\n' "$_pkgs" | sed '/^$/d' | wc -l | tr -d ' ')"
-            _pkg_file="${STATE_DIR:-/var/lib/stacksentry}/apt-update.packages"
+            _pkg_file="$(priv_state_dir)/apt-update.packages"
             printf '%s\n%s\n' "${_count:-0}" \
                 "$(printf '%s' "$_pkgs" | tr '\n' ' ' | sed 's/ *$//')" \
-                > "$_pkg_file" 2>/dev/null || true
+                | safe_write "$_pkg_file" 2>/dev/null || true
             if [ "${_count:-0}" -eq 0 ]; then
                 echo "Обновлений нет."
             else
@@ -437,7 +477,7 @@ case "$cmd" in
         # У сервиса HOME=PREFIX, а он read-only (ProtectSystem=strict): python
         # внутри do-release-upgrade падал на mkdir() .cache. Даём записываемый
         # HOME/XDG_CACHE_HOME в каталоге состояния.
-        _dr_home="${STATE_DIR:-/var/lib/stacksentry}/release-upgrade"
+        _dr_home="$(priv_state_dir)/release-upgrade"
         mkdir -p "$_dr_home/cache" 2>/dev/null || true
         export HOME="$_dr_home"
         export XDG_CACHE_HOME="$_dr_home/cache"
@@ -484,7 +524,7 @@ case "$cmd" in
         [ -z "${SUDO_USER:-}" ] || die "_release_upgrade_worker недоступен через sudo"
         require_no_extra_args 0 "$@"
         export DEBIAN_FRONTEND=noninteractive
-        _dr_home="${STATE_DIR:-/var/lib/stacksentry}/release-upgrade"
+        _dr_home="$(priv_state_dir)/release-upgrade"
         mkdir -p "$_dr_home/cache" 2>/dev/null || true
         export HOME="$_dr_home"
         export XDG_CACHE_HOME="$_dr_home/cache"
@@ -520,7 +560,9 @@ case "$cmd" in
         case "$mode" in
             *[2367]) die "$installer доступен на запись группе/другим" ;;
         esac
-        log "self-update requested ($prefix)"
+        { read -r _pin_sha; read -r _pin_ref; } < <(update_pin) || true
+        [ -n "${_pin_sha:-}" ] || die "не задан UPDATE_SHA256 в $PREFIX_CONF: обновление без pinned SHA256 запрещено"
+        log "self-update requested ($prefix, ref=$_pin_ref, sha=${_pin_sha:0:12}…)"
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
             echo "Обновление уже выполняется."
@@ -540,11 +582,15 @@ case "$cmd" in
         [ -f "$installer" ] || die "не найден $installer"
         # Копируем установщик в пустой каталог: иначе он найдёт локальные
         # исходники рядом с собой и «обновит» старую копию вместо main.
+        { read -r _pin_sha; read -r _pin_ref; } < <(update_pin) || true
+        [ -n "${_pin_sha:-}" ] || die "не задан UPDATE_SHA256 в $PREFIX_CONF: обновление без pinned SHA256 запрещено"
+        [ -n "${_pin_ref:-}" ] || _pin_ref="main"
         tmp="$(mktemp -d)"
         cp -a "$installer" "$tmp/install.sh"
         cd "$tmp"
         rc=0
-        bash "$tmp/install.sh" --yes --prefix "$prefix" --ref main || rc=$?
+        bash "$tmp/install.sh" --yes --update --prefix "$prefix" \
+            --ref "$_pin_ref" --sha256 "$_pin_sha" || rc=$?
         rm -rf "$tmp"
         exit "$rc"
         ;;
@@ -568,7 +614,7 @@ case "$cmd" in
             load="$(systemctl show -p LoadState --value "$unit" 2>/dev/null || true)"
         fi
         # Фолбэк без systemd: воркер пишет файл со своим кодом возврата.
-        _status_file="${STATE_DIR:-/var/lib/stacksentry}/apt-$2.status"
+        _status_file="$(priv_state_dir)/apt-$2.status"
         if [ -f "$_status_file" ]; then
             _rc="$(sed -n 's/^EXIT=//p' "$_status_file" | head -1)"
             if [ -n "$_rc" ]; then
@@ -576,7 +622,7 @@ case "$cmd" in
                 if [ "$_rc" = "0" ]; then result="success"; else result="failed"; fi
             fi
         fi
-        _pkg_file="${STATE_DIR:-/var/lib/stacksentry}/apt-$2.packages"
+        _pkg_file="$(priv_state_dir)/apt-$2.packages"
         _pkg_count=""
         _pkg_list=""
         if [ -f "$_pkg_file" ]; then
@@ -588,8 +634,8 @@ case "$cmd" in
             "${load:-unknown}" "${_pkg_count:-}" "${_pkg_list:-}"
         if command -v journalctl >/dev/null 2>&1; then
             journalctl -u "$unit" -n 40 --no-pager -o cat 2>/dev/null || true
-        elif [ -f "${STATE_DIR:-/var/lib/stacksentry}/apt-$2.log" ]; then
-            tail -n 40 "${STATE_DIR:-/var/lib/stacksentry}/apt-$2.log" 2>/dev/null || true
+        elif [ -f "$(priv_state_dir)/apt-$2.log" ]; then
+            tail -n 40 "$(priv_state_dir)/apt-$2.log" 2>/dev/null || true
         fi
         ;;
 

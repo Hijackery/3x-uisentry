@@ -335,3 +335,36 @@ async def test_post_init_skips_webapp_menu_button_when_disabled(
     from telegram import MenuButtonDefault
 
     assert isinstance(setter.await_args.kwargs["menu_button"], MenuButtonDefault)
+
+
+async def test_snapshot_cache_is_single_flight(
+    bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Параллельные команды не должны запускать несколько сборов подряд."""
+    import asyncio
+
+    from stacksentry.models import MonitorSnapshot, PanelHealth
+
+    calls = 0
+    snapshot = MonitorSnapshot(
+        system=None,
+        services=[],
+        panel=PanelHealth(
+            reachable=False, status_code=None, latency_ms=None, error=None
+        ),
+        inbounds=[],
+        subscriptions=[],
+    )
+
+    async def fake_snapshot() -> MonitorSnapshot:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.05)
+        return snapshot
+
+    monkeypatch.setattr(bot_app.monitor, "snapshot", fake_snapshot)
+
+    first, second = await asyncio.gather(bot_app.snapshot(), bot_app.snapshot())
+
+    assert calls == 1
+    assert first is second is snapshot

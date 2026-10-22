@@ -160,3 +160,19 @@ def test_elevation_roundtrip_and_expiry(storage: Storage) -> None:
     storage.set_elevation(42, 60, now=now + 1000)
     storage.clear_elevation(42)
     assert storage.elevation_until(42, now=now + 1001) == 0.0
+
+
+def test_replay_claim_is_durable_across_connections(storage: Storage) -> None:
+    from stacksentry.totp import ReplayGuard
+
+    first = ReplayGuard(ttl=60, claim=storage.claim_replay)
+    assert first.allow("42:123456") is True
+    assert first.allow("42:123456") is False
+
+    reopened = Storage(storage.path)
+    try:
+        second = ReplayGuard(ttl=60, claim=reopened.claim_replay)
+        assert second.allow("42:123456") is False
+        assert second.allow("42:654321") is True
+    finally:
+        reopened.close()

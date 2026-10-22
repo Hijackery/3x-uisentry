@@ -1,7 +1,7 @@
 """Read-only Telegram Mini App: auth initData + JSON API + статический дашборд.
 
-Сервис работает от того же непривилегированного пользователя, что и бот, и
-только читает состояние. Действий здесь нет — они остаются в боте/терминале.
+Сервис работает от отдельного непривилегированного пользователя и только
+читает состояние. Действий здесь нет — они остаются в боте/терминале.
 """
 
 from __future__ import annotations
@@ -11,12 +11,14 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -66,9 +68,19 @@ def _sign(secret: str, body: str) -> str:
 
 
 def issue_cookie(secret: str, user_id: int, ttl: int) -> str:
+    now = time.time()
+    ttl = min(ttl, 86400)
     body = (
         base64.urlsafe_b64encode(
-            json.dumps({"uid": user_id, "exp": time.time() + ttl}).encode()
+            json.dumps(
+                {
+                    "uid": user_id,
+                    "iat": now,
+                    "exp": now + ttl,
+                    "jti": secrets.token_urlsafe(12),
+                },
+                separators=(",", ":"),
+            ).encode()
         )
         .rstrip(b"=")
         .decode()
@@ -76,7 +88,7 @@ def issue_cookie(secret: str, user_id: int, ttl: int) -> str:
     return f"{body}.{_sign(secret, body)}"
 
 
-def verify_cookie(secret: str, cookie: str) -> int | None:
+def verify_cookie(secret: str, cookie: str, *, now: float | None = None) -> int | None:
     body, sep, signature = cookie.partition(".")
     if not sep:
         return None
@@ -92,10 +104,25 @@ def verify_cookie(secret: str, cookie: str) -> int | None:
         )
     except (ValueError, TypeError):
         return None
-    if float(payload.get("exp", 0)) < time.time():
+    if not isinstance(payload, dict):
         return None
     uid = payload.get("uid")
-    return int(uid) if isinstance(uid, int) else None
+    issued = payload.get("iat")
+    expires = payload.get("exp")
+    if (
+        not isinstance(uid, int)
+        or isinstance(uid, bool)
+        or not isinstance(issued, (int, float))
+        or isinstance(issued, bool)
+    ):
+        return None
+    if not isinstance(expires, (int, float)) or isinstance(expires, bool):
+        return None
+    moment = time.time() if now is None else now
+    # Ограничиваем срок жизни на сервере, даже если cookie подписали иначе.
+    if issued > moment + 60 or expires <= moment or expires - issued > 86400:
+        return None
+    return uid
 
 
 def _snapshot_json(snapshot: Any, age: float) -> dict[str, Any]:
@@ -113,10 +140,13 @@ def _snapshot_json(snapshot: Any, age: float) -> dict[str, Any]:
     }
 
 
+MAX_AUTH_BODY = 64 * 1024
+
+
 class SessionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    init_data: str = Field(default="", alias="initData")
-    totp: str = ""
+    init_data: str = Field(default="", alias="initData", max_length=8192)
+    totp: str = Field(default="", max_length=32)
 
 
 def create_app(
@@ -129,11 +159,29 @@ def create_app(
     monitor = monitor or Monitor(config.settings)
     storage = storage or Storage(config.settings.state_path)
     snapshot_cache: dict[str, Any] = {"value": None, "at": 0.0}
-    totp_replay = ReplayGuard(ttl=120.0)
+    snapshot_lock = asyncio.Lock()
+    totp_replay = ReplayGuard(ttl=120.0, claim=storage.claim_replay)
+    init_replay = ReplayGuard(ttl=360.0, claim=storage.claim_replay)
     totp_limiter = RateLimiter(limit=5, window=60.0)
+    preauth_limiter = RateLimiter(limit=20, window=60.0)
 
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Any:
+        if request.method == "POST" and request.url.path == "/api/session":
+            length = request.headers.get("content-length", "")
+            if not length.isdigit() or int(length) > MAX_AUTH_BODY:
+                return JSONResponse(
+                    {"detail": "слишком большой запрос"}, status_code=413
+                )
+        # Read-only API не должен принимать cross-site запросы даже без CORS.
+        if (
+            config.public_origin
+            and request.url.path.startswith("/api/")
+            and request.headers.get("sec-fetch-site") == "cross-site"
+        ):
+            return JSONResponse(
+                {"detail": "cross-site запрос запрещён"}, status_code=403
+            )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -149,6 +197,10 @@ def create_app(
             f"frame-src {frame_src}; base-uri 'none'; frame-ancestors "
             "https://web.telegram.org https://*.telegram.org"
         )
+        if config.public_origin:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -168,6 +220,12 @@ def create_app(
     async def session(
         request: Request, body: SessionRequest, response: Response
     ) -> dict[str, Any]:
+        client = request.client.host if request.client else "unknown"
+        if not preauth_limiter.allow(client):
+            raise HTTPException(status_code=429, detail="слишком много попыток")
+        origin = request.headers.get("origin", "")
+        if config.public_origin and origin and origin != config.public_origin:
+            raise HTTPException(status_code=403, detail="чужой Origin")
         try:
             user = validate_init_data(body.init_data, config.settings.telegram_token)
         except Exception as exc:  # noqa: BLE001 — безопасный текст
@@ -210,6 +268,15 @@ def create_app(
                         "message": "Этот код уже использован. Дождитесь следующего.",
                     },
                 )
+        init_key = "init:" + hashlib.sha256(body.init_data.encode()).hexdigest()
+        if not init_replay.allow(init_key):
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "code": "init_replay",
+                    "message": "Mini App уже авторизован — откройте его заново.",
+                },
+            )
         cookie = issue_cookie(config.secret, user_id, config.session_ttl)
         response.set_cookie(
             COOKIE_NAME,
@@ -242,9 +309,15 @@ def create_app(
     @app.get("/api/status")
     async def status(user_id: int = Depends(current_user)) -> dict[str, Any]:
         now = time.monotonic()
-        if snapshot_cache["value"] is None or now - snapshot_cache["at"] > 15:
-            snapshot_cache["value"] = await monitor.snapshot()
-            snapshot_cache["at"] = now
+        if snapshot_cache["value"] is not None and now - snapshot_cache["at"] <= 15:
+            return _snapshot_json(snapshot_cache["value"], snapshot_cache["at"])
+        # Single-flight: первый запрос собирает снимок, остальные ждут его,
+        # а не запускают параллельно ещё несколько опросов панели/systemctl.
+        async with snapshot_lock:
+            now = time.monotonic()
+            if snapshot_cache["value"] is None or now - snapshot_cache["at"] > 15:
+                snapshot_cache["value"] = await monitor.snapshot()
+                snapshot_cache["at"] = time.monotonic()
         return _snapshot_json(snapshot_cache["value"], snapshot_cache["at"])
 
     @app.get("/api/history")

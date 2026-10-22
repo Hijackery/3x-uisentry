@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import os
 import re
+import socket
 from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
+from urllib.parse import urlsplit
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -164,6 +167,8 @@ class Settings:
     panel_type: str = "3x-ui"
     panel_username: str = ""
     panel_password: str = ""
+    #: Осознанное разрешение http:// и PANEL_VERIFY_TLS=0 для не-loopback.
+    panel_allow_insecure: bool = False
 
     #: 2FA для опасных действий (step-up). Пустой секрет = 2FA выключена.
     totp_secret: str = ""
@@ -249,6 +254,7 @@ def _build_settings() -> Settings:
         panel_password=env_str("PANEL_PASSWORD"),
         panel_verify_tls=env_bool("PANEL_VERIFY_TLS", True),
         panel_ca_bundle=env_str("PANEL_CA_BUNDLE", ""),
+        panel_allow_insecure=env_bool("PANEL_ALLOW_INSECURE", False),
         panel_timeout=env_positive_float("PANEL_TIMEOUT", 15.0),
         panel_base_path=env_str("PANEL_BASE_PATH", "").strip("/"),
         services=tuple(env_str_list("SERVICES", [])),
@@ -305,6 +311,65 @@ def _service_problems(services: tuple[str, ...]) -> list[str]:
     return problems
 
 
+_METADATA_HOSTS = frozenset(
+    {
+        "metadata",
+        "metadata.google.internal",
+        "metadata.goog",
+        "instance-data",
+        "instance-data.ec2.internal",
+    }
+)
+
+
+def _url_host(url: str) -> str:
+    try:
+        return (urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return ""
+
+
+def _url_is_loopback(url: str) -> bool:
+    host = _url_host(url)
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _url_host_is_forbidden(url: str) -> bool:
+    """Cloud metadata и link-local — даже для «внутренней» панели."""
+    host = _url_host(url)
+    if not host or host in _METADATA_HOSTS:
+        return not host
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # Имя резолвим только для проверки: DNS-rebinding всё равно требует
+        # сетевого периметра, но очевидные metadata-имена закрываем.
+        try:
+            resolved = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        except OSError:
+            return False
+        return any(
+            _address_is_forbidden(ipaddress.ip_address(item[4][0])) for item in resolved
+        )
+    return _address_is_forbidden(address)
+
+
+def _address_is_forbidden(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    return bool(
+        address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    )
+
+
 def _validate(settings: Settings) -> list[str]:
     problems: list[str] = []
     if not settings.telegram_token:
@@ -321,12 +386,44 @@ def _validate(settings: Settings) -> list[str]:
         )
     if not settings.telegram_api_url.startswith(("http://", "https://")):
         problems.append("TELEGRAM_API_URL должен начинаться с http:// или https://")
+    elif settings.telegram_api_url.startswith("http://") and not _url_is_loopback(
+        settings.telegram_api_url
+    ):
+        problems.append(
+            "TELEGRAM_API_URL должен использовать https:// "
+            "(http допустим только для localhost)"
+        )
     if not settings.admin_ids:
         problems.append("TELEGRAM_ADMIN_IDS пуст: ботом никто не сможет управлять")
     if settings.panel_url and not settings.panel_url.startswith(
         ("http://", "https://")
     ):
         problems.append("PANEL_URL должен начинаться с http:// или https://")
+    elif settings.panel_url:
+        if _url_host_is_forbidden(settings.panel_url):
+            problems.append(
+                "PANEL_URL указывает на metadata/link-local адрес — "
+                "запросы туда запрещены"
+            )
+        if (
+            settings.panel_url.startswith("http://")
+            and not _url_is_loopback(settings.panel_url)
+            and not settings.panel_allow_insecure
+        ):
+            problems.append(
+                "PANEL_URL использует http:// — токен панели уйдёт открытым текстом. "
+                "Нужен https:// (или PANEL_ALLOW_INSECURE=1 для доверенной "
+                "локальной сети)"
+            )
+        if (
+            not settings.panel_verify_tls
+            and not _url_is_loopback(settings.panel_url)
+            and not settings.panel_allow_insecure
+        ):
+            problems.append(
+                "PANEL_VERIFY_TLS=0 допустим только для localhost или вместе с "
+                "PANEL_ALLOW_INSECURE=1"
+            )
     login_panels = {"marzban", "marzneshin", "pasarguard"}
     token_panels = {"3x-ui", "remnawave", "s-ui", "hiddify"}
     if (
@@ -370,11 +467,29 @@ def _validate(settings: Settings) -> list[str]:
             "PANEL_BASE_PATH выглядит как адрес — здесь нужен только путь панели "
             "(например /panel), а адрес указывается в PANEL_URL"
         )
-    if settings.panel_ca_bundle and not Path(settings.panel_ca_bundle).is_file():
-        problems.append(
-            f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "
-            "(нужен PEM-файл с сертификатом панели или её CA)"
-        )
+    if settings.panel_ca_bundle:
+        bundle = Path(settings.panel_ca_bundle)
+        if not bundle.is_file():
+            problems.append(
+                f"PANEL_CA_BUNDLE={settings.panel_ca_bundle}: файл не найден "
+                "(нужен PEM-файл с сертификатом панели или её CA)"
+            )
+        else:
+            real = bundle.resolve()
+            try:
+                info = real.stat()
+            except OSError:
+                info = None
+            if bundle.is_symlink() or info is None or not real.is_file():
+                problems.append(
+                    "PANEL_CA_BUNDLE должен быть обычным файлом без symlink"
+                )
+            elif info.st_mode & 0o022:
+                problems.append(
+                    "PANEL_CA_BUNDLE не должен быть доступен на запись группе/другим"
+                )
+            elif os.geteuid() == 0 and info.st_uid != 0:
+                problems.append("PANEL_CA_BUNDLE должен принадлежать root")
     if settings.webapp_enabled and len(settings.webapp_secret) < 32:
         problems.append("WEBAPP_ENABLED=1, но WEBAPP_SECRET короче 32 символов")
     if settings.webapp_public_origin and not settings.webapp_enabled:

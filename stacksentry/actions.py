@@ -145,9 +145,15 @@ class ActionManager:
             raise ActionError("Действие не совпадает с подтверждением")
         return self._pending.pop(token, None)
 
-    def cancel(self, token: str) -> bool:
-        """Снимает подтверждение. False — снимать было нечего."""
-        return self._pending.pop(token, None) is not None
+    def cancel(self, token: str, user_id: int | None = None) -> bool:
+        """Снимает подтверждение. False — снимать было нечего/чужое."""
+        pending = self._pending.get(token)
+        if pending is None:
+            return False
+        if pending.owner_id and user_id is not None and pending.owner_id != user_id:
+            return False
+        self._pending.pop(token, None)
+        return True
 
     def _prune(self) -> None:
         deadline = time.monotonic() - self.settings.confirm_ttl

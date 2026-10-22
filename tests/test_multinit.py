@@ -30,7 +30,7 @@ def _run_wrapper(
     *args: str, path: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     full_env = dict(os.environ)
-    full_env["PATH"] = path
+    full_env["STACKSENTRY_CTL_PATH"] = path
     if env:
         full_env.update(env)
     return subprocess.run(

@@ -40,29 +40,43 @@ class PanelClient:
         self.settings = settings
         self.base = settings.api_base
         self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
         self._authorized: bool | None = None
+
+    def _build_session(self) -> httpx.AsyncClient:
+        # Свой CA-файл важнее флага проверки: он задаёт, чему именно
+        # доверяем (пиннинг сертификата панели или внутреннего CA).
+        verify: bool | str = self.settings.panel_verify_tls
+        if self.settings.panel_ca_bundle:
+            verify = self.settings.panel_ca_bundle
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(self.settings.panel_timeout),
+            verify=verify,
+            headers={
+                "Authorization": f"Bearer {self.settings.panel_api_token}",
+                "Accept": "application/json",
+                "User-Agent": "stacksentry-bot/1.0",
+            },
+            # Редиректы намеренно не следуем: иначе панель (или прокси перед
+            # ней) могла бы увести запрос на сторонний хост, и httpx отправил
+            # бы туда заголовок Authorization с токеном панели.
+            follow_redirects=False,
+        )
 
     def _session(self) -> httpx.AsyncClient:
         if self._client is None:
-            # Свой CA-файл важнее флага проверки: он задаёт, чему именно
-            # доверяем (пиннинг сертификата панели или внутреннего CA).
-            verify: bool | str = self.settings.panel_verify_tls
-            if self.settings.panel_ca_bundle:
-                verify = self.settings.panel_ca_bundle
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(self.settings.panel_timeout),
-                verify=verify,
-                headers={
-                    "Authorization": f"Bearer {self.settings.panel_api_token}",
-                    "Accept": "application/json",
-                    "User-Agent": "stacksentry-bot/1.0",
-                },
-                # Редиректы намеренно не следуем: иначе панель (или прокси перед
-                # ней) могла бы увести запрос на сторонний хост, и httpx отправил
-                # бы туда заголовок Authorization с токеном панели.
-                follow_redirects=False,
-            )
+            self._client = self._build_session()
         return self._client
+
+    async def _ensure_session(self) -> httpx.AsyncClient:
+        """Ленивая сессия без гонки при параллельных запросах health/subscriptions."""
+        client = self._client
+        if client is not None:
+            return client
+        async with self._client_lock:
+            if self._client is None:
+                self._client = self._build_session()
+            return self._client
 
     async def close(self) -> None:
         if self._client is not None:
@@ -79,7 +93,7 @@ class PanelClient:
                 "API панели не настроен — заполните PANEL_URL и PANEL_API_TOKEN "
                 "(или используйте режим monitor-only)"
             )
-        session = self._session()
+        session = await self._ensure_session()
         url = self._url(path)
 
         for attempt in range(2):
@@ -147,7 +161,8 @@ class PanelClient:
         started = loop.time()
 
         try:
-            response = await self._session().get(
+            session = await self._ensure_session()
+            response = await session.get(
                 f"{self.settings.panel_web_base}/",
                 timeout=self.settings.panel_timeout,
             )

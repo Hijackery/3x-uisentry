@@ -19,6 +19,25 @@ MAX_CAPTURED_OUTPUT = 16_000
 ASYNC_TIMEOUTS: tuple[type[BaseException], ...] = (TimeoutError, asyncio.TimeoutError)
 
 
+async def _read_tail(stream: asyncio.StreamReader | None, limit: int) -> bytes:
+    """Читает поток и держит только последние ``limit`` байт.
+
+    ``communicate()`` копил весь вывод: dmesg/apt могли съесть память до
+    обрезки. Здесь хвост ограничен ещё во время чтения.
+    """
+    if stream is None:
+        return b""
+    tail = bytearray()
+    while True:
+        chunk = await stream.read(65536)
+        if not chunk:
+            break
+        tail.extend(chunk)
+        if len(tail) > limit:
+            del tail[:-limit]
+    return bytes(tail)
+
+
 async def run_command(
     argv: list[str],
     *,
@@ -48,30 +67,64 @@ async def run_command(
     # которого фоновая задача падала без отчёта («зависло»).
     stdout: bytes = b""
     stderr: bytes = b""
+    # Некоторые тестовые/встраиваемые процессы не отдают потоковые пайпы.
+    streaming = getattr(process, "stdout", None) is not None
+    out_task = (
+        asyncio.create_task(_read_tail(process.stdout, MAX_CAPTURED_OUTPUT))
+        if streaming
+        else None
+    )
+    err_task = (
+        asyncio.create_task(_read_tail(process.stderr, MAX_CAPTURED_OUTPUT))
+        if streaming
+        else None
+    )
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        if streaming:
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+            assert out_task is not None and err_task is not None
+            stdout = await asyncio.wait_for(out_task, timeout=5)
+            stderr = await asyncio.wait_for(err_task, timeout=5)
+        else:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
     except ASYNC_TIMEOUTS:
         _terminate(process)
         # Забираем остаток вывода, но не бесконечно: процесс мог оставить
         # детей, которые держат пайпы открытыми.
-        with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError):
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
+        if streaming:
+            with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError):
+                await asyncio.wait_for(process.wait(), timeout=5)
+        else:
+            with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError, AttributeError):
+                await asyncio.wait_for(process.communicate(), timeout=5)
+        if out_task is not None:
+            with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError):
+                stdout = await asyncio.wait_for(out_task, timeout=2)
+            out_task.cancel()
+        if err_task is not None:
+            with suppress(*ASYNC_TIMEOUTS, asyncio.CancelledError):
+                stderr = await asyncio.wait_for(err_task, timeout=2)
+            err_task.cancel()
         return CommandResult(
             action=action or command,
             command=command,
             returncode=124,
-            stdout=_decode(stdout)[-MAX_CAPTURED_OUTPUT:],
+            stdout=_decode(stdout),
             stderr=(
                 f"Таймаут {timeout:.0f}s — команда прервана. {_decode(stderr)}".strip()
-            )[-MAX_CAPTURED_OUTPUT:],
+            ),
             duration=time.monotonic() - started,
         )
     except asyncio.CancelledError:
         # Бота выключают или задача отменена: без этого дочерний процесс
         # (например, apt) оставался работать в фоне после остановки бота.
         _terminate(process)
-        # Дожидаемся переработки процесса: иначе транспорт всплывёт при сборке
-        # мусора уже после закрытия цикла событий.
+        if out_task is not None:
+            out_task.cancel()
+        if err_task is not None:
+            err_task.cancel()
         with suppress(BaseException):
             await asyncio.wait_for(process.wait(), timeout=2)
         raise
@@ -80,8 +133,8 @@ async def run_command(
         action=action or command,
         command=command,
         returncode=process.returncode if process.returncode is not None else -1,
-        stdout=_decode(stdout)[-MAX_CAPTURED_OUTPUT:],
-        stderr=_decode(stderr)[-MAX_CAPTURED_OUTPUT:],
+        stdout=_decode(stdout),
+        stderr=_decode(stderr),
         duration=time.monotonic() - started,
     )
 

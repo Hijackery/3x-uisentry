@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import hashlib
 import hmac
 import json
 import logging
@@ -26,6 +27,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..storage import Storage
 from ..totp import normalize_totp
 from .auth import (
     AuthError,
@@ -41,12 +43,15 @@ logger = logging.getLogger("stacksentry.terminal")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+MAX_AUTH_BODY = 64 * 1024
+
+
 class SessionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    init_data: str = Field(default="", alias="initData")
-    token: str = ""
-    totp: str = ""
+    init_data: str = Field(default="", alias="initData", max_length=8192)
+    token: str = Field(default="", max_length=512)
+    totp: str = Field(default="", max_length=32)
     root: bool = False
 
 
@@ -124,12 +129,20 @@ def terminal_command(settings: TerminalSettings, *, root: bool) -> list[str]:
 async def _bridge(ws: WebSocket, settings: TerminalSettings, *, root: bool) -> None:
     master, slave = pty.openpty()
     command = terminal_command(settings, root=root)
+    # Не наследуем окружение сервиса: там TELEGRAM_BOT_TOKEN, TOTP и
+    # TERMINAL_ACCESS_TOKEN. Ребёнку достаточно PATH/TERM/LANG/HOME/USER.
     env = {
-        **os.environ,
+        "PATH": os.environ.get(
+            "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ),
         "TERM": "xterm-256color",
         "LANG": "C.UTF-8",
         "HOME": os.environ.get("HOME", "/var/lib/stacksentry-term"),
     }
+    for name in ("USER", "LOGNAME", "SHELL"):
+        value = os.environ.get(name)
+        if value:
+            env[name] = value
     process = await asyncio.create_subprocess_exec(
         *command,
         stdin=slave,
@@ -200,11 +213,22 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     tickets = TicketStore(settings.secret, ttl=settings.session_ttl)
     limiter = RateLimiter(limit=5, window=60.0)
-    replay = ReplayGuard(ttl=120.0)
+    preauth_limiter = RateLimiter(limit=20, window=60.0)
+    replay_store = Storage(Path(settings.replay_db)) if settings.replay_db else None
+    claim = replay_store.claim_replay if replay_store is not None else None
+    app.state.replay_store = replay_store
+    replay = ReplayGuard(ttl=120.0, claim=claim)
+    init_replay = ReplayGuard(ttl=360.0, claim=claim)
     sessions: dict[int, WebSocket] = {}
 
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Any:
+        if request.method == "POST" and request.url.path == "/api/session":
+            length = request.headers.get("content-length", "")
+            if not length.isdigit() or int(length) > MAX_AUTH_BODY:
+                return JSONResponse(
+                    {"detail": "слишком большой запрос"}, status_code=413
+                )
         response = await call_next(request)
         _security_headers(response, frame_ancestors=settings.frame_ancestors)
         if request.url.path.startswith("/api/"):
@@ -223,6 +247,9 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     @app.post("/api/session")
     async def session(request: Request, body: SessionRequest) -> dict[str, Any]:
         client = request.client.host if request.client else "unknown"
+        # Лимит до проверки подписи/TOTP: не даём перебирать и жечь HMAC.
+        if not preauth_limiter.allow(client):
+            raise HTTPException(status_code=429, detail="слишком много попыток")
         origin = request.headers.get("origin", "")
         if settings.public_origin and origin and origin != settings.public_origin:
             raise HTTPException(status_code=403, detail="чужой Origin")
@@ -253,6 +280,12 @@ def create_app(settings: TerminalSettings) -> FastAPI:
                 raise AuthError("этот код TOTP уже использован")
             if body.root and not settings.allow_root:
                 raise AuthError("root-терминал выключен")
+            if body.init_data:
+                key = hashlib.sha256(body.init_data.encode()).hexdigest()
+                if not init_replay.allow(f"init:{key}"):
+                    raise AuthError(
+                        "initData уже использован — откройте Mini App заново"
+                    )
             ticket = tickets.issue(user_id, root=body.root and settings.allow_root)
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc

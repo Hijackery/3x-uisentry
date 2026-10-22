@@ -30,8 +30,13 @@ from stacksentry.app import MonitorBot
 from stacksentry.settings import BASE_DIR, ConfigError, Settings, load_settings
 
 ADMIN_ID = 42
-UI_SRC = (BASE_DIR / "stacksentry" / "ui.py").read_text(encoding="utf-8")
-APP_SRC = (BASE_DIR / "stacksentry" / "app.py").read_text(encoding="utf-8")
+_SRC_DIR = BASE_DIR / "stacksentry"
+UI_SRC = "\n".join(
+    path.read_text(encoding="utf-8") for path in sorted(_SRC_DIR.glob("ui*.py"))
+)
+APP_SRC = "\n".join(
+    path.read_text(encoding="utf-8") for path in sorted(_SRC_DIR.glob("app*.py"))
+)
 
 
 # ---------------------------------------------------- статическая проверка

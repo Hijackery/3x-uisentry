@@ -47,8 +47,18 @@ def validate_init_data(
     """
     if not raw:
         raise AuthError("initData пуст")
+    # Ограничиваем до HMAC: иначе гигантская строка/тысячи полей жгут CPU.
+    if len(raw) > 8192:
+        raise AuthError("initData слишком большой")
     try:
-        pairs = dict(parse_qsl(raw, keep_blank_values=True, strict_parsing=False))
+        pairs = dict(
+            parse_qsl(
+                raw,
+                keep_blank_values=True,
+                strict_parsing=False,
+                max_num_fields=64,
+            )
+        )
     except ValueError as exc:
         raise AuthError("initData не разобран") from exc
     received = pairs.get("hash", "")
