@@ -667,12 +667,22 @@ obtains a Let's Encrypt certificate. It needs free ports `80` and `443` (if
 `443` is taken, for example by Xray, it uses `8443`) and a reachable public IP.
 Disable this with `--no-webapp-auto`.
 
+During an interactive install the wizard shows the public IP, the future address
+and any warnings, then offers three choices:
+
+1. **Automatic** — `sslip.io` + Caddy (recommended).
+2. **Your own domain** — enter a ready HTTPS URL with a valid certificate.
+3. **Local only** — no public address, access through an SSH tunnel.
+
+If the automatic option fails, the installer offers to retry, enter a custom
+domain, or keep the Mini App local.
+
 One manual step remains: bind the **domain** to the bot in `@BotFather` →
 `/setdomain` → for example, `203-0-113-5.sslip.io` (without `https://` and
 without the port). Then restart the bot:
 `sudo systemctl restart stacksentry-bot`. If Caddy is unavailable in the
-repositories or the ports are busy, the installer will ask for an explicit
-`--webapp-origin`.
+repositories or the ports are busy, the installer shows the reason and offers
+another option.
 
 - login via Telegram `initData`, no passwords; administrators only;
 - `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;

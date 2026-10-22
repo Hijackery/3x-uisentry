@@ -224,6 +224,13 @@ WEBAPP_EXPLICIT=0
 WEBAPP_ORIGIN_EXPLICIT=0
 WEBAPP_AUTO_HTTPS="${WEBAPP_AUTO_HTTPS:-1}"
 WEBAPP_AUTO_ORIGIN=""
+WEBAPP_PREFLIGHT_OK=0
+WEBAPP_PREFLIGHT_IP=""
+WEBAPP_PREFLIGHT_HOST=""
+WEBAPP_PREFLIGHT_PORT=""
+WEBAPP_PREFLIGHT_ORIGIN=""
+WEBAPP_PREFLIGHT_REASON=""
+WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 PANEL_MODE_EXPLICIT=0
 ENABLE_2FA=0
 DISABLE_2FA=0
@@ -2253,45 +2260,215 @@ webapp_open_firewall() {
     done
 }
 
-webapp_auto_https() {
-    WEBAPP_AUTO_ORIGIN=""
-    local host port origin site caddyfile backup code i
-    local caddy_was_installed=0 install_ok=0
+webapp_https_preflight() {
+    WEBAPP_PREFLIGHT_OK=0
+    WEBAPP_PREFLIGHT_IP=""
+    WEBAPP_PREFLIGHT_HOST=""
+    WEBAPP_PREFLIGHT_PORT=""
+    WEBAPP_PREFLIGHT_ORIGIN=""
+    WEBAPP_PREFLIGHT_REASON=""
+    WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 
-    [ "${WEBAPP_AUTO_HTTPS:-1}" = "0" ] && return 1
-    command -v curl >/dev/null 2>&1 || {
-        warn "Для авто-HTTPS нужен curl — пропускаю"
+    local caddyfile
+    if [ "${WEBAPP_AUTO_HTTPS:-1}" = "0" ]; then
+        WEBAPP_PREFLIGHT_REASON="авто-HTTPS отключён (--no-webapp-auto)"
         return 1
-    }
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        WEBAPP_PREFLIGHT_REASON="нужен curl"
+        return 1
+    fi
     if ! command -v systemctl >/dev/null 2>&1; then
-        warn "Авто-HTTPS требует systemd — пропускаю"
+        WEBAPP_PREFLIGHT_REASON="нужен systemd"
         return 1
     fi
 
     caddyfile="/etc/caddy/Caddyfile"
     if command -v caddy >/dev/null 2>&1; then
-        caddy_was_installed=1
+        WEBAPP_PREFLIGHT_CADDY_INSTALLED=1
         if ! grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null; then
-            warn "Caddy уже установлен со своей конфигурацией — авто-HTTPS пропущен"
+            WEBAPP_PREFLIGHT_REASON="Caddy уже установлен со своей конфигурацией"
             return 1
         fi
     fi
 
     if ! detect_public_ipv4; then
-        warn "Не удалось определить публичный IPv4 — авто-HTTPS пропущен"
+        WEBAPP_PREFLIGHT_REASON="не удалось определить публичный IPv4"
         return 1
     fi
-    host="${WEBAPP_AUTO_IP//./-}.sslip.io"
+    WEBAPP_PREFLIGHT_IP="$WEBAPP_AUTO_IP"
+    WEBAPP_PREFLIGHT_HOST="${WEBAPP_AUTO_IP//./-}.sslip.io"
 
-    if [ "$caddy_was_installed" -eq 0 ]; then
+    if [ "$WEBAPP_PREFLIGHT_CADDY_INSTALLED" -eq 1 ]; then
+        if grep -q 'https://[^ ]*:8443' "$caddyfile" 2>/dev/null; then
+            WEBAPP_PREFLIGHT_PORT=8443
+            WEBAPP_PREFLIGHT_REASON="443 занят — использую 8443"
+        else
+            WEBAPP_PREFLIGHT_PORT=443
+        fi
+    else
         if ! webapp_port_is_free 80; then
-            warn "Порт 80 занят — авто-HTTPS пропущен (освободите его или задайте --webapp-origin)"
+            WEBAPP_PREFLIGHT_REASON="порт 80 занят"
             return 1
         fi
-        if ! webapp_port_is_free 443 && ! webapp_port_is_free 8443; then
-            warn "Порты 443 и 8443 заняты — авто-HTTPS пропущен"
+        if webapp_port_is_free 443; then
+            WEBAPP_PREFLIGHT_PORT=443
+        elif webapp_port_is_free 8443; then
+            WEBAPP_PREFLIGHT_PORT=8443
+            WEBAPP_PREFLIGHT_REASON="443 занят — использую 8443"
+        else
+            WEBAPP_PREFLIGHT_REASON="порты 443 и 8443 заняты"
             return 1
         fi
+    fi
+
+    if [ "$WEBAPP_PREFLIGHT_PORT" = "443" ]; then
+        WEBAPP_PREFLIGHT_ORIGIN="https://${WEBAPP_PREFLIGHT_HOST}"
+    else
+        WEBAPP_PREFLIGHT_ORIGIN="https://${WEBAPP_PREFLIGHT_HOST}:${WEBAPP_PREFLIGHT_PORT}"
+    fi
+    WEBAPP_PREFLIGHT_OK=1
+    return 0
+}
+
+webapp_ask_manual_origin() {
+    local url
+    while :; do
+        ask "  Публичный HTTPS-адрес Mini App: "
+        read -r url <&$READ_FD || url=""
+        url="${url%/}"
+        case "$url" in
+            "")
+                warn "Адрес не может быть пустым. Пример: https://sentry.example.com"
+                ;;
+            https://?*)
+                if printf '%s' "$url" | grep -q '[[:space:]]'; then
+                    warn "В адресе не должно быть пробелов."
+                else
+                    WEBAPP_ORIGIN="$url"
+                    WEBAPP_ORIGIN_EXPLICIT=1
+                    WEBAPP_AUTO_HTTPS=0
+                    info "Использую $url"
+                    return 0
+                fi
+                ;;
+            *)
+                warn "Нужен адрес, начинающийся с https:// (например, https://sentry.example.com)"
+                ;;
+        esac
+    done
+}
+
+webapp_wizard() {
+    local choice default
+    printf '\n%s%s%s\n' "$BOLD$BLUE" "Mini App в Telegram" "$RESET"
+    info "Mini App — это страница StackSentry, которую Telegram открывает по HTTPS."
+
+    if webapp_https_preflight; then
+        info "Публичный IP: ${WEBAPP_PREFLIGHT_IP}"
+        [ -n "$WEBAPP_PREFLIGHT_REASON" ] \
+            && info "$WEBAPP_PREFLIGHT_REASON"
+        info "Автоматический адрес: ${WEBAPP_PREFLIGHT_ORIGIN}"
+        default=1
+    else
+        [ -n "$WEBAPP_PREFLIGHT_IP" ] \
+            && info "Публичный IP: ${WEBAPP_PREFLIGHT_IP}"
+        warn "Автоматический HTTPS недоступен: ${WEBAPP_PREFLIGHT_REASON}"
+        default=3
+    fi
+
+    printf '\n  Как открывать Mini App?\n'
+    if [ "$WEBAPP_PREFLIGHT_OK" -eq 1 ]; then
+        printf '    1) Автоматически — %s  (рекомендуется)\n' \
+            "$WEBAPP_PREFLIGHT_ORIGIN"
+    else
+        printf '    1) Автоматически — недоступно\n'
+    fi
+    printf '    2) Свой домен и готовый HTTPS\n'
+    printf '    3) Только локально / SSH-туннель\n'
+
+    while :; do
+        ask "  Выбор [$default]: "
+        read -r choice <&$READ_FD || choice=""
+        choice="${choice:-$default}"
+        case "$choice" in
+            1)
+                if [ "$WEBAPP_PREFLIGHT_OK" -eq 1 ]; then
+                    WEBAPP_ORIGIN=""
+                    WEBAPP_ORIGIN_EXPLICIT=0
+                    WEBAPP_AUTO_HTTPS=1
+                    info "HTTPS настрою автоматически после установки."
+                    return 0
+                fi
+                warn "Автоматический вариант недоступен: ${WEBAPP_PREFLIGHT_REASON}"
+                ;;
+            2) webapp_ask_manual_origin; return 0 ;;
+            3)
+                WEBAPP_ORIGIN=""
+                WEBAPP_ORIGIN_EXPLICIT=1
+                WEBAPP_AUTO_HTTPS=0
+                info "Mini App будет доступен только локально, через SSH-туннель."
+                return 0
+                ;;
+            *) warn "Введите 1, 2 или 3." ;;
+        esac
+    done
+}
+
+webapp_fallback() {
+    local choice
+    [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ] || return 0
+
+    warn "Автоматический HTTPS не настроен."
+    printf '\n  Что делать?\n'
+    printf '    1) Повторить\n'
+    printf '    2) Указать свой домен\n'
+    printf '    3) Оставить только локально\n'
+
+    while :; do
+        ask "  Выбор [3]: "
+        read -r choice <&$READ_FD || choice=""
+        choice="${choice:-3}"
+        case "$choice" in
+            1)
+                WEBAPP_AUTO_HTTPS=1
+                WEBAPP_ORIGIN=""
+                WEBAPP_ORIGIN_EXPLICIT=0
+                WEBAPP_PREFLIGHT_OK=0
+                webapp_auto_https && return 0
+                ;;
+            2) webapp_ask_manual_origin; return 0 ;;
+            3)
+                WEBAPP_ORIGIN=""
+                WEBAPP_ORIGIN_EXPLICIT=1
+                WEBAPP_AUTO_HTTPS=0
+                info "Mini App будет доступен только локально, через SSH-туннель."
+                return 0
+                ;;
+            *) warn "Введите 1, 2 или 3." ;;
+        esac
+    done
+}
+
+webapp_auto_https() {
+    WEBAPP_AUTO_ORIGIN=""
+    local host port origin site caddyfile backup code i install_ok=0
+
+    if [ "$WEBAPP_PREFLIGHT_OK" -ne 1 ]; then
+        if ! webapp_https_preflight; then
+            warn "Авто-HTTPS: ${WEBAPP_PREFLIGHT_REASON:-недоступен}"
+            return 1
+        fi
+    fi
+
+    host="$WEBAPP_PREFLIGHT_HOST"
+    port="$WEBAPP_PREFLIGHT_PORT"
+
+    if command -v caddy >/dev/null 2>&1; then
+        WEBAPP_PREFLIGHT_CADDY_INSTALLED=1
+    fi
+
+    if [ "$WEBAPP_PREFLIGHT_CADDY_INSTALLED" -eq 0 ]; then
         info "Ставлю Caddy для автоматического HTTPS..."
         # shellcheck disable=SC2086
         DEBIAN_FRONTEND=noninteractive $PKG_INSTALL caddy >/dev/null 2>&1 \
@@ -2308,22 +2485,7 @@ webapp_auto_https() {
             warn "Пакет caddy недоступен — установите его вручную или задайте --webapp-origin"
             return 1
         fi
-    fi
-
-    if [ "$caddy_was_installed" -eq 1 ] \
-        && grep -q 'https://[^ ]*:8443' "$caddyfile" 2>/dev/null; then
-        # Наш прежний Caddy уже слушает 8443 — не проверяем занятость.
-        port=8443
-    elif [ "$caddy_was_installed" -eq 1 ] \
-        && grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null; then
-        port=443
-    elif webapp_port_is_free 443; then
-        port=443
-    elif webapp_port_is_free 8443; then
-        port=8443
-    else
-        warn "Порты 443 и 8443 заняты — авто-HTTPS пропущен"
-        return 1
+        WEBAPP_PREFLIGHT_CADDY_INSTALLED=1
     fi
 
     if [ "$port" = "443" ]; then
@@ -2400,13 +2562,20 @@ install_webapp() {
     if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
         WEBAPP_ORIGIN="$(env_get WEBAPP_PUBLIC_ORIGIN)"
     fi
-    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
-        webapp_auto_https || true
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        webapp_wizard
+    fi
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ] \
+        && [ "$WEBAPP_AUTO_HTTPS" != "0" ]; then
+        if ! webapp_auto_https; then
+            webapp_fallback
+        fi
         [ -n "$WEBAPP_AUTO_ORIGIN" ] && WEBAPP_ORIGIN="$WEBAPP_AUTO_ORIGIN"
     fi
-    if [ -z "$WEBAPP_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        question WEBAPP_ORIGIN \
-            "Публичный HTTPS-адрес Mini App (Enter — только localhost/SSH-туннель)" ""
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        webapp_ask_manual_origin
     fi
     case "$WEBAPP_ORIGIN" in
         "") ;;
@@ -2499,8 +2668,9 @@ EOF
         if [ -n "$WEBAPP_AUTO_ORIGIN" ]; then
             info "HTTPS настроен автоматически: sslip.io + Caddy + Let's Encrypt."
         fi
-        info "Кнопка «Панель» появится в Telegram после перезапуска бота."
-        info "Один раз привяжите домен: @BotFather -> /setdomain $_webapp_domain"
+        info "Остался один шаг в Telegram:"
+        info "  @BotFather -> /setdomain -> $_webapp_domain"
+        info "Кнопка «Панель» появится после перезапуска бота — установщик сделает это сам."
     else
         info "Доступ только локально. С ноутбука:"
         info "  ssh -L 8787:127.0.0.1:8787 root@<сервер>"
