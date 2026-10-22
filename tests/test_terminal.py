@@ -6,11 +6,13 @@ import hashlib
 import hmac
 import json
 import time
+from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
 from fastapi.testclient import TestClient
 
+from stacksentry.terminal import config
 from stacksentry.terminal.auth import (
     AuthError,
     TicketStore,
@@ -37,6 +39,14 @@ def _init_data(user_id: int = 42, *, auth_date: int | None = None) -> str:
     secret = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
     digest = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
     return urlencode({**data, "hash": digest})
+
+
+def test_unreadable_env_path_does_not_crash_startup(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def deny(_path: Path) -> bool:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "is_file", deny)
+    assert isinstance(config._read_env(Path("/etc/stacksentry/terminal.env")), dict)
 
 
 def _settings(tmp_path) -> TerminalSettings:  # type: ignore[no-untyped-def]
