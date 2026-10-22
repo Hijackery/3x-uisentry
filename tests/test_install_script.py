@@ -678,6 +678,9 @@ def test_installer_can_enable_https_without_a_domain() -> None:
     assert "reverse_proxy 127.0.0.1:8788" in text
     assert "term.${WEBAPP_PREFLIGHT_HOST}" in text
     assert "--terminal-auto" in text
+    assert "/etc/stacksentry/botfather.txt" in text
+    assert "Без этого шага кнопка Mini App не появится." in text
+    assert "Отправьте ровно эту строку" in text
     assert "detect_public_ipv4" in text
     assert ".sslip.io" in text
     assert "Let's Encrypt" in text

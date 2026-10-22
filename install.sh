@@ -2792,9 +2792,8 @@ EOF
         elif [ -f /etc/systemd/system/stacksentry-terminal.service ]; then
             info "Терминал: только локально, через SSH-туннель."
         fi
-        info "Остался один шаг в Telegram:"
-        info "  @BotFather -> /setdomain -> $_webapp_domain"
-        info "Кнопка «Панель» появится после перезапуска бота — установщик сделает это сам."
+        info "Адрес Mini App: $WEBAPP_ORIGIN"
+        info "Инструкция для @BotFather будет показана в самом конце установки."
     else
         info "Доступ только локально. С ноутбука:"
         info "  ssh -L 8787:127.0.0.1:8787 root@<сервер>"
@@ -3026,3 +3025,60 @@ cat <<EOF
     sudo bash install.sh --uninstall
 
 EOF
+# ------------------------------------------------ инструкция для @BotFather
+
+if [ "$WEBAPP" -eq 1 ] && [ -n "${WEBAPP_ORIGIN:-}" ]; then
+    BOTFATHER_DOMAIN="${WEBAPP_ORIGIN#https://}"
+    BOTFATHER_DOMAIN="${BOTFATHER_DOMAIN%%/*}"
+    BOTFATHER_DOMAIN="${BOTFATHER_DOMAIN%%:*}"
+    BOTFATHER_USER="${TG_NAME:-${TG_USERNAME:-}}"
+    BOTFATHER_FILE="/etc/stacksentry/botfather.txt"
+
+    if [ -n "$BOTFATHER_USER" ]; then
+        BOTFATHER_BOT="@$BOTFATHER_USER"
+    else
+        BOTFATHER_BOT="своего бота в списке"
+    fi
+
+    cat > "$BOTFATHER_FILE" <<EOF
+Один ручной шаг в Telegram
+==========================
+
+1. Откройте Telegram.
+2. Найдите @BotFather.
+3. Отправьте команду: /setdomain
+4. Выберите бота: $BOTFATHER_BOT
+5. Отправьте ровно эту строку:
+
+$BOTFATHER_DOMAIN
+
+Без https://, без /, без порта.
+6. Если BotFather попросит подтверждение — подтвердите.
+7. Вернитесь в терминал. Кнопка Mini App появится после перезапуска бота.
+
+Адрес Mini App: $WEBAPP_ORIGIN
+EOF
+    chmod 600 "$BOTFATHER_FILE" 2>/dev/null || true
+
+    printf '\n%s%s============================================================%s\n' \
+        "$BOLD" "$YELLOW" "$RESET"
+    printf '%s%s  ВАЖНО: ОДИН РУЧНОЙ ШАГ В TELEGRAM%s\n' "$BOLD" "$YELLOW" "$RESET"
+    printf '%s%s============================================================%s\n\n' \
+        "$BOLD" "$YELLOW" "$RESET"
+    printf '  Без этого шага кнопка Mini App не появится.\n\n'
+    printf '  1. Откройте Telegram.\n'
+    printf '  2. Найдите @BotFather.\n'
+    printf '  3. Отправьте команду: %s/setdomain%s\n' "$BOLD" "$RESET"
+    printf '  4. Выберите бота: %s%s%s\n' "$BOLD" "$BOTFATHER_BOT" "$RESET"
+    printf '  5. Отправьте ровно эту строку:\n\n'
+    printf '       %s%s%s\n\n' "$BOLD" "$GREEN" "$BOTFATHER_DOMAIN"
+    printf '     Без https://, без /, без порта.\n'
+    printf '  6. Если BotFather попросит подтверждение — подтвердите.\n'
+    printf '  7. Вернитесь в терминал.\n\n'
+    info "Эта же инструкция сохранена: $BOTFATHER_FILE"
+
+    if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        printf '\nКогда выполните шаг, нажмите Enter, чтобы завершить установку... '
+        read -r _botfather_ack <&$READ_FD || true
+    fi
+fi
