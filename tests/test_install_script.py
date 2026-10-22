@@ -653,6 +653,8 @@ def test_installer_supports_2fa() -> None:
     menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
     assert "cmd_totp" in menu
     assert "TOTP secret" in menu
+    assert "Включить 2FA (TOTP) для входа в Mini App" in text
+    assert "2FA ВКЛЮЧЕНА" in text
     assert "26) cmd_totp" in menu
     assert "27) cmd_webapp" in menu
     assert "webapp|mini-app|miniapp) cmd_webapp" in menu

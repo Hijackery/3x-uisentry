@@ -52,34 +52,42 @@
   }
 
   function startTerminal() {
-    login.hidden = true;
     wrap.hidden = false;
-    if (!term) {
-      term = new window.Terminal({
-        cursorBlink: true,
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 14,
-        theme: {
-          background: "#0b0f14",
-          foreground: "#e6edf3",
-          cursor: "#4cc2ff",
-          selectionBackground: "#223041",
-        },
-        scrollback: 5000,
-      });
-      fit = new window.FitAddon.FitAddon();
-      term.loadAddon(fit);
-      term.open($("terminal"));
+    try {
+      if (!window.Terminal || !window.FitAddon) {
+        throw new Error("Не загрузился xterm.js. Обновите страницу.");
+      }
+      if (!term) {
+        term = new window.Terminal({
+          cursorBlink: true,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+          fontSize: 14,
+          theme: {
+            background: "#0b0f14",
+            foreground: "#e6edf3",
+            cursor: "#4cc2ff",
+            selectionBackground: "#223041",
+          },
+          scrollback: 5000,
+        });
+        fit = new window.FitAddon.FitAddon();
+        term.loadAddon(fit);
+        term.open($("terminal"));
+        term.onData((data) => {
+          if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
+        });
+        term.onResize(sendResize);
+      }
+      login.hidden = true;
       fit.fit();
+      sendResize();
       term.focus();
-      term.onData((data) => {
-        if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
-      });
-      term.onResize(sendResize);
+    } catch (error) {
+      wrap.hidden = true;
+      login.hidden = false;
+      setError(error.message || "Не удалось запустить терминал.");
+      connectBtn.disabled = false;
     }
-    fit.fit();
-    sendResize();
-    term.focus();
   }
 
   function stopTerminal(text) {

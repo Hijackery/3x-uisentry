@@ -107,5 +107,20 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76, 194, 2
 .badge.root { background: rgba(255, 107, 107, .15); color: var(--danger); }
 .conn { margin-left: auto; color: var(--ok); }
 .conn.down { color: var(--danger); }
-.terminal { flex: 1; min-height: 0; padding: 6px 8px 10px; }
-.xterm { height: 100%; }
+.terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px 10px;
+  background: var(--bg);
+}
+.xterm,
+.xterm-viewport,
+.xterm-screen,
+#terminal {
+  background-color: var(--bg) !important;
+}
+.xterm { height: 100%; width: 100%; }
+.xterm-screen canvas { background: transparent !important; }
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

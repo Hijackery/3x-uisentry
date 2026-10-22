@@ -238,6 +238,7 @@ WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 PANEL_MODE_EXPLICIT=0
 ENABLE_2FA=0
 DISABLE_2FA=0
+TWOFA_EXPLICIT=0
 PANEL_MODE="auto"
 WEBAPP_ORIGIN=""
 INIT="${INIT:-}"
@@ -332,8 +333,8 @@ while [ $# -gt 0 ]; do
         --no-root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
         --terminal-origin) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; TERMINAL_PUBLIC=1; shift 2 ;;
         --terminal-auto) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_PUBLIC=1; shift ;;
-        --2fa)          ENABLE_2FA=1; shift ;;
-        --no-2fa)       DISABLE_2FA=1; shift ;;
+        --2fa)          ENABLE_2FA=1; TWOFA_EXPLICIT=1; shift ;;
+        --no-2fa)       DISABLE_2FA=1; TWOFA_EXPLICIT=1; shift ;;
         --panel)        PANEL_MODE=1; PANEL_MODE_EXPLICIT=1; shift ;;
         --no-panel)     PANEL_MODE=0; PANEL_MODE_EXPLICIT=1; shift ;;
         --webapp)       WEBAPP=1; WEBAPP_EXPLICIT=1; shift ;;
@@ -1225,19 +1226,29 @@ else
     printf '%s' "$ADMIN_IDS" | grep -qE '^[0-9]+(,[0-9]+)*$' \
         || fail "ADMIN_IDS должны быть числами через запятую, получено: $ADMIN_IDS"
 
-    # --- 2FA для опасных действий ---
+    # --- 2FA: Mini App и опасные действия ---
     CURRENT_2FA="$(env_get TOTP_REQUIRED)"
     if [ "$DISABLE_2FA" -eq 1 ]; then
         ENABLE_2FA=0
-    elif [ "$ENABLE_2FA" -eq 1 ]; then
-        : # явный --2fa или полный набор по умолчанию
-    elif [ "$ENABLE_2FA" -eq 0 ] && [ -z "$CURRENT_2FA" ] \
+    elif [ "$ENABLE_2FA" -eq 1 ] && [ -z "$CURRENT_2FA" ] \
+        && [ "$TWOFA_EXPLICIT" -eq 0 ] \
         && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        ask "Включить 2FA (TOTP) для опасных действий? [y/N] "
+        ask "Включить 2FA (TOTP) для входа в Mini App и опасных действий? [Y/n] "
         read -r _2fa_answer <&$READ_FD || _2fa_answer=""
         case "$_2fa_answer" in
-            [yYдД]*) ENABLE_2FA=1 ;;
-            *) ENABLE_2FA=0 ;;
+            [nNнН]*) ENABLE_2FA=0 ;;
+            *) ENABLE_2FA=1 ;;
+        esac
+    elif [ "$ENABLE_2FA" -eq 1 ]; then
+        : # явный --2fa или неинтерактивная установка
+    elif [ "$ENABLE_2FA" -eq 0 ] && [ -z "$CURRENT_2FA" ] \
+        && [ "$TWOFA_EXPLICIT" -eq 0 ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        ask "Включить 2FA (TOTP) для входа в Mini App и опасных действий? [Y/n] "
+        read -r _2fa_answer <&$READ_FD || _2fa_answer=""
+        case "$_2fa_answer" in
+            [nNнН]*) ENABLE_2FA=0 ;;
+            *) ENABLE_2FA=1 ;;
         esac
     elif [ -z "$CURRENT_2FA" ]; then
         ENABLE_2FA=0
@@ -1252,13 +1263,23 @@ else
         if [ -z "$TOTP_SECRET_VALUE" ]; then
             TOTP_SECRET_VALUE="$("$PYTHON_BIN" -c \
                 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
-            info "2FA включена. Добавьте секрет в приложение-аутентификатор:"
-            printf '        TOTP secret: %s\n' "$TOTP_SECRET_VALUE"
-            printf '        otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n' "$TOTP_SECRET_VALUE"
+            printf '\n%s+------------------------------------------------------------+%s\n' "$YELLOW" "$RESET"
+            printf '%s| %-58s |%s\n' "$YELLOW" "2FA ВКЛЮЧЕНА — ДОБАВЬТЕ СЕКРЕТ В АУТЕНТИФИКАТОР" "$RESET"
+            printf '+------------------------------------------------------------+\n'
+            printf '| %-58s |\n' "1. Откройте Google Authenticator / Aegis / 1Password."
+            printf '| %-58s |\n' "2. Добавьте аккаунт вручную и введите секрет ниже."
+            printf '| %-58s |\n' "3. Код понадобится для Mini App и опасных действий."
+            printf '+------------------------------------------------------------+\n'
+            printf '| %-58s |\n' "TOTP secret:"
+            printf '| %s%s%-58s%s |\n' "$BOLD" "$GREEN" "$TOTP_SECRET_VALUE" "$RESET"
+            printf '+------------------------------------------------------------+\n\n'
+            printf 'otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n\n' "$TOTP_SECRET_VALUE"
+        else
+            info "2FA уже настроена. Секрет: sudo stacksentry-menu totp"
         fi
         set_env TOTP_SECRET "$TOTP_SECRET_VALUE"
         set_env TOTP_REQUIRED 1
-        ok "2FA для опасных действий включена"
+        ok "2FA включена: Mini App и опасные действия требуют код"
     else
         set_env TOTP_REQUIRED 0
         [ -n "$(env_get TOTP_SECRET)" ] || set_env TOTP_SECRET ""
@@ -1614,7 +1635,7 @@ if [ "$CONFIG_COMPLETE" -eq 1 ]; then
         fi
         set_env TOTP_SECRET "$_totp_value"
         set_env TOTP_REQUIRED 1
-        ok "2FA для опасных действий включена"
+        ok "2FA включена: Mini App и опасные действия требуют код"
     fi
     if [ "$PANEL_MODE" = "0" ]; then
         set_env PANEL_URL ""

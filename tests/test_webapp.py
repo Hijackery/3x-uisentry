@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from stacksentry.models import MonitorSnapshot, PanelHealth, SystemMetrics
 from stacksentry.settings import ConfigError, Settings, load_settings
 from stacksentry.storage import Storage
+from stacksentry.totp import totp_code
 from stacksentry.webapp import (
     WebAppConfig,
     create_app,
@@ -25,6 +26,7 @@ from stacksentry.webapp import (
 
 ADMIN_ID = 42
 SECRET = "w" * 40
+TOTP_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 
 
 def _config(
@@ -138,6 +140,43 @@ def test_terminal_tab_origin_and_csp(
     assert meta.json()["terminal_origin"] == "https://term.example.com"
     policy = meta.headers["Content-Security-Policy"]
     assert "frame-src 'self' https://term.example.com" in policy
+
+
+def test_2fa_gate_for_webapp(
+    make_settings: Callable[..., Settings], storage: Storage
+) -> None:
+    settings = make_settings(
+        webapp_enabled=True,
+        webapp_secret=SECRET,
+        require_2fa=True,
+        totp_secret=TOTP_SECRET,
+    )
+    app = create_app(
+        _config(settings),
+        monitor=FakeMonitor(),  # type: ignore[arg-type]
+        storage=storage,
+    )
+    client = TestClient(app)
+    init_data = _init_data(settings.telegram_token)
+
+    no_code = client.post("/api/session", json={"initData": init_data})
+    assert no_code.status_code == 401
+    assert no_code.json()["detail"]["code"] == "totp_required"
+
+    wrong = client.post("/api/session", json={"initData": init_data, "totp": "000000"})
+    assert wrong.status_code == 401
+    assert wrong.json()["detail"]["code"] == "totp_invalid"
+
+    code = totp_code(TOTP_SECRET)
+    accepted = client.post("/api/session", json={"initData": init_data, "totp": code})
+    assert accepted.status_code == 200, accepted.text
+    assert client.get("/api/status").status_code == 200
+
+    replay = TestClient(app).post(
+        "/api/session", json={"initData": init_data, "totp": code}
+    )
+    assert replay.status_code == 401
+    assert replay.json()["detail"]["code"] == "totp_replay"
 
 
 def test_non_admin_is_rejected(

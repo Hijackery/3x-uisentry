@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .monitor import Monitor
 from .settings import ConfigError, Settings, load_settings
 from .storage import Storage
-from .terminal.auth import validate_init_data
+from .terminal.auth import RateLimiter, validate_init_data
+from .totp import ReplayGuard, normalize_totp, verify_totp
 
 COOKIE_NAME = "stacksentry_session"
 STATIC_DIR = Path(__file__).resolve().parent / "webapp_static"
@@ -115,6 +116,7 @@ def _snapshot_json(snapshot: Any, age: float) -> dict[str, Any]:
 class SessionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     init_data: str = Field(default="", alias="initData")
+    totp: str = ""
 
 
 def create_app(
@@ -127,6 +129,8 @@ def create_app(
     monitor = monitor or Monitor(config.settings)
     storage = storage or Storage(config.settings.state_path)
     snapshot_cache: dict[str, Any] = {"value": None, "at": 0.0}
+    totp_replay = ReplayGuard(ttl=120.0)
+    totp_limiter = RateLimiter(limit=5, window=60.0)
 
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Any:
@@ -161,7 +165,9 @@ def create_app(
         return {"ok": True}
 
     @app.post("/api/session")
-    async def session(body: SessionRequest, response: Response) -> dict[str, Any]:
+    async def session(
+        request: Request, body: SessionRequest, response: Response
+    ) -> dict[str, Any]:
         try:
             user = validate_init_data(body.init_data, config.settings.telegram_token)
         except Exception as exc:  # noqa: BLE001 — безопасный текст
@@ -169,6 +175,41 @@ def create_app(
         user_id = int(user["id"])
         if user_id not in config.settings.admin_ids:
             raise HTTPException(status_code=403, detail="не администратор")
+        if config.settings.require_2fa:
+            code = normalize_totp(body.totp)
+            if not code:
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "code": "totp_required",
+                        "message": "Введите код 2FA из приложения-аутентификатора",
+                    },
+                )
+            client = request.client.host if request.client else "unknown"
+            if not totp_limiter.allow(f"{client}:{user_id}"):
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "code": "totp_locked",
+                        "message": "Слишком много попыток. Подождите минуту.",
+                    },
+                )
+            if len(code) != 6 or not verify_totp(config.settings.totp_secret, code):
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "code": "totp_invalid",
+                        "message": "Неверный код 2FA",
+                    },
+                )
+            if not totp_replay.allow(f"{user_id}:{code}"):
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "code": "totp_replay",
+                        "message": "Этот код уже использован. Дождитесь следующего.",
+                    },
+                )
         cookie = issue_cookie(config.secret, user_id, config.session_ttl)
         response.set_cookie(
             COOKIE_NAME,

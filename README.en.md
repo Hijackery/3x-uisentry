@@ -86,7 +86,7 @@ matters to Telegram and stays quiet when everything is fine.
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
 | **Install** | one command, an adaptive wizard for OS/services/panel, unattended mode, self-check |
 | **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`; Python 3.10+ |
-| **Mini App** | read-only Telegram dashboard: a “Panel” button next to the attachment icon and an inline menu button |
+| **Mini App** | read-only Telegram dashboard with Telegram + TOTP login: a “Panel” button next to the attachment icon and an inline menu button |
 | **Terminal** | `stacksentry-menu` — settings, diagnostics, restart, log, update; secrets are masked |
 | **Security** | a dedicated unprivileged user, a narrow sudoers list, confirmations and an audit log for risky actions |
 
@@ -191,7 +191,7 @@ so the dialogue works even when the script is piped.
 What the wizard asks:
 
 1. the bot token and admin IDs (the token is verified with Telegram immediately);
-2. 2FA (TOTP) — enabled by default;
+2. 2FA (TOTP) — enabled by default; the code is required for Mini App login and dangerous actions;
 3. the panel address, `webBasePath` and API token (the address is verified);
 4. the services to watch;
 5. an optional alert chat;
@@ -621,7 +621,7 @@ over the file.
 | `ACTION_COOLDOWN` | pause between identical actions, seconds |
 | `CONFIRM_TTL` | confirmation button lifetime, seconds |
 | `TOTP_SECRET` | TOTP secret (base32) for 2FA; empty — disabled |
-| `TOTP_REQUIRED` | `1` — require a code for dangerous actions |
+| `TOTP_REQUIRED` | `1` — require a code for Mini App login and dangerous bot actions |
 | `ELEVATION_TTL` | how long an unlock lasts, seconds |
 | `TOTP_MAX_ATTEMPTS` | code attempts before lockout |
 | `TOTP_LOCKOUT` | lockout duration after too many attempts, seconds |
@@ -691,8 +691,8 @@ without the port). Then restart the bot:
 repositories or the ports are busy, the installer shows the reason and offers
 another option.
 
-- login via Telegram `initData`, no passwords; administrators only;
-- `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;
+- login via Telegram `initData` **and TOTP**, no passwords; administrators only;
+- `HttpOnly` cookie, 1-hour TTL; with public HTTPS — `Secure; SameSite=None` (Telegram Web), locally — `SameSite=Lax`; CSP without third-party scripts;
 - `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
@@ -765,26 +765,36 @@ TLS in front of `127.0.0.1:8788`.
 > web layer/session/dependency defeats it. Keep it behind VPN/SSH and do not
 > expose it publicly without a second perimeter.
 
-## 2FA for dangerous actions
+## 2FA: Mini App and dangerous actions
 
-Viewing state, logs and subscriptions needs **no code**. A code is required only
-where the server can be broken (step-up):
+The Mini App requires a TOTP code at login. In the bot, viewing state, logs and
+subscriptions still needs **no code**; a code is required only where the server
+can be broken (step-up). This is deliberate: otherwise you would have to re-enter
+a code every 15 minutes just to read status.
 
 | Level | What | 2FA |
 |---|---|---|
-| 🟢 read-only | status, services, panel, traffic, subscriptions, history, audit | none |
+| 🟢 bot read-only | status, services, panel, traffic, subscriptions, history, audit | none |
+| 📱 Mini App | dashboard login | TOTP code for each new session |
 | 🟡 actions | service/xray restart, `apt update`, allowlisted command | code once, 15-minute unlock |
 | 🔴 destructive | `apt full/phased`, release upgrade, reboot | **fresh** code (max 2 min old) |
 
-Flow: tap “Restart x-ui” → “🔐 Enter the 6-digit code” → the bot deletes the code
-message, verifies it and says “🔓 Actions unlocked until 14:35” → the usual
-confirmation appears. “🔐 Security” in the menu shows status, unlock and lock.
+Flow:
 
-Enable: the installer asks (or `--2fa`). The secret is shown once; add it to
-Google Authenticator/Aegis/1Password. Show it later: `sudo stacksentry-menu totp`
-(root only). Protection: one-time code within the window, 3 attempts, 5-minute
-lockout, every success/failure is audited. The secret lives in `.env` with
-`640 root:<service group>` and is scrubbed from logs.
+1. Open the Mini App → “Confirm login” → enter 6 digits.
+2. In the bot tap “Restart x-ui” → “🔐 Enter the 6-digit code”.
+3. The bot deletes the code message, verifies it and says
+   “🔓 Actions unlocked until 14:35”.
+4. The usual confirmation appears. For the next 15 minutes dangerous actions do
+   not ask for a code (destructive actions always need a fresh one).
+5. “🔐 Security” in the menu shows status, unlock and lock.
+
+Enable: the installer asks (default yes), or use `--2fa`. The secret is shown
+when generated; add it to Google Authenticator/Aegis/1Password. Show it later:
+`sudo stacksentry-menu totp` (root only). Protection: one-time code within the
+window, 3 attempts, 5-minute lockout, every success/failure is audited. The
+secret lives in `.env` with `640 root:<service group>` and is scrubbed from logs.
+The terminal uses a separate TOTP secret and asks for a code for every session.
 
 ## Secrets and storage
 
