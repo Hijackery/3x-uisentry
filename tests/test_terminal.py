@@ -272,3 +272,33 @@ def test_config_rejects_missing_ssh_key(tmp_path) -> None:  # type: ignore[no-un
     )
     with pytest.raises(TerminalConfigError, match="TERMINAL_SSH_KEY"):
         TerminalSettings.load(env)
+
+
+def test_config_falls_back_to_pty_when_ssh_key_unreadable(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch
+) -> None:
+    key = tmp_path / "id_ed25519"
+    key.write_text("key", encoding="utf-8")
+    env = tmp_path / "terminal.env"
+    env.write_text(
+        "\n".join(
+            [
+                f"TELEGRAM_BOT_TOKEN={TOKEN}",
+                "TELEGRAM_ADMIN_IDS=42",
+                "TERMINAL_SECRET=" + "s" * 40,
+                f"TERMINAL_TOTP_SECRET={TOTP_SECRET}",
+                f"TERMINAL_SSH_KEY={key}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    original = Path.is_file
+
+    def deny(path: Path) -> bool:
+        if path == key:
+            raise PermissionError(13, "Permission denied")
+        return original(path)
+
+    monkeypatch.setattr(Path, "is_file", deny)
+    settings = TerminalSettings.load(env)
+    assert settings.ssh_key == ""

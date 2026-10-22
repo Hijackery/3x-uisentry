@@ -8,11 +8,14 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import dotenv_values
+
+logger = logging.getLogger("stacksentry.terminal.config")
 
 
 class TerminalConfigError(RuntimeError):
@@ -60,6 +63,25 @@ def _read_env(path: Path) -> dict[str, str]:
         if key in os.environ:
             values[key] = os.environ[key]
     return values
+
+
+def _file_state(path: Path) -> str:
+    """Проверяет файл, не падая на недоступном каталоге.
+
+    Возвращает ``ok``, ``missing`` или ``denied``. PermissionError здесь
+    ожидаем: systemd читает секреты за сервис, а сам сервис может не иметь
+    доступа к родительскому каталогу.
+    """
+    try:
+        if not path.is_file():
+            return "missing"
+        with path.open("rb"):
+            pass
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "denied"
+    return "ok"
 
 
 def _int(values: dict[str, str], key: str, default: int, minimum: int) -> int:
@@ -144,15 +166,37 @@ class TerminalSettings:
                 "TERMINAL_PUBLIC_ORIGIN должен начинаться с https://"
             )
         ssh_key = values.get("TERMINAL_SSH_KEY", "").strip()
-        if ssh_key and not Path(ssh_key).is_file():
-            raise TerminalConfigError(f"TERMINAL_SSH_KEY: файл не найден ({ssh_key})")
         ssh_known_hosts = values.get(
-            "TERMINAL_SSH_KNOWN_HOSTS", "/etc/stacksentry/terminal-ssh/known_hosts"
+            "TERMINAL_SSH_KNOWN_HOSTS",
+            "/var/lib/stacksentry-term/terminal-ssh/known_hosts",
         ).strip()
-        if ssh_key and not Path(ssh_known_hosts).is_file():
-            raise TerminalConfigError(
-                f"TERMINAL_SSH_KNOWN_HOSTS: файл не найден ({ssh_known_hosts})"
-            )
+        if ssh_key:
+            key_state = _file_state(Path(ssh_key))
+            if key_state == "missing":
+                raise TerminalConfigError(
+                    f"TERMINAL_SSH_KEY: файл не найден ({ssh_key})"
+                )
+            if key_state == "denied":
+                # Старые установки держали ключ в /etc/stacksentry (0750
+                # root:root). Сервис не мог даже stat() файл и падал при
+                # старте. Терминал умеет работать через PTY, поэтому не
+                # превращаем это в 502.
+                logger.warning(
+                    "TERMINAL_SSH_KEY недоступен (%s) — использую PTY", ssh_key
+                )
+                ssh_key = ""
+            else:
+                hosts_state = _file_state(Path(ssh_known_hosts))
+                if hosts_state == "missing":
+                    raise TerminalConfigError(
+                        f"TERMINAL_SSH_KNOWN_HOSTS: файл не найден ({ssh_known_hosts})"
+                    )
+                if hosts_state == "denied":
+                    logger.warning(
+                        "TERMINAL_SSH_KNOWN_HOSTS недоступен (%s) — использую PTY",
+                        ssh_known_hosts,
+                    )
+                    ssh_key = ""
         return cls(
             bot_token=bot_token,
             admin_ids=admin_ids,

@@ -222,6 +222,7 @@ def test_installer_webapp_flag() -> None:
     assert "create_app_from_env" in text
     assert "WEBAPP_TERMINAL_ORIGIN" in text
     assert "terminal-ssh" in text
+    assert 'TERM_SSH_DIR="$TERM_HOME/terminal-ssh"' in text
     assert 'chmod 600 "$TERM_SSH_KEY"' in text
 
 

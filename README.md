@@ -734,7 +734,7 @@ sudo bash install.sh --terminal --terminal-origin https://term.example.com
   для доступа вне Telegram дополнительно нужен access token из
   `/etc/stacksentry/terminal-secrets.env`, `600 root`;
 - установщик автоматически создаёт SSH-ключ Ed25519
-  (`/etc/stacksentry/terminal-ssh/id_ed25519`), добавляет публичную часть в
+  (`/var/lib/stacksentry-term/terminal-ssh/id_ed25519`), добавляет публичную часть в
   `authorized_keys` пользователя `stacksentry-term` и использует ключ для
   локального SSH-подключения к `127.0.0.1`. Приватный ключ не покидает сервер;
   если sshd/ключ недоступны, терминал автоматически работает через локальный PTY;

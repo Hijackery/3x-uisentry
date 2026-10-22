@@ -2003,11 +2003,31 @@ install_terminal() {
     # SSH-ключ терминала: используется для локального SSH-подключения к
     # 127.0.0.1. Приватный ключ читает только сервис терминала, снаружи он не
     # выдаётся. Если sshd/ssh-keyscan недоступны, терминал остаётся на PTY.
-    TERM_SSH_DIR="$TERM_ENV_DIR/terminal-ssh"
+    #
+    # Ключ лежит в домашнем каталоге сервиса, а не в /etc/stacksentry:
+    # /etc/stacksentry закрыт для служебного пользователя, и старый путь
+    # приводил к PermissionError и 502 при старте терминала.
+    OLD_TERM_SSH_DIR="$TERM_ENV_DIR/terminal-ssh"
+    TERM_SSH_DIR="$TERM_HOME/terminal-ssh"
     TERM_SSH_KEY="$TERM_SSH_DIR/id_ed25519"
     TERM_SSH_KNOWN_HOSTS="$TERM_SSH_DIR/known_hosts"
     TERM_SSH_KEY_VALUE=""
-    install -d -m 0750 -o root -g "$TERM_GROUP" "$TERM_SSH_DIR"
+    install -d -m 0700 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_SSH_DIR"
+    # Обновление со старой раскладки: переносим уже работающий ключ, чтобы
+    # не менять authorized_keys и не ломать SSH-вход.
+    if [ "$OLD_TERM_SSH_DIR" != "$TERM_SSH_DIR" ] \
+        && [ ! -f "$TERM_SSH_KEY" ] \
+        && [ -f "$OLD_TERM_SSH_DIR/id_ed25519" ]; then
+        cp -a "$OLD_TERM_SSH_DIR/id_ed25519" "$TERM_SSH_KEY" 2>/dev/null || true
+        if [ -f "$OLD_TERM_SSH_DIR/id_ed25519.pub" ]; then
+            cp -a "$OLD_TERM_SSH_DIR/id_ed25519.pub" \
+                "$TERM_SSH_KEY.pub" 2>/dev/null || true
+        fi
+        if [ -f "$OLD_TERM_SSH_DIR/known_hosts" ]; then
+            cp -a "$OLD_TERM_SSH_DIR/known_hosts" \
+                "$TERM_SSH_KNOWN_HOSTS" 2>/dev/null || true
+        fi
+    fi
     if command -v ssh-keygen >/dev/null 2>&1; then
         if [ ! -f "$TERM_SSH_KEY" ]; then
             ssh-keygen -q -t ed25519 -N '' -C "stacksentry-terminal" \
@@ -2018,7 +2038,7 @@ install_terminal() {
             # OpenSSH отказывается использовать ключ с групповым/чужим
             # доступом, поэтому приватный ключ принадлежит сервису и 0600.
             chown "$TERM_USER":"$TERM_GROUP" "$TERM_SSH_KEY"
-            chown root:"$TERM_GROUP" "$TERM_SSH_KEY.pub"
+            chown "$TERM_USER":"$TERM_GROUP" "$TERM_SSH_KEY.pub"
             chmod 600 "$TERM_SSH_KEY"
             chmod 644 "$TERM_SSH_KEY.pub"
             install -d -m 0700 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_HOME/.ssh"
@@ -2037,8 +2057,8 @@ install_terminal() {
                     > "$TERM_SSH_KNOWN_HOSTS.tmp" 2>/dev/null \
                 && [ -s "$TERM_SSH_KNOWN_HOSTS.tmp" ]; then
                 mv "$TERM_SSH_KNOWN_HOSTS.tmp" "$TERM_SSH_KNOWN_HOSTS"
-                chown root:"$TERM_GROUP" "$TERM_SSH_KNOWN_HOSTS"
-                chmod 640 "$TERM_SSH_KNOWN_HOSTS"
+                chown "$TERM_USER":"$TERM_GROUP" "$TERM_SSH_KNOWN_HOSTS"
+                chmod 600 "$TERM_SSH_KNOWN_HOSTS"
                 # Проверяем именно вход по ключу, а не только доступность порта.
                 if command -v ssh >/dev/null 2>&1 && timeout 5 ssh \
                     -i "$TERM_SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes \

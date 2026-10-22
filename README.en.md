@@ -730,7 +730,7 @@ What happens:
   TOTP is impossible; outside Telegram the access token from
   `/etc/stacksentry/terminal-secrets.env` (`600 root`) is also required;
 - the installer automatically creates an Ed25519 SSH key
-  (`/etc/stacksentry/terminal-ssh/id_ed25519`), adds its public part to the
+  (`/var/lib/stacksentry-term/terminal-ssh/id_ed25519`), adds its public part to the
   `authorized_keys` of `stacksentry-term`, and uses the key for a local SSH
   connection to `127.0.0.1`. The private key never leaves the server; if
   sshd/the key are unavailable, the terminal automatically falls back to a local PTY;
