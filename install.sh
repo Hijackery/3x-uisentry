@@ -218,17 +218,20 @@ TERMINAL_EXPLICIT=0
 TERMINAL_ALLOW_ROOT=0
 TERMINAL_ORIGIN=""
 TERMINAL_ORIGIN_EXPLICIT=0
+TERMINAL_PUBLIC=0
 ROOT_TERMINAL_EXPLICIT=0
 WEBAPP=0
 WEBAPP_EXPLICIT=0
 WEBAPP_ORIGIN_EXPLICIT=0
 WEBAPP_AUTO_HTTPS="${WEBAPP_AUTO_HTTPS:-1}"
 WEBAPP_AUTO_ORIGIN=""
+WEBAPP_AUTO_TERMINAL_ORIGIN=""
 WEBAPP_PREFLIGHT_OK=0
 WEBAPP_PREFLIGHT_IP=""
 WEBAPP_PREFLIGHT_HOST=""
 WEBAPP_PREFLIGHT_PORT=""
 WEBAPP_PREFLIGHT_ORIGIN=""
+WEBAPP_PREFLIGHT_TERMINAL_ORIGIN=""
 WEBAPP_PREFLIGHT_REASON=""
 WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 PANEL_MODE_EXPLICIT=0
@@ -273,6 +276,7 @@ ${BOLD}Установка StackSentry${RESET}
   --no-root-terminal  выключить root-сессию, остальное сохранить
   --no-terminal    не ставить терминал (на обновлении оставить как есть)
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
+  --terminal-auto  открыть терминал внутри Mini App автоматически
   --2fa            включить 2FA (TOTP) для опасных действий
   --no-2fa         выключить 2FA (секрет сохраняется)
   --panel          настроить API панели (по умолчанию — автоопределение)
@@ -296,7 +300,7 @@ ${BOLD}English${RESET}
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
             --terminal · --no-terminal · --root-terminal · --no-root-terminal
-            --terminal-origin URL · --2fa · --no-2fa
+            --terminal-origin URL · --terminal-auto · --2fa · --no-2fa
             --panel · --no-panel · --webapp · --no-webapp · --webapp-origin URL
             --no-webapp-auto · --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
@@ -325,7 +329,8 @@ while [ $# -gt 0 ]; do
         --no-terminal)  TERMINAL=0; TERMINAL_EXPLICIT=1; shift ;;
         --root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=1; ROOT_TERMINAL_EXPLICIT=1; shift ;;
         --no-root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
-        --terminal-origin) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; shift 2 ;;
+        --terminal-origin) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; TERMINAL_PUBLIC=1; shift 2 ;;
+        --terminal-auto) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_PUBLIC=1; shift ;;
         --2fa)          ENABLE_2FA=1; shift ;;
         --no-2fa)       DISABLE_2FA=1; shift ;;
         --panel)        PANEL_MODE=1; PANEL_MODE_EXPLICIT=1; shift ;;
@@ -2045,15 +2050,37 @@ install_terminal() {
     TERM_TOTP="${_old_totp:-$("$PYTHON_BIN" -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')}"
     if [ "$TERMINAL_ORIGIN_EXPLICIT" -eq 0 ]; then
         TERMINAL_ORIGIN="$(sed -n 's/^TERMINAL_PUBLIC_ORIGIN=//p' "$TERM_ENV" 2>/dev/null | head -1)"
+        case "$TERMINAL_ORIGIN" in
+            https://term.*.sslip.io|https://term.*.sslip.io:*)
+                TERMINAL_PUBLIC=1
+                ;;
+        esac
     fi
     if [ "$ROOT_TERMINAL_EXPLICIT" -eq 0 ]; then
         _old_root="$(sed -n 's/^TERMINAL_ALLOW_ROOT=//p' "$TERM_ENV" 2>/dev/null | head -1)"
         [ -n "$_old_root" ] && TERMINAL_ALLOW_ROOT="$_old_root"
     fi
 
-    if [ -z "$TERMINAL_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        question TERMINAL_ORIGIN \
-            "Публичный HTTPS-адрес терминала (Enter — только localhost/SSH-туннель)" ""
+    if [ -z "$TERMINAL_ORIGIN" ] && [ "$TERMINAL_ORIGIN_EXPLICIT" -eq 0 ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        if [ "$TERMINAL_PUBLIC" -eq 1 ]; then
+            info "Терминал будет опубликован вместе с Mini App."
+        elif [ "$WEBAPP" -eq 1 ] && [ "$WEBAPP_AUTO_HTTPS" != "0" ] \
+            && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
+            ask "Открыть терминал внутри Mini App? [Y/n] "
+            read -r _terminal_public <&$READ_FD || _terminal_public=""
+            case "$_terminal_public" in
+                ""|y|Y|yes|да|д) TERMINAL_PUBLIC=1 ;;
+                *) TERMINAL_PUBLIC=0 ;;
+            esac
+            if [ "$TERMINAL_PUBLIC" -eq 1 ]; then
+                info "Вход в терминал: Telegram + TOTP."
+            fi
+        else
+            question TERMINAL_ORIGIN \
+                "Публичный HTTPS-адрес терминала (Enter — только localhost/SSH-туннель)" ""
+            [ -n "$TERMINAL_ORIGIN" ] && TERMINAL_ORIGIN_EXPLICIT=1
+        fi
     fi
     case "$TERMINAL_ORIGIN" in
         "") ;;
@@ -2266,6 +2293,7 @@ webapp_https_preflight() {
     WEBAPP_PREFLIGHT_HOST=""
     WEBAPP_PREFLIGHT_PORT=""
     WEBAPP_PREFLIGHT_ORIGIN=""
+    WEBAPP_PREFLIGHT_TERMINAL_ORIGIN=""
     WEBAPP_PREFLIGHT_REASON=""
     WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 
@@ -2327,6 +2355,15 @@ webapp_https_preflight() {
     else
         WEBAPP_PREFLIGHT_ORIGIN="https://${WEBAPP_PREFLIGHT_HOST}:${WEBAPP_PREFLIGHT_PORT}"
     fi
+    if [ "$TERMINAL" -eq 1 ] && [ "$TERMINAL_PUBLIC" -eq 1 ] \
+        && [ "$TERMINAL_ORIGIN_EXPLICIT" -eq 0 ] \
+        && [ -f /etc/systemd/system/stacksentry-terminal.service ]; then
+        if [ "$WEBAPP_PREFLIGHT_PORT" = "443" ]; then
+            WEBAPP_PREFLIGHT_TERMINAL_ORIGIN="https://term.${WEBAPP_PREFLIGHT_HOST}"
+        else
+            WEBAPP_PREFLIGHT_TERMINAL_ORIGIN="https://term.${WEBAPP_PREFLIGHT_HOST}:${WEBAPP_PREFLIGHT_PORT}"
+        fi
+    fi
     WEBAPP_PREFLIGHT_OK=1
     return 0
 }
@@ -2369,6 +2406,8 @@ webapp_wizard() {
         [ -n "$WEBAPP_PREFLIGHT_REASON" ] \
             && info "$WEBAPP_PREFLIGHT_REASON"
         info "Автоматический адрес: ${WEBAPP_PREFLIGHT_ORIGIN}"
+        [ -n "$WEBAPP_PREFLIGHT_TERMINAL_ORIGIN" ] \
+            && info "Терминал: ${WEBAPP_PREFLIGHT_TERMINAL_ORIGIN}"
         default=1
     else
         [ -n "$WEBAPP_PREFLIGHT_IP" ] \
@@ -2450,9 +2489,29 @@ webapp_fallback() {
     done
 }
 
+webapp_set_terminal_origin() {
+    local origin="$1"
+    local env_file="/etc/stacksentry/terminal.env"
+
+    [ -n "$origin" ] || return 0
+    [ -f "$env_file" ] || return 0
+    if grep -q '^TERMINAL_PUBLIC_ORIGIN=' "$env_file"; then
+        sed -i "s|^TERMINAL_PUBLIC_ORIGIN=.*|TERMINAL_PUBLIC_ORIGIN=$origin|" \
+            "$env_file"
+    else
+        printf 'TERMINAL_PUBLIC_ORIGIN=%s\n' "$origin" >> "$env_file"
+    fi
+    chown root:root "$env_file" 2>/dev/null || true
+    chmod 600 "$env_file" 2>/dev/null || true
+    TERMINAL_ORIGIN="$origin"
+    systemctl try-restart stacksentry-terminal >/dev/null 2>&1 || true
+}
+
 webapp_auto_https() {
     WEBAPP_AUTO_ORIGIN=""
-    local host port origin site caddyfile backup code i install_ok=0
+    WEBAPP_AUTO_TERMINAL_ORIGIN=""
+    local host port origin site term_host term_site term_origin
+    local caddyfile backup code i install_ok=0
 
     if [ "$WEBAPP_PREFLIGHT_OK" -ne 1 ]; then
         if ! webapp_https_preflight; then
@@ -2495,6 +2554,18 @@ webapp_auto_https() {
     fi
     origin="https://$site"
 
+    term_site=""
+    term_origin=""
+    if [ -n "$WEBAPP_PREFLIGHT_TERMINAL_ORIGIN" ]; then
+        term_host="term.$host"
+        term_origin="$WEBAPP_PREFLIGHT_TERMINAL_ORIGIN"
+        if [ "$port" = "443" ]; then
+            term_site="$term_host"
+        else
+            term_site="$term_host:$port"
+        fi
+    fi
+
     mkdir -p /etc/caddy
     backup=""
     if [ -f "$caddyfile" ]; then
@@ -2517,6 +2588,20 @@ https://$site {
     }
 }
 EOF
+    if [ -n "$term_site" ]; then
+        cat >> "$caddyfile" <<EOF
+
+https://$term_site {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8788
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+}
+EOF
+    fi
     chown root:caddy "$caddyfile" 2>/dev/null || chown root:root "$caddyfile"
     chmod 644 "$caddyfile"
     webapp_open_firewall "$port"
@@ -2541,6 +2626,27 @@ EOF
             -o /dev/null -w '%{http_code}' "$origin/" 2>/dev/null || true)"
         if [ -n "$code" ] && [ "$code" != "000" ]; then
             ok "Автоматический HTTPS готов: $origin"
+            if [ -n "$term_site" ]; then
+                info "Жду сертификат для $term_host (до 60 секунд)..."
+                i=0
+                while [ "$i" -lt 30 ]; do
+                    i=$((i + 1))
+                    code="$(curl -4sS --max-time 5 \
+                        --resolve "$term_host:$port:127.0.0.1" \
+                        -o /dev/null -w '%{http_code}' "$term_origin/" \
+                        2>/dev/null || true)"
+                    if [ -n "$code" ] && [ "$code" != "000" ]; then
+                        ok "Терминал в Mini App готов: $term_origin"
+                        webapp_set_terminal_origin "$term_origin"
+                        WEBAPP_AUTO_TERMINAL_ORIGIN="$term_origin"
+                        break
+                    fi
+                    sleep 2
+                done
+                if [ -z "$WEBAPP_AUTO_TERMINAL_ORIGIN" ]; then
+                    warn "Сертификат для терминала не получен: journalctl -u caddy -n 50"
+                fi
+            fi
             WEBAPP_AUTO_ORIGIN="$origin"
             return 0
         fi
@@ -2582,6 +2688,17 @@ install_webapp() {
         https://*) WEBAPP_ORIGIN="${WEBAPP_ORIGIN%/}" ;;
         *) warn "WEBAPP_ORIGIN должен начинаться с https:// — игнорирую"; WEBAPP_ORIGIN="" ;;
     esac
+    if [ "$TERMINAL_PUBLIC" -eq 1 ] && [ -z "$WEBAPP_AUTO_TERMINAL_ORIGIN" ] \
+        && [ -z "$TERMINAL_ORIGIN" ] && [ -n "$WEBAPP_ORIGIN" ] \
+        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        ask "Публичный HTTPS-адрес терминала (Enter — без вкладки): "
+        read -r _terminal_manual <&$READ_FD || _terminal_manual=""
+        case "$_terminal_manual" in
+            "") ;;
+            https://*) webapp_set_terminal_origin "${_terminal_manual%/}" ;;
+            *) warn "Нужен адрес с https:// — вкладка терминала не добавлена." ;;
+        esac
+    fi
     WEBAPP_SECRET_VALUE="$(env_get WEBAPP_SECRET)"
     if [ -z "$WEBAPP_SECRET_VALUE" ]; then
         WEBAPP_SECRET_VALUE="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_hex(32))')"
@@ -2667,6 +2784,13 @@ EOF
         info "Публичный адрес Mini App: $WEBAPP_ORIGIN"
         if [ -n "$WEBAPP_AUTO_ORIGIN" ]; then
             info "HTTPS настроен автоматически: sslip.io + Caddy + Let's Encrypt."
+        fi
+        if [ -n "$WEBAPP_AUTO_TERMINAL_ORIGIN" ]; then
+            info "Терминал внутри Mini App: $WEBAPP_AUTO_TERMINAL_ORIGIN (Telegram + TOTP)"
+        elif [ -n "$TERM_PUBLIC_ORIGIN" ]; then
+            info "Терминал внутри Mini App: $TERM_PUBLIC_ORIGIN (Telegram + TOTP)"
+        elif [ -f /etc/systemd/system/stacksentry-terminal.service ]; then
+            info "Терминал: только локально, через SSH-туннель."
         fi
         info "Остался один шаг в Telegram:"
         info "  @BotFather -> /setdomain -> $_webapp_domain"

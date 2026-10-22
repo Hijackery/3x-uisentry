@@ -682,6 +682,13 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 Если автоматический вариант не сработал, установщик предложит повторить,
 указать свой домен или оставить Mini App локальным.
 
+Если установлен терминал, установщик спросит, открыть ли его внутри Mini App.
+При автоматическом HTTPS создаётся отдельный адрес `term.<host>` и вкладка
+«Терминал» появляется сама — вручную настраивать Caddy не нужно. Для своего
+домена можно указать готовый HTTPS-адрес терминала. Вход в терминал всегда
+защищён Telegram и TOTP. Если публичный терминал не нужен, ответьте `n` —
+доступ останется только через SSH-туннель.
+
 После установки остаётся один ручной шаг — привязать **домен** к боту:
 `@BotFather` → `/setdomain` → например, `203-0-113-5.sslip.io` (без `https://`
 и без порта). Затем перезапустите бота: `sudo systemctl restart stacksentry-bot`.
@@ -714,6 +721,7 @@ Mini App; отдельная команда нужна только для по�
 ```bash
 sudo bash install.sh --terminal              # только терминал, без root
 sudo bash install.sh --root-terminal         # + root-сессия (sudo -i)
+sudo bash install.sh --terminal-auto         # автоматически открыть в Mini App
 sudo bash install.sh --terminal --terminal-origin https://term.example.com
 ```
 
@@ -739,9 +747,11 @@ sudo bash install.sh --terminal --terminal-origin https://term.example.com
 - секреты терминала (TOTP, тикеты, access token, токен бота) **не передаются**
   в PTY: shell получает только PATH/TERM/LANG/HOME/USER;
 - вкладка «Терминал» внутри Mini App появляется, когда задан
-  `WEBAPP_TERMINAL_ORIGIN`; установщик берёт его из `--terminal-origin`.
-  Терминал открывается в iframe, initData передаётся ему через hash, но TOTP
-  всё равно запрашивается отдельно.
+  `WEBAPP_TERMINAL_ORIGIN`. При авто-HTTPS установщик сам публикует терминал
+  на `term.<host>` и прописывает адрес; для своего домена используйте
+  `--terminal-origin` или ответьте на вопрос мастера. Терминал открывается
+  в iframe, initData передаётся через hash, но TOTP всё равно запрашивается
+  отдельно.
 
 Нужен только бот без дополнительных сервисов? Отключите их при установке:
 `--no-webapp`, `--no-terminal`, `--no-root-terminal`, `--no-2fa`.

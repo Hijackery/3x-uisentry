@@ -671,8 +671,13 @@ def test_installer_can_enable_https_without_a_domain() -> None:
     assert "webapp_wizard()" in text
     assert "webapp_fallback()" in text
     assert "webapp_ask_manual_origin()" in text
+    assert "webapp_set_terminal_origin()" in text
     assert "Как открывать Mini App?" in text
     assert "Повторить" in text
+    assert "Открыть терминал внутри Mini App?" in text
+    assert "reverse_proxy 127.0.0.1:8788" in text
+    assert "term.${WEBAPP_PREFLIGHT_HOST}" in text
+    assert "--terminal-auto" in text
     assert "detect_public_ipv4" in text
     assert ".sslip.io" in text
     assert "Let's Encrypt" in text

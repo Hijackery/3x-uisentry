@@ -677,6 +677,13 @@ and any warnings, then offers three choices:
 If the automatic option fails, the installer offers to retry, enter a custom
 domain, or keep the Mini App local.
 
+If the terminal is installed, the installer asks whether to open it inside the
+Mini App. With automatic HTTPS it creates a separate `term.<host>` address and
+the “Terminal” tab appears without any manual Caddy setup. For a custom domain
+you can provide a ready HTTPS terminal URL. Terminal login is always protected
+by Telegram and TOTP. If you do not need a public terminal, answer `n` — access
+stays available only through an SSH tunnel.
+
 One manual step remains: bind the **domain** to the bot in `@BotFather` →
 `/setdomain` → for example, `203-0-113-5.sslip.io` (without `https://` and
 without the port). Then restart the bot:
@@ -710,6 +717,7 @@ reconfiguration or automation:
 ```bash
 sudo bash install.sh --terminal              # terminal only, no root
 sudo bash install.sh --root-terminal         # + root session (sudo -i)
+sudo bash install.sh --terminal-auto         # publish inside the Mini App
 sudo bash install.sh --terminal --terminal-origin https://term.example.com
 ```
 
@@ -735,8 +743,10 @@ What happens:
 - terminal secrets (TOTP, tickets, access token, bot token) are **not passed**
   to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER;
 - the “Terminal” tab inside the Mini App appears when `WEBAPP_TERMINAL_ORIGIN`
-  is set; the installer takes it from `--terminal-origin`. The terminal opens in
-  an iframe, initData is passed via the hash, but TOTP is still requested separately.
+  is set. With automatic HTTPS the installer publishes the terminal at
+  `term.<host>` and writes the address; for a custom domain use
+  `--terminal-origin` or answer the wizard. The terminal opens in an iframe,
+  initData is passed via the hash, but TOTP is still requested separately.
 
 Need only the bot without the extra services? Disable them at install time:
 `--no-webapp`, `--no-terminal`, `--no-root-terminal`, `--no-2fa`.
