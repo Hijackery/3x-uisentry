@@ -50,6 +50,12 @@ def _read_env(path: Path) -> dict[str, str]:
         "TERMINAL_SESSION_TTL",
         "TERMINAL_IDLE_TIMEOUT",
         "TERMINAL_MAX_SESSIONS",
+        "TERMINAL_FRAME_ANCESTORS",
+        "TERMINAL_SSH_KEY",
+        "TERMINAL_SSH_USER",
+        "TERMINAL_SSH_HOST",
+        "TERMINAL_SSH_PORT",
+        "TERMINAL_SSH_KNOWN_HOSTS",
     ):
         if key in os.environ:
             values[key] = os.environ[key]
@@ -86,6 +92,12 @@ class TerminalSettings:
     session_ttl: int
     idle_timeout: int
     max_sessions: int
+    frame_ancestors: str
+    ssh_key: str
+    ssh_user: str
+    ssh_host: str
+    ssh_port: int
+    ssh_known_hosts: str
 
     @classmethod
     def load(cls, path: Path | None = None) -> TerminalSettings:
@@ -131,6 +143,16 @@ class TerminalSettings:
             raise TerminalConfigError(
                 "TERMINAL_PUBLIC_ORIGIN должен начинаться с https://"
             )
+        ssh_key = values.get("TERMINAL_SSH_KEY", "").strip()
+        if ssh_key and not Path(ssh_key).is_file():
+            raise TerminalConfigError(f"TERMINAL_SSH_KEY: файл не найден ({ssh_key})")
+        ssh_known_hosts = values.get(
+            "TERMINAL_SSH_KNOWN_HOSTS", "/etc/stacksentry/terminal-ssh/known_hosts"
+        ).strip()
+        if ssh_key and not Path(ssh_known_hosts).is_file():
+            raise TerminalConfigError(
+                f"TERMINAL_SSH_KNOWN_HOSTS: файл не найден ({ssh_known_hosts})"
+            )
         return cls(
             bot_token=bot_token,
             admin_ids=admin_ids,
@@ -152,4 +174,16 @@ class TerminalSettings:
             session_ttl=_int(values, "TERMINAL_SESSION_TTL", 30, 5),
             idle_timeout=_int(values, "TERMINAL_IDLE_TIMEOUT", 900, 60),
             max_sessions=_int(values, "TERMINAL_MAX_SESSIONS", 1, 1),
+            frame_ancestors=values.get(
+                "TERMINAL_FRAME_ANCESTORS",
+                "'self' https://web.telegram.org https://*.telegram.org",
+            ).strip()
+            or "'self' https://web.telegram.org https://*.telegram.org",
+            ssh_key=ssh_key,
+            ssh_user=values.get("TERMINAL_SSH_USER", "stacksentry-term").strip()
+            or "stacksentry-term",
+            ssh_host=values.get("TERMINAL_SSH_HOST", "127.0.0.1").strip()
+            or "127.0.0.1",
+            ssh_port=_int(values, "TERMINAL_SSH_PORT", 22, 1),
+            ssh_known_hosts=ssh_known_hosts,
         )

@@ -21,7 +21,7 @@ read-only Mini App и отдельным терминалом. Код разде
 | `storage.py` | SQLite: история метрик, аудит, состояние алертов |
 | `webapp.py` | Read-only Mini App: initData, HttpOnly-cookie, CSP |
 | `updates.py` | Проверка обновлений по commit `main`; сравнение с `.stacksentry-install` |
-| `terminal/` | Web/root-терминал с TOTP, тикетами и отдельным пользователем |
+| `terminal/` | Web/root-терминал с обязательным TOTP, локальным SSH-ключом, тикетами и отдельным пользователем |
 | `install/stacksentry-ctl` | Единственная точка привилегированных операций |
 
 ## Поток данных

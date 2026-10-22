@@ -19,7 +19,7 @@ from stacksentry.terminal.auth import (
     verify_totp,
 )
 from stacksentry.terminal.config import TerminalConfigError, TerminalSettings
-from stacksentry.terminal.server import create_app
+from stacksentry.terminal.server import create_app, terminal_command
 
 TOKEN = "123456789:AAterminal-test"
 TOTP_SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
@@ -162,3 +162,103 @@ def test_totp_replay_normalizes_separators(tmp_path) -> None:  # type: ignore[no
     # Тот же код без пробела — это повтор, а не новый вход.
     replay = client.post("/api/session", json={"initData": _init_data(), "totp": code})
     assert replay.status_code == 401
+
+
+def test_non_root_uses_isolated_shell_user(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    settings = _settings(tmp_path)
+    command = terminal_command(settings, root=False)
+    assert command == [
+        "sudo",
+        "-n",
+        "-u",
+        settings.shell_user,
+        "-H",
+        "/bin/bash",
+        "-l",
+    ]
+    assert terminal_command(settings, root=True) == [
+        "sudo",
+        "-n",
+        "/bin/bash",
+        "-l",
+    ]
+
+
+def test_ssh_key_transport_command(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+
+    settings = _settings(tmp_path)
+    key = tmp_path / "id_ed25519"
+    known = tmp_path / "known_hosts"
+    key.write_text("key", encoding="utf-8")
+    known.write_text("host", encoding="utf-8")
+    settings = replace(
+        settings,
+        ssh_key=str(key),
+        ssh_user="stacksentry-term",
+        ssh_host="127.0.0.1",
+        ssh_port=22,
+        ssh_known_hosts=str(known),
+    )
+    command = terminal_command(settings, root=True)
+    assert command[:6] == ["ssh", "-tt", "-i", str(key), "-o", "IdentitiesOnly=yes"]
+    assert "BatchMode=yes" in command
+    assert f"UserKnownHostsFile={known}" in command
+    assert command[-5] == "stacksentry-term@127.0.0.1"
+    assert command[-4:] == ["sudo", "-n", "/bin/bash", "-l"]
+    assert "StrictHostKeyChecking=yes" in command
+
+
+def test_csp_allows_miniapp_frame(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    settings = _settings(tmp_path)
+    client = TestClient(create_app(settings))
+    headers = client.get("/api/health").headers
+    policy = headers["Content-Security-Policy"]
+    assert "frame-ancestors" in policy
+    assert "https://web.telegram.org" in policy
+    assert client.get("/api/health").json()["totp"] is True
+
+
+def test_config_loads_ssh_and_frame_settings(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    key = tmp_path / "id_ed25519"
+    known = tmp_path / "known_hosts"
+    key.write_text("key", encoding="utf-8")
+    known.write_text("host", encoding="utf-8")
+    env = tmp_path / "terminal.env"
+    env.write_text(
+        "\n".join(
+            [
+                f"TELEGRAM_BOT_TOKEN={TOKEN}",
+                "TELEGRAM_ADMIN_IDS=42",
+                "TERMINAL_SECRET=" + "s" * 40,
+                f"TERMINAL_TOTP_SECRET={TOTP_SECRET}",
+                "TERMINAL_FRAME_ANCESTORS=\"'self' https://app.example.com\"",
+                f"TERMINAL_SSH_KEY={key}",
+                f"TERMINAL_SSH_KNOWN_HOSTS={known}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings = TerminalSettings.load(env)
+    assert settings.ssh_key == str(key)
+    assert settings.ssh_known_hosts == str(known)
+    assert settings.frame_ancestors == "'self' https://app.example.com"
+    assert settings.ssh_port == 22
+
+
+def test_config_rejects_missing_ssh_key(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    env = tmp_path / "terminal.env"
+    env.write_text(
+        "\n".join(
+            [
+                f"TELEGRAM_BOT_TOKEN={TOKEN}",
+                "TELEGRAM_ADMIN_IDS=42",
+                "TERMINAL_SECRET=" + "s" * 40,
+                f"TERMINAL_TOTP_SECRET={TOTP_SECRET}",
+                f"TERMINAL_SSH_KEY={tmp_path / 'missing'}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(TerminalConfigError, match="TERMINAL_SSH_KEY"):
+        TerminalSettings.load(env)

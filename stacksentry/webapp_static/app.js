@@ -16,14 +16,17 @@
       }
     } catch (_) { /* тема не критична */ }
   }
-  const TABS = [
+  const BASE_TABS = [
     ["overview", "Обзор"], ["services", "Службы"], ["panel", "Панель"],
     ["traffic", "Трафик"], ["subs", "Подписки"], ["history", "История"],
   ];
+  let TABS = BASE_TABS.slice();
   let active = "overview";
   let authAttempted = false;
   let snapshot = null;
   let timer = null;
+  let terminalOrigin = "";
+  let metaLoaded = false;
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
@@ -140,6 +143,17 @@
       <div class="card"><h3>RAM</h3>${bars(series("mem"))}</div>
       <div class="card"><h3>Диск</h3>${bars(series("disk"))}</div>`;
   }
+  function renderTerminal() {
+    if (!terminalOrigin) {
+      return `<div class="card"><div class="empty">Терминал не настроен.<br>
+        Установите его: <code>sudo bash install.sh --terminal --root-terminal</code></div></div>`;
+    }
+    if (main.querySelector("iframe.terminal-frame")) return null;
+    const url = new URL(terminalOrigin);
+    if (initData) url.hash = `tgWebAppData=${encodeURIComponent(initData)}`;
+    return `<iframe class="terminal-frame" src="${esc(url.href)}"
+      title="Терминал сервера" allow="clipboard-read; clipboard-write"></iframe>`;
+  }
   async function render() {
     if (!snapshot) return;
     const [toneName, verdict] = statusTone();
@@ -150,7 +164,10 @@
     else if (active === "panel") main.innerHTML = renderPanel();
     else if (active === "traffic") main.innerHTML = renderTraffic();
     else if (active === "subs") main.innerHTML = renderSubs();
-    else main.innerHTML = `<div class="skeleton">Загружаю историю…</div>`;
+    else if (active === "terminal") {
+      const frame = renderTerminal();
+      if (frame !== null) main.innerHTML = frame;
+    } else main.innerHTML = `<div class="skeleton">Загружаю историю…</div>`;
     if (active === "history") {
       try { main.innerHTML = await renderHistory(); }
       catch (error) { main.innerHTML = `<div class="card"><div class="empty">${esc(error.message)}</div></div>`; }
@@ -162,9 +179,23 @@
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
+  async function loadMeta() {
+    if (metaLoaded) return;
+    try {
+      const meta = await api("/api/meta");
+      metaLoaded = true;
+      terminalOrigin = meta.terminal_origin || "";
+      TABS = terminalOrigin
+        ? [...BASE_TABS, ["terminal", "Терминал"]]
+        : BASE_TABS.slice();
+      if (active === "terminal" && !terminalOrigin) active = "overview";
+      renderTabs();
+    } catch (_) { /* без терминала Mini App продолжает работать */ }
+  }
   async function load() {
     try {
       snapshot = await api("/api/status");
+      await loadMeta();
       await render();
     } catch (error) {
       if (String(error.message).includes("Telegram")) {

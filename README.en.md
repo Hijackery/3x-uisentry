@@ -73,19 +73,22 @@ GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
 
 ## Why use it
 
-The 3X-UI panel shows the state, but you have to open it. The bot brings what
+Panels and VPN show their state, but you have to open them. The bot brings what
 matters to Telegram and stays quiet when everything is fine.
 
 | | |
 |---|---|
-| **Monitoring** | CPU, RAM, swap, disk, network, load; services; panel and xray; panel/VPN inventory; inbounds, subscriptions and traffic |
+| **Monitoring** | CPU, RAM, swap, disk, network, load; services; panel and core; panel/VPN inventory; users, subscriptions and traffic |
+| **Panels** | API for 3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline; others detected as service/port/process |
 | **Alerts** | hysteresis without flapping, cooldown, an “I know, until morning” mute; restart and log buttons right on the alert |
-| **Actions** | service and xray restart, `apt` full/phased, release upgrade check, reboot, allow-listed diagnostic commands |
+| **Actions** | service and panel core restart, package updates, OS release upgrade (APT), reboot, allow-listed commands |
+| **Updates** | `main` check and an “Update StackSentry” button with confirmation and 2FA; no GitHub Releases or tags |
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
-| **Install** | one command, terminal prompts (works through `curl \| bash` too), an 8-point self-check |
-| **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`; Python 3.10+ |
-| **Terminal** | `stacksentry-menu` — edit settings, restart, read the log, update; secrets are masked |
-| **Security** | a dedicated unprivileged user, a narrow sudoers list of exact commands, every risky action confirmed and audited |
+| **Install** | one command, an adaptive wizard for OS/services/panel, unattended mode, self-check |
+| **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`; Python 3.10+ |
+| **Mini App** | read-only Telegram dashboard: a “Panel” button next to the attachment icon and an inline menu button |
+| **Terminal** | `stacksentry-menu` — settings, diagnostics, restart, log, update; secrets are masked |
+| **Security** | a dedicated unprivileged user, a narrow sudoers list, confirmations and an audit log for risky actions |
 
 ## What it looks like
 
@@ -200,25 +203,39 @@ systemctl status stacksentry-bot
 ```
 
 Open the bot in Telegram, press `/start` → `/status`. If something is wrong, the
-bot tells you what exactly.
+bot tells you what exactly. `/version` shows the version, OS, package manager and
+selected panel; `/stack` shows what was found on the server. With the Mini App
+installed, a “Panel” button appears next to the attachment icon and an inline
+“📱 Open Mini App” button appears in the main menu.
 
 ### Unattended install
+
+For automation and re-installs: `--yes` asks no questions and takes values from
+the environment or an existing `.env`. A complete `.env` is kept as is; you can
+provide the missing values in advance.
 
 ```bash
 sudo env \
   TELEGRAM_BOT_TOKEN='123456789:AA...' \
   TELEGRAM_ADMIN_IDS='11111111' \
+  PANEL_TYPE='3x-ui' \
   PANEL_URL='https://panel.example.com:2053' \
   PANEL_API_TOKEN='...' \
   bash install.sh --yes
 ```
 
-Useful options: `--repo owner/name`, `--ref branch`, `--prefix DIR`, `--user NAME`,
-`--no-start`, `--force-config`, `--print-source` (show the version source),
-`--sha256 HASH`, `--init TYPE`, `--menu`. Full list — `--help`.
+For Marzban/Marzneshin/PasarGuard pass `PANEL_USERNAME` and `PANEL_PASSWORD`
+instead of a token; for Outline pass only `PANEL_URL` with the secret path.
+`PANEL_TYPE` may be omitted — the wizard uses the detected type or `3x-ui`. The
+full type/auth matrix is in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-If an incomplete `.env` is left from an aborted run, the wizard fills in the
-missing values and offers the existing ones as defaults — no manual editing.
+Useful options: `--repo owner/name`, `--ref branch`, `--prefix DIR`, `--user NAME`,
+`--no-start`, `--force-config`, `--print-source`, `--sha256 HASH`, `--init TYPE`,
+`--webapp --webapp-origin https://...`, `--terminal`, `--root-terminal`, `--2fa`,
+`--menu`. Full list — `bash install.sh --help`.
+
+Re-running the installer updates the code and keeps `.env`/state; to check for
+updates from the bot use `/updatecheck` and the Maintenance button.
 
 ## Connecting to the panel
 
@@ -359,10 +376,12 @@ The response must contain `"success":true`.
 ## How it works
 
 ```text
-Telegram  ⇄  bot (unprivileged user stacksentry)
-                 ├─ psutil / systemctl / journalctl        — metrics and services
-                 ├─ panel API (Bearer, node-sync scope)     — inbounds, subscriptions, xray restart
-                 └─ sudo stacksentry-ctl (narrow sudoers)           — restart, apt, reboot, journal
+Telegram / Mini App  ⇄  bot (unprivileged user stacksentry)
+                          ├─ psutil / systemctl / journalctl   — metrics and services
+                          ├─ inventory                         — OS, packages, panels, VPN
+                          ├─ panel API (8 types)               — users, traffic, core restart
+                          ├─ updates                           — commit check against main
+                          └─ sudo stacksentry-ctl (narrow sudoers) — restart, updates, reboot, journal
 ```
 
 - **Code** — `/opt/stacksentry`, owned by `root`; the bot cannot rewrite itself.
@@ -370,8 +389,13 @@ Telegram  ⇄  bot (unprivileged user stacksentry)
 - **State** — SQLite in `/var/lib/stacksentry` (history, audit, mutes).
 - **Privileges** — only through `sudo stacksentry-ctl`; the allowed subcommands are listed
   exactly, without wildcards.
-- **`apt`** — runs in dedicated systemd units (`stacksentry-apt-*.service`)
-  because the bot lives with `ProtectSystem=strict`.
+- **Updates** — run in dedicated systemd units (`stacksentry-apt-*.service`)
+  because the bot lives with `ProtectSystem=strict`; `stacksentry-ctl` detects
+  `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`.
+- **Self-update** — the installer runs in a separate unit from `main`, keeps
+  `.env`/state and restarts the bot.
+- **Mini App** — a separate read-only service on `127.0.0.1:8787`; expose it only
+  via an HTTPS proxy; login is via Telegram initData.
 
 ## Commands and screens
 
@@ -594,6 +618,7 @@ over the file.
 | `WEBAPP_HOST` | listen address (default `127.0.0.1`) |
 | `WEBAPP_PORT` | Mini App port (default 8787) |
 | `WEBAPP_PUBLIC_ORIGIN` | public HTTPS URL for the Telegram menu button |
+| `WEBAPP_TERMINAL_ORIGIN` | public HTTPS terminal URL for the tab inside the Mini App |
 | `WEBAPP_SECRET` | cookie signing secret (≥ 32 chars) |
 | `WEBAPP_SESSION_TTL` | Mini App session lifetime, seconds |
 | `COMMAND_TIMEOUT` | allowlisted command timeout, seconds |
@@ -621,21 +646,35 @@ history. Read-only — no actions and no secrets in the browser.
 sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 ```
 
+Before enabling the buttons:
+
+1. bind the domain to the bot: `@BotFather` → `/setdomain` → the domain from
+   `WEBAPP_PUBLIC_ORIGIN` (for example, `sentry.example.com`, without `https://`);
+2. put an HTTPS proxy (Caddy/Nginx) in front of `127.0.0.1:8787`: the
+   `WEBAPP_PUBLIC_ORIGIN` URL must open in a browser;
+3. restart the bot after changing `.env`:
+   `sudo systemctl restart stacksentry-bot`.
+
 - login via Telegram `initData`, no passwords; administrators only;
 - `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;
 - `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
-- with `WEBAPP_PUBLIC_ORIGIN` the bot adds a “Panel” menu button in Telegram and
+- the buttons appear only with `WEBAPP_ENABLED=1` **and** a non-empty
+  `WEBAPP_PUBLIC_ORIGIN`; the installer with `--webapp-origin` sets both. Without
+  a public origin the Mini App is available only through an SSH tunnel, and there
+  are no Telegram buttons;
+- under these conditions the bot adds a “Panel” chat menu button (Mini App) and
   an inline “📱 Open Mini App” button to the administrator's main menu. “Panel”
-  is the chat menu next to the attachment icon; the inline button lives in the
-  bot menu itself;
+  is the menu next to the attachment icon; the inline button lives in the bot
+  menu itself and is shown only to IDs from `TELEGRAM_ADMIN_IDS`;
 - if the panel API is not configured, the dashboard shows services/VPN/hardware
   and honestly says inbounds/subscriptions are unavailable.
 
 ### Terminal (optional)
 
-A full browser shell — a separate service, not part of the bot:
+A full browser shell — a separate service, openable standalone or embedded as a
+tab inside the Mini App:
 
 ```bash
 sudo bash install.sh --terminal              # shell as stacksentry-term
@@ -647,15 +686,25 @@ What happens:
 
 - a dedicated `stacksentry-term` user and `stacksentry-terminal` service are created;
 - the service listens on `127.0.0.1:8788` and is not exposed publicly;
-- login: Telegram `initData` + TOTP (outside Telegram also an access token from
-  `/etc/stacksentry/terminal-secrets.env`, `600 root`);
+- login: Telegram `initData` **and a mandatory TOTP code** for every session.
+  Even if the administrator's Telegram account is compromised, access without
+  TOTP is impossible; outside Telegram the access token from
+  `/etc/stacksentry/terminal-secrets.env` (`600 root`) is also required;
+- the installer automatically creates an Ed25519 SSH key
+  (`/etc/stacksentry/terminal-ssh/id_ed25519`), adds its public part to the
+  `authorized_keys` of `stacksentry-term`, and uses the key for a local SSH
+  connection to `127.0.0.1`. The private key never leaves the server; if
+  sshd/the key are unavailable, the terminal automatically falls back to a local PTY;
 - terminal secrets live in `/etc/stacksentry/terminal-secrets.env` (`600 root`);
   systemd injects them, the service user never reads the file;
 - the normal shell runs as a separate `stacksentry-shell` user **without sudo**;
   a root session uses only the exact
   `stacksentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule (`--root-terminal`);
 - terminal secrets (TOTP, tickets, access token, bot token) are **not passed**
-  to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER.
+  to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER;
+- the “Terminal” tab inside the Mini App appears when `WEBAPP_TERMINAL_ORIGIN`
+  is set; the installer takes it from `--terminal-origin`. The terminal opens in
+  an iframe, initData is passed via the hash, but TOTP is still requested separately.
 
 Default access is local/SSH tunnel only:
 
@@ -718,6 +767,10 @@ lockout, every success/failure is audited. The secret lives in `.env` with
   bot's sandbox; a fallback exists when a transient unit is denied.
 - Risky actions require confirmation; the token is bound to the requesting
   administrator, is single-use, and everything is written to `audit_log`.
+- The terminal requires TOTP for every session: `initData` alone is not enough
+  if the Telegram account is compromised. The root session is additionally
+  enabled only with `--root-terminal`; the terminal SSH key stays on the server
+  and is never exposed.
 - The panel client does not follow redirects, panel values are escaped, and the
   bot token never reaches the logs even at `DEBUG`.
 - Repeats are limited by `ACTION_COOLDOWN`; Telegram flood control is retried with
@@ -741,6 +794,13 @@ bash <(curl -Ls https://raw.githubusercontent.com/Hijackery/stacksentry/main/ins
 
 # same from the menu
 sudo stacksentry-menu          # item 24
+
+# check for updates without installing anything
+sudo stacksentry-menu update-check
+# or in the bot: /updatecheck / the “🔄 Check for StackSentry updates” button
+
+# in the bot: when an update exists an “⬆️ Update StackSentry” button appears
+# (confirmation + fresh TOTP; .env and state are kept)
 
 # full removal: service, sudoers, wrapper, menu, code, database and user
 sudo bash install.sh --uninstall
@@ -775,6 +835,30 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 | Panel returns `404` for the API | check `PANEL_URL`/`PANEL_BASE_PATH` (a common mistake is `/panel` in `webBasePath`) |
 | Service logs are not visible | check the `journal` sudoers rule and that the call goes through `sudo` |
 | Ubuntu 26.04+ | `sudo-rs` forbids wildcards in arguments — the installer already accounts for it |
+
+### No Mini App button
+
+Check the settings and the log:
+
+```bash
+grep -E '^WEBAPP_(ENABLED|PUBLIC_ORIGIN)=' /opt/stacksentry/.env
+systemctl status stacksentry-bot stacksentry-webapp
+journalctl -u stacksentry-bot -n 100 --no-pager | grep -i 'Mini App'
+```
+
+The buttons appear only with `WEBAPP_ENABLED=1` and a non-empty
+`WEBAPP_PUBLIC_ORIGIN` (HTTPS), and the inline button is shown only to an
+administrator from `TELEGRAM_ADMIN_IDS`. If the origin is set but there is no
+button:
+
+- bind the domain via `@BotFather` → `/setdomain`;
+- the public URL must open over HTTPS (check the proxy in front of
+  `127.0.0.1:8787`);
+- restart the bot after editing `.env`:
+  `sudo systemctl restart stacksentry-bot`;
+- `Не удалось поставить кнопку Mini App` in the log means Telegram rejected the
+  button — usually because of a wrong domain, HTTP instead of HTTPS, or an
+  unreachable URL.
 
 More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 

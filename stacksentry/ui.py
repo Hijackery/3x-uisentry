@@ -717,7 +717,12 @@ def main_menu(
             InlineKeyboardButton("⚙️ Сервисы", callback_data="services"),
         ],
     ]
-    if is_admin and settings is not None and settings.webapp_public_origin:
+    if (
+        is_admin
+        and settings is not None
+        and settings.webapp_enabled
+        and settings.webapp_public_origin
+    ):
         buttons.append(
             [
                 InlineKeyboardButton(

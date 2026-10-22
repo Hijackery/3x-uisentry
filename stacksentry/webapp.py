@@ -37,6 +37,7 @@ class WebAppConfig:
     port: int
     public_origin: str
     session_ttl: int
+    terminal_origin: str = ""
 
     @classmethod
     def load(cls, env_file: Path | None = None) -> WebAppConfig:
@@ -55,6 +56,7 @@ class WebAppConfig:
             port=settings.webapp_port,
             public_origin=settings.webapp_public_origin,
             session_ttl=max(300, settings.webapp_session_ttl),
+            terminal_origin=settings.webapp_terminal_origin,
         )
 
 
@@ -134,11 +136,14 @@ def create_app(
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
+        frame_src = "'self'"
+        if config.terminal_origin:
+            frame_src = f"{frame_src} {config.terminal_origin}"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self'; style-src 'self' "
             "'unsafe-inline'; img-src 'self' data:; connect-src 'self'; "
-            "base-uri 'none'; frame-ancestors https://web.telegram.org "
-            "https://*.telegram.org"
+            f"frame-src {frame_src}; base-uri 'none'; frame-ancestors "
+            "https://web.telegram.org https://*.telegram.org"
         )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
@@ -190,6 +195,7 @@ def create_app(
             "panel_enabled": config.settings.panel_enabled,
             "services": list(config.settings.services),
             "require_2fa": config.settings.require_2fa,
+            "terminal_origin": config.terminal_origin,
         }
 
     @app.get("/api/status")

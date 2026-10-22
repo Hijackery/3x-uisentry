@@ -23,6 +23,8 @@
     <div class="card">
       <h1 id="login-title">StackSentry</h1>
       <p class="sub">Терминал сервера. Доступ только для администратора.</p>
+      <p class="sub">Обязательный второй фактор: код TOTP защищает вход, даже
+        если Telegram-аккаунт администратора скомпрометирован.</p>
 
       <label for="totp">Код из приложения-аутентификатора</label>
       <input id="totp" inputmode="numeric" autocomplete="one-time-code"

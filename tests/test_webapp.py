@@ -27,7 +27,9 @@ ADMIN_ID = 42
 SECRET = "w" * 40
 
 
-def _config(settings: Settings, *, origin: str = "") -> WebAppConfig:
+def _config(
+    settings: Settings, *, origin: str = "", terminal_origin: str = ""
+) -> WebAppConfig:
     return WebAppConfig(
         settings=settings,
         secret=SECRET,
@@ -35,6 +37,7 @@ def _config(settings: Settings, *, origin: str = "") -> WebAppConfig:
         port=8787,
         public_origin=origin,
         session_ttl=3600,
+        terminal_origin=terminal_origin,
     )
 
 
@@ -119,6 +122,24 @@ def test_session_and_read_only_api(
     assert client.get("/api/audit").status_code == 200
 
 
+def test_terminal_tab_origin_and_csp(
+    make_settings: Callable[..., Settings], storage: Storage
+) -> None:
+    settings = make_settings(webapp_enabled=True, webapp_secret=SECRET)
+    app = create_app(
+        _config(settings, terminal_origin="https://term.example.com"),
+        monitor=FakeMonitor(),  # type: ignore[arg-type]
+        storage=storage,
+    )
+    client = TestClient(app)
+    client.post("/api/session", json={"initData": _init_data(settings.telegram_token)})
+    meta = client.get("/api/meta")
+    assert meta.status_code == 200
+    assert meta.json()["terminal_origin"] == "https://term.example.com"
+    policy = meta.headers["Content-Security-Policy"]
+    assert "frame-src 'self' https://term.example.com" in policy
+
+
 def test_non_admin_is_rejected(
     make_settings: Callable[..., Settings], storage: Storage
 ) -> None:
@@ -160,6 +181,9 @@ def test_installer_webapp_flag() -> None:
     assert "--webapp" in text
     assert "stacksentry-webapp.service" in text
     assert "create_app_from_env" in text
+    assert "WEBAPP_TERMINAL_ORIGIN" in text
+    assert "terminal-ssh" in text
+    assert 'chmod 600 "$TERM_SSH_KEY"' in text
 
 
 def test_cookie_flags(make_settings: Callable[..., Settings], storage: Storage) -> None:

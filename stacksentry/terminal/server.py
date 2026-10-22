@@ -50,15 +50,18 @@ class SessionRequest(BaseModel):
     root: bool = False
 
 
-def _security_headers(response: JSONResponse | Any) -> None:
+def _security_headers(
+    response: JSONResponse | Any,
+    *,
+    frame_ancestors: str = "'self' https://web.telegram.org https://*.telegram.org",
+) -> None:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
-        "form-action 'self'; frame-ancestors https://web.telegram.org "
-        "https://*.telegram.org"
+        f"form-action 'self'; frame-ancestors {frame_ancestors}"
     )
 
 
@@ -77,9 +80,50 @@ def _resize(fd: int, cols: int, rows: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
+def terminal_command(settings: TerminalSettings, *, root: bool) -> list[str]:
+    """Команда оболочки: локальный PTY или SSH с ключом терминала.
+
+    Без SSH-ключа обычная сессия запускается в отдельном пользователе
+    ``stacksentry-shell`` — у него нет sudo-правила на root. Root-сессия
+    всегда требует явного разрешения и свежего TOTP.
+    """
+    if root:
+        remote = ["sudo", "-n", "/bin/bash", "-l"]
+    else:
+        remote = [
+            "sudo",
+            "-n",
+            "-u",
+            settings.shell_user,
+            "-H",
+            "/bin/bash",
+            "-l",
+        ]
+    if not settings.ssh_key:
+        return remote
+    return [
+        "ssh",
+        "-tt",
+        "-i",
+        settings.ssh_key,
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        f"UserKnownHostsFile={settings.ssh_known_hosts}",
+        "-p",
+        str(settings.ssh_port),
+        f"{settings.ssh_user}@{settings.ssh_host}",
+        *remote,
+    ]
+
+
 async def _bridge(ws: WebSocket, settings: TerminalSettings, *, root: bool) -> None:
     master, slave = pty.openpty()
-    command = ["sudo", "-n", "/bin/bash", "-l"] if root else ["/bin/bash", "-l"]
+    command = terminal_command(settings, root=root)
     env = {
         **os.environ,
         "TERM": "xterm-256color",
@@ -162,14 +206,19 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Any:
         response = await call_next(request)
-        _security_headers(response)
+        _security_headers(response, frame_ancestors=settings.frame_ancestors)
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
-        return {"ok": True, "root": settings.allow_root}
+        return {
+            "ok": True,
+            "root": settings.allow_root,
+            "ssh": bool(settings.ssh_key),
+            "totp": True,
+        }
 
     @app.post("/api/session")
     async def session(request: Request, body: SessionRequest) -> dict[str, Any]:

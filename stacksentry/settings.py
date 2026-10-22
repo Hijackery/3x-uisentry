@@ -177,6 +177,8 @@ class Settings:
     webapp_public_origin: str = ""
     webapp_secret: str = ""
     webapp_session_ttl: int = 3600
+    #: Публичный адрес терминала для вкладки внутри Mini App.
+    webapp_terminal_origin: str = ""
 
     extra: dict[str, str] = field(default_factory=dict, repr=False)
 
@@ -277,6 +279,7 @@ def _build_settings() -> Settings:
         webapp_public_origin=env_str("WEBAPP_PUBLIC_ORIGIN").strip().rstrip("/"),
         webapp_secret=env_str("WEBAPP_SECRET").strip(),
         webapp_session_ttl=env_int("WEBAPP_SESSION_TTL", 3600, minimum=300),
+        webapp_terminal_origin=env_str("WEBAPP_TERMINAL_ORIGIN").strip().rstrip("/"),
     )
 
     problems = _validate(settings)
@@ -383,6 +386,11 @@ def _validate(settings: Settings) -> list[str]:
         "https://"
     ):
         problems.append("WEBAPP_PUBLIC_ORIGIN должен начинаться с https://")
+    if (
+        settings.webapp_terminal_origin
+        and not settings.webapp_terminal_origin.startswith("https://")
+    ):
+        problems.append("WEBAPP_TERMINAL_ORIGIN должен начинаться с https://")
     if settings.require_2fa and not settings.totp_secret:
         problems.append(
             "TOTP_REQUIRED=1, но TOTP_SECRET пуст — некому подтверждать действия"

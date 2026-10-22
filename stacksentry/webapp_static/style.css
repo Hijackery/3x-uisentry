@@ -66,6 +66,11 @@ body {
   transition: opacity .2s; max-width: 90vw;
 }
 .toast.show { opacity: 1; }
+.terminal-frame {
+  width: 100%; height: calc(100dvh - 170px); min-height: 360px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: #0b0f14;
+}
 .spark { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin-top: 8px; }
 .spark > i { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: .8; }
 @media (prefers-color-scheme: light) {

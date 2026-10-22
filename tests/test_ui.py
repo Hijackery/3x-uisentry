@@ -365,6 +365,20 @@ def test_main_menu_has_inline_mini_app_for_admins(
     ]
     assert "📱 Открыть Mini App" not in disabled
 
+    # Origin без WEBAPP_ENABLED=1 не должен показывать неработающую кнопку.
+    disabled_with_origin = [
+        b.text
+        for row in ui.main_menu(
+            True,
+            settings=make_settings(
+                webapp_enabled=False,
+                webapp_public_origin="https://sentry.example.com",
+            ),
+        ).inline_keyboard
+        for b in row
+    ]
+    assert "📱 Открыть Mini App" not in disabled_with_origin
+
     # Кнопка сохраняется на экране «Домой/Обновить».
     overview = [
         b.text

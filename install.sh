@@ -1892,6 +1892,64 @@ install_terminal() {
     install -d -m 0750 -o "$TERM_SHELL_USER" -g "$TERM_SHELL_GROUP" "$TERM_SHELL_HOME"
     install -d -m 0750 -o root -g root "$TERM_ENV_DIR"
 
+    # SSH-ключ терминала: используется для локального SSH-подключения к
+    # 127.0.0.1. Приватный ключ читает только сервис терминала, снаружи он не
+    # выдаётся. Если sshd/ssh-keyscan недоступны, терминал остаётся на PTY.
+    TERM_SSH_DIR="$TERM_ENV_DIR/terminal-ssh"
+    TERM_SSH_KEY="$TERM_SSH_DIR/id_ed25519"
+    TERM_SSH_KNOWN_HOSTS="$TERM_SSH_DIR/known_hosts"
+    TERM_SSH_KEY_VALUE=""
+    install -d -m 0750 -o root -g "$TERM_GROUP" "$TERM_SSH_DIR"
+    if command -v ssh-keygen >/dev/null 2>&1; then
+        if [ ! -f "$TERM_SSH_KEY" ]; then
+            ssh-keygen -q -t ed25519 -N '' -C "stacksentry-terminal" \
+                -f "$TERM_SSH_KEY" \
+                || warn "Не удалось сгенерировать SSH-ключ терминала"
+        fi
+        if [ -f "$TERM_SSH_KEY.pub" ]; then
+            # OpenSSH отказывается использовать ключ с групповым/чужим
+            # доступом, поэтому приватный ключ принадлежит сервису и 0600.
+            chown "$TERM_USER":"$TERM_GROUP" "$TERM_SSH_KEY"
+            chown root:"$TERM_GROUP" "$TERM_SSH_KEY.pub"
+            chmod 600 "$TERM_SSH_KEY"
+            chmod 644 "$TERM_SSH_KEY.pub"
+            install -d -m 0700 -o "$TERM_USER" -g "$TERM_GROUP" "$TERM_HOME/.ssh"
+            touch "$TERM_HOME/.ssh/authorized_keys"
+            if ! grep -qxF "$(cat "$TERM_SSH_KEY.pub")" \
+                "$TERM_HOME/.ssh/authorized_keys" 2>/dev/null; then
+                cat "$TERM_SSH_KEY.pub" >> "$TERM_HOME/.ssh/authorized_keys"
+            fi
+            chown "$TERM_USER":"$TERM_GROUP" "$TERM_HOME/.ssh/authorized_keys"
+            chmod 600 "$TERM_HOME/.ssh/authorized_keys"
+            # Пароль не задаём: вход только по ключу. '*' не блокирует
+            # key-only вход, в отличие от '!' у системных пользователей.
+            usermod -p '*' "$TERM_USER" >/dev/null 2>&1 || true
+            if command -v ssh-keyscan >/dev/null 2>&1 \
+                && ssh-keyscan -T 3 -t ed25519 -p 22 127.0.0.1 \
+                    > "$TERM_SSH_KNOWN_HOSTS.tmp" 2>/dev/null \
+                && [ -s "$TERM_SSH_KNOWN_HOSTS.tmp" ]; then
+                mv "$TERM_SSH_KNOWN_HOSTS.tmp" "$TERM_SSH_KNOWN_HOSTS"
+                chown root:"$TERM_GROUP" "$TERM_SSH_KNOWN_HOSTS"
+                chmod 640 "$TERM_SSH_KNOWN_HOSTS"
+                # Проверяем именно вход по ключу, а не только доступность порта.
+                if command -v ssh >/dev/null 2>&1 && timeout 5 ssh \
+                    -i "$TERM_SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes \
+                    -o StrictHostKeyChecking=yes \
+                    -o UserKnownHostsFile="$TERM_SSH_KNOWN_HOSTS" \
+                    -p 22 "$TERM_USER@127.0.0.1" true >/dev/null 2>&1; then
+                    TERM_SSH_KEY_VALUE="$TERM_SSH_KEY"
+                else
+                    warn "sshd не принял ключ — терминал будет работать через PTY"
+                fi
+            else
+                rm -f "$TERM_SSH_KNOWN_HOSTS.tmp"
+                warn "SSH на 127.0.0.1 недоступен — терминал будет работать через PTY"
+            fi
+        fi
+    else
+        warn "ssh-keygen не найден — терминал будет работать через PTY"
+    fi
+
     TERM_BOT_TOKEN="$(env_get TELEGRAM_BOT_TOKEN)"
     TERM_ADMIN_IDS="$(env_get TELEGRAM_ADMIN_IDS)"
     if [ -z "$TERM_BOT_TOKEN" ] || [ -z "$TERM_ADMIN_IDS" ]; then
@@ -1934,6 +1992,11 @@ EOF
     chown root:root "$TERM_SECRETS"
     chmod 600 "$TERM_SECRETS"
 
+    TERM_WEBAPP_ORIGIN="$(env_get WEBAPP_PUBLIC_ORIGIN)"
+    TERM_FRAME_ANCESTORS="'self' https://web.telegram.org https://*.telegram.org"
+    [ -n "$TERM_WEBAPP_ORIGIN" ] \
+        && TERM_FRAME_ANCESTORS="$TERM_FRAME_ANCESTORS $TERM_WEBAPP_ORIGIN"
+
     cat > "$TERM_ENV" <<EOF
 TERMINAL_ALLOW_ROOT=$TERMINAL_ALLOW_ROOT
 TERMINAL_SHELL_USER=$TERM_SHELL_USER
@@ -1941,9 +2004,15 @@ TERMINAL_SHELL_HOME=$TERM_SHELL_HOME
 TERMINAL_HOST=127.0.0.1
 TERMINAL_PORT=8788
 TERMINAL_PUBLIC_ORIGIN=$TERMINAL_ORIGIN
+TERMINAL_FRAME_ANCESTORS="$TERM_FRAME_ANCESTORS"
 TERMINAL_SESSION_TTL=30
 TERMINAL_IDLE_TIMEOUT=900
 TERMINAL_MAX_SESSIONS=1
+TERMINAL_SSH_KEY=$TERM_SSH_KEY_VALUE
+TERMINAL_SSH_USER=$TERM_USER
+TERMINAL_SSH_HOST=127.0.0.1
+TERMINAL_SSH_PORT=22
+TERMINAL_SSH_KNOWN_HOSTS=$TERM_SSH_KNOWN_HOSTS
 TERMINAL_ENV=$TERM_ENV
 EOF
     chown root:root "$TERM_ENV"
@@ -2072,6 +2141,32 @@ install_webapp() {
     set_env WEBAPP_PORT 8787
     set_env WEBAPP_PUBLIC_ORIGIN "$WEBAPP_ORIGIN"
     set_env WEBAPP_SESSION_TTL 3600
+
+    # Вкладка терминала внутри Mini App: нужен публичный HTTPS-адрес
+    # терминала и разрешение ему быть в iframe на origin Mini App.
+    TERM_ENV_FILE="/etc/stacksentry/terminal.env"
+    TERM_SERVICE_FILE="/etc/systemd/system/stacksentry-terminal.service"
+    TERM_PUBLIC_ORIGIN=""
+    TERM_INSTALLED=0
+    if [ -f "$TERM_ENV_FILE" ] && [ -f "$TERM_SERVICE_FILE" ]; then
+        TERM_INSTALLED=1
+        TERM_PUBLIC_ORIGIN="$(sed -n 's/^TERMINAL_PUBLIC_ORIGIN=//p' \
+            "$TERM_ENV_FILE" 2>/dev/null | head -1)"
+        if [ -n "$WEBAPP_ORIGIN" ]; then
+            TERM_FRAME_ANCESTORS="'self' https://web.telegram.org https://*.telegram.org $WEBAPP_ORIGIN"
+            if grep -q '^TERMINAL_FRAME_ANCESTORS=' "$TERM_ENV_FILE"; then
+                sed -i "s|^TERMINAL_FRAME_ANCESTORS=.*|TERMINAL_FRAME_ANCESTORS=\"$TERM_FRAME_ANCESTORS\"|" \
+                    "$TERM_ENV_FILE"
+            else
+                printf 'TERMINAL_FRAME_ANCESTORS="%s"\n' \
+                    "$TERM_FRAME_ANCESTORS" >> "$TERM_ENV_FILE"
+            fi
+        fi
+    fi
+    set_env WEBAPP_TERMINAL_ORIGIN "$TERM_PUBLIC_ORIGIN"
+    if [ "$TERM_INSTALLED" -eq 1 ]; then
+        systemctl try-restart stacksentry-terminal >/dev/null 2>&1 || true
+    fi
 
     cat > /etc/systemd/system/stacksentry-webapp.service <<EOF
 [Unit]

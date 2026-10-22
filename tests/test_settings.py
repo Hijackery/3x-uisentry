@@ -214,3 +214,10 @@ def test_enabled_webapp_with_public_origin_is_valid(tmp_path: Path) -> None:
     )
     assert settings.webapp_enabled is True
     assert settings.webapp_public_origin == "https://sentry.example.com"
+
+
+def test_webapp_terminal_origin_requires_https(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="WEBAPP_TERMINAL_ORIGIN"):
+        load_settings(
+            write_env(tmp_path, WEBAPP_TERMINAL_ORIGIN="http://term.example.com")
+        )
