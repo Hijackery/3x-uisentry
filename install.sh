@@ -2961,6 +2961,20 @@ else
     check_fail "Конфигурация не проходит проверку — откройте $ENV_FILE редактором (содержимое содержит токены: не пересылайте его третьим лицам)"
 fi
 
+# 2FA обязательна, если от неё не отказались явно через --no-2fa. Так
+# пропущенный или прерванный мастер не остаётся незамеченным.
+_2fa_required_check="$(env_get TOTP_REQUIRED)"
+_2fa_secret_check="$(env_get TOTP_SECRET)"
+if [ "$_2fa_required_check" = "1" ] && [ -n "$_2fa_secret_check" ]; then
+    check_ok "2FA включена: Mini App и опасные действия требуют TOTP"
+elif [ "$_2fa_required_check" = "1" ]; then
+    check_fail "2FA включена, но TOTP_SECRET пуст — выполните: sudo bash ${PREFIX}/install.sh --2fa"
+elif [ "$DISABLE_2FA" -eq 1 ]; then
+    check_ok "2FA отключена явно (--no-2fa)"
+else
+    check_fail "2FA не настроена — выполните: sudo bash ${PREFIX}/install.sh --2fa"
+fi
+
 TG_TOKEN_VALUE="$(env_get TELEGRAM_BOT_TOKEN)"
 TG_API_URL_VALUE="$(env_get TELEGRAM_API_URL)"
 [ -n "$TG_API_URL_VALUE" ] || TG_API_URL_VALUE="https://api.telegram.org"
@@ -3122,12 +3136,12 @@ cat <<EOF
     • после правки конфига: systemctl restart ${SERVICE_NAME}
 
   Обновление бота:
-    sudo bash install.sh --prefix ${PREFIX}
+    sudo bash ${PREFIX}/install.sh --prefix ${PREFIX}
   Меню настроек:
     sudo stacksentry-menu            # правки настроек, рестарт, журнал, обновление
 
   Удаление бота:
-    sudo bash install.sh --uninstall
+    sudo bash ${PREFIX}/install.sh --uninstall
 
 EOF
 # ------------------------------------------------ инструкция для @BotFather

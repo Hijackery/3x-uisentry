@@ -82,7 +82,7 @@ MENU_ROWS=(
     "s|"
     "g|Безопасность и доступ"
     "25|Проверить обновления StackSentry"
-    "26|Показать TOTP-секрет и otpauth (2FA)"
+    "26|Показать TOTP-секрет / настроить 2FA"
     "27|Статус Mini App и адрес для /setdomain"
     "s|"
     "28|Удалить бота"
@@ -546,8 +546,14 @@ cmd_totp() {
     secret="$(sed -n 's/^TOTP_SECRET=//p' "$ENV_FILE" | head -1)"
     required="$(sed -n 's/^TOTP_REQUIRED=//p' "$ENV_FILE" | head -1)"
     if [ -z "$secret" ]; then
-        info "TOTP_SECRET пуст. Включить: sudo bash install.sh --2fa"
-        return 0
+        local installer="$PREFIX/install.sh"
+        if [ ! -f "$installer" ]; then
+            info "2FA не настроена, установщик не найден: $installer"
+            return 1
+        fi
+        info "2FA не настроена — запускаю мастер настройки."
+        bash "$installer" --2fa
+        return $?
     fi
     printf 'TOTP_REQUIRED=%s\n' "${required:-0}"
     printf 'TOTP secret: %s\n' "$secret"
@@ -577,7 +583,7 @@ cmd_webapp() {
     fi
     if [ "${enabled:-0}" != "1" ] || [ -z "$origin" ]; then
         info "Кнопок Mini App не будет: нужны WEBAPP_ENABLED=1 и HTTPS-адрес."
-        info "Включить автоматически: sudo bash install.sh --webapp --no-terminal"
+        info "Включить автоматически: sudo bash $PREFIX/install.sh --webapp --no-terminal"
         info "Или со своим доменом: --webapp-origin https://..."
         return 0
     fi

@@ -682,6 +682,9 @@ def test_installer_supports_2fa() -> None:
     assert "Включить 2FA (TOTP) для входа в Mini App" in text
     assert "2FA ВКЛЮЧЕНА" in text
     assert "verify_totp_code()" in text
+    assert 'bash "$installer" --2fa' in menu
+    assert "2FA не настроена — запускаю мастер настройки." in menu
+    assert "2FA не настроена — выполните: sudo bash ${PREFIX}/install.sh --2fa" in text
     assert "Код подтверждён" in text
     assert "26) cmd_totp" in menu
     assert "27) cmd_webapp" in menu
