@@ -55,6 +55,9 @@ class PanelClient:
             headers={
                 "Authorization": f"Bearer {self.settings.panel_api_token}",
                 "Accept": "application/json",
+                # 3X-UI без этого заголовка отдаёт 404 даже на неверный токен,
+                # из-за чего его не отличить от опечатки в base path.
+                "X-Requested-With": "XMLHttpRequest",
                 "User-Agent": "stacksentry-bot/1.0",
             },
             # Редиректы намеренно не следуем: иначе панель (или прокси перед

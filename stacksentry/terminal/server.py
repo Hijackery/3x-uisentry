@@ -305,7 +305,7 @@ def create_app(settings: TerminalSettings) -> FastAPI:
             f"otpauth://totp/{label}?secret={settings.totp_secret}"
             "&issuer=StackSentry&algorithm=SHA1&digits=6&period=30"
         )
-        svg = segno.make(uri, error="m").svg_inline(scale=5, border=2)
+        svg = segno.make(uri, error="m").svg_inline(scale=5, border=2, omitsize=True)
         return {"secret": settings.totp_secret, "otpauth": uri, "qr_svg": svg}
 
     @app.post("/api/session")

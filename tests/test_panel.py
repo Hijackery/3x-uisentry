@@ -225,3 +225,15 @@ def test_parse_inbound_survives_broken_settings() -> None:
     summary, clients = parse_inbound({"remark": "x", "settings": "{не json"})
     assert clients == []
     assert summary["port"] == 0
+
+
+async def test_session_marks_requests_as_xhr(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """3X-UI иначе маскирует неверный токен под 404."""
+    client = PanelClient(make_settings())
+    session = client._build_session()
+    try:
+        assert session.headers["x-requested-with"] == "XMLHttpRequest"
+    finally:
+        await session.aclose()

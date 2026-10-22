@@ -227,8 +227,8 @@ class AlertEngine:
             )
             if any("404" in item for item in snapshot.warnings):
                 detail += (
-                    "\n→ 404 на inbounds/list обычно значит неверный PANEL_BASE_PATH "
-                    "(webBasePath панели) или адрес панели"
+                    "\n→ 404 на inbounds/list: неверный PANEL_BASE_PATH "
+                    "(webBasePath панели), адрес панели или просроченный токен"
                 )
             findings.append(
                 Finding(

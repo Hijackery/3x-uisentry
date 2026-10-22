@@ -351,6 +351,8 @@ def test_setup_shows_qr_until_first_successful_login(tmp_path) -> None:  # type:
     assert body["secret"] == settings.totp_secret
     assert body["otpauth"].startswith("otpauth://totp/")
     assert "<svg" in body["qr_svg"]
+    assert "viewBox=" in body["qr_svg"]
+    assert 'width="' not in body["qr_svg"]
 
     accepted = client.post(
         "/api/session",
