@@ -645,6 +645,32 @@ def test_log_variant_buttons_are_allowed() -> None:
         assert f'"{key}"' in wrapper, key
 
 
+def test_installer_verifies_first_totp_code(tmp_path: Path) -> None:
+    """Первый код проверяется до сохранения: иначе 2FA можно включить с опечаткой."""
+    import sys
+
+    from stacksentry.totp import totp_code
+
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("verify_totp_code() {")
+    end = script.index("\n}\n", start) + 3
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"SOURCE_DIR={BASE_DIR}\n"
+        f"PYTHON_BIN={sys.executable}\n"
+        f"{script[start:end]}\n"
+        f'verify_totp_code "{secret}" "{totp_code(secret)}"\n'
+        f'if verify_totp_code "{secret}" "000000"; then exit 9; fi\n',
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(probe)], capture_output=True, text=True, timeout=30, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_installer_supports_2fa() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "--2fa" in text
@@ -655,6 +681,8 @@ def test_installer_supports_2fa() -> None:
     assert "TOTP secret" in menu
     assert "Включить 2FA (TOTP) для входа в Mini App" in text
     assert "2FA ВКЛЮЧЕНА" in text
+    assert "verify_totp_code()" in text
+    assert "Код подтверждён" in text
     assert "26) cmd_totp" in menu
     assert "27) cmd_webapp" in menu
     assert "webapp|mini-app|miniapp) cmd_webapp" in menu

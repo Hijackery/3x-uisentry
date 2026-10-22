@@ -138,6 +138,16 @@ fail()  { printf '\n%s✗ %s%s\n' "$RED" "$1" "$RESET" >&2; exit 1; }
 ask()   { printf '      %s' "$1"; }
 section() { printf '\n%s%s%s\n' "$BOLD$BLUE" "$1" "$RESET"; }
 
+# Проверка первого кода TOTP до сохранения секрета: опечатка в приложении
+# иначе обнаруживается только при входе в Mini App.
+verify_totp_code() {
+    PYTHONPATH="$SOURCE_DIR" "$PYTHON_BIN" - "$1" "$2" <<'PY'
+import sys
+from stacksentry.totp import verify_totp
+raise SystemExit(0 if verify_totp(sys.argv[1], sys.argv[2]) else 1)
+PY
+}
+
 # check_ok / check_fail — строки самопроверки в конце установки
 check_ok()   { CHECKS=$((CHECKS + 1)); ok "$1"; }
 check_fail() { CHECKS=$((CHECKS + 1)); FAILURES=$((FAILURES + 1)); bad "$1"; }
@@ -1259,8 +1269,10 @@ else
         set_env TOTP_REQUIRED 0
         info "2FA выключена. Секрет сохранён — включить позже: --2fa."
     elif [ "$ENABLE_2FA" -eq 1 ]; then
+        TOTP_NEW=0
         TOTP_SECRET_VALUE="$(env_get TOTP_SECRET)"
         if [ -z "$TOTP_SECRET_VALUE" ]; then
+            TOTP_NEW=1
             TOTP_SECRET_VALUE="$("$PYTHON_BIN" -c \
                 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
             printf '\n%s+------------------------------------------------------------+%s\n' "$YELLOW" "$RESET"
@@ -1276,6 +1288,28 @@ else
             printf 'otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n\n' "$TOTP_SECRET_VALUE"
         else
             info "2FA уже настроена. Секрет: sudo stacksentry-menu totp"
+        fi
+        if [ "$TOTP_NEW" -eq 1 ] && [ "$INTERACTIVE" -eq 1 ] \
+            && [ "$ASSUME_YES" -eq 0 ]; then
+            _2fa_try=0
+            while [ "$_2fa_try" -lt 3 ]; do
+                ask "Введите 6-значный код из аутентификатора (Enter — пропустить): "
+                read -r _2fa_check <&$READ_FD || _2fa_check=""
+                if [ -z "$_2fa_check" ]; then
+                    warn "Код не проверен — добавьте секрет в аутентификатор вручную."
+                    break
+                fi
+                if verify_totp_code "$TOTP_SECRET_VALUE" "$_2fa_check"; then
+                    ok "Код подтверждён — 2FA работает."
+                    break
+                fi
+                _2fa_try=$((_2fa_try + 1))
+                if [ "$_2fa_try" -lt 3 ]; then
+                    warn "Код не подошёл. Проверьте время на телефоне и попробуйте снова."
+                else
+                    warn "Код не подтверждён — проверьте секрет через меню."
+                fi
+            done
         fi
         set_env TOTP_SECRET "$TOTP_SECRET_VALUE"
         set_env TOTP_REQUIRED 1
