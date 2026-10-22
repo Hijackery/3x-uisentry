@@ -558,7 +558,7 @@ cmd_totp() {
 cmd_webapp() {
     need_root "webapp"
     need_env
-    local enabled origin state
+    local enabled origin state domain
     enabled="$(sed -n 's/^WEBAPP_ENABLED=//p' "$ENV_FILE" | head -1)"
     origin="$(sed -n 's/^WEBAPP_PUBLIC_ORIGIN=//p' "$ENV_FILE" | head -1)"
     printf 'WEBAPP_ENABLED=%s\n' "${enabled:-0}"
@@ -570,14 +570,21 @@ cmd_webapp() {
             state="не работает"
         fi
         printf 'служба stacksentry-webapp: %s\n' "$state"
+        if command -v caddy >/dev/null 2>&1 \
+            && systemctl is-active --quiet caddy 2>/dev/null; then
+            printf 'HTTPS-прокси caddy: работает\n'
+        fi
     fi
     if [ "${enabled:-0}" != "1" ] || [ -z "$origin" ]; then
         info "Кнопок Mini App не будет: нужны WEBAPP_ENABLED=1 и HTTPS-адрес."
-        info "Включить: sudo bash install.sh --webapp --webapp-origin https://..."
+        info "Включить автоматически: sudo bash install.sh --webapp --no-terminal"
+        info "Или со своим доменом: --webapp-origin https://..."
         return 0
     fi
+    domain="${origin#https://}"
+    domain="${domain%%:*}"
     info "После рестарта бота: sudo stacksentry-menu restart"
-    info "Домен в Telegram: @BotFather -> /setdomain ${origin#https://}"
+    info "Домен в Telegram: @BotFather -> /setdomain $domain"
 }
 
 cmd_apt_logs() {

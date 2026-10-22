@@ -663,6 +663,25 @@ def test_installer_supports_2fa() -> None:
     assert "Установить веб-терминал (TOTP + root)?" in text
 
 
+def test_installer_can_enable_https_without_a_domain() -> None:
+    """Mini App должен подниматься из коробки: sslip.io + Caddy + Let's Encrypt."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert "webapp_auto_https()" in text
+    assert "detect_public_ipv4" in text
+    assert ".sslip.io" in text
+    assert "Let's Encrypt" in text
+    assert "$PKG_INSTALL caddy" in text
+    assert "webapp_port_is_free 80" in text
+    assert "webapp_port_is_free 443" in text
+    assert "8443" in text
+    assert "--no-webapp-auto" in text
+    assert '_webapp_domain="${_webapp_domain%%:*}"' in text
+    assert "systemctl disable --now caddy" in text
+    assert "StackSentry Mini App" in text
+    menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
+    assert 'domain="${domain%%:*}"' in menu
+
+
 def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "Флаги должны работать и на уже готовом .env" in text

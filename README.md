@@ -195,8 +195,8 @@ curl -fsSL https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.
 3. адрес панели, `webBasePath` и API-токен (адрес проверяется);
 4. список служб под наблюдением;
 5. необязательный чат для алертов;
-6. публичные HTTPS-адреса Mini App и терминала; Enter — без Telegram-кнопок,
-   доступ только через SSH-туннель.
+6. для Mini App HTTPS настраивается автоматически (`sslip.io` + Caddy); для
+   терминала можно указать свой адрес или оставить SSH-туннель.
 
 Mini App, терминал, root-сессия и 2FA ставятся этой же командой. Отдельный
 `install.sh --terminal ...` после установки не нужен.
@@ -659,17 +659,24 @@ sudo stacksentry-menu apt-logs 100
 Только чтение — никаких действий и секретов в браузере.
 
 ```bash
+# всё автоматически: публичный IP -> <ip>.sslip.io -> Caddy -> Let's Encrypt
+sudo bash install.sh --webapp --no-terminal
+
+# свой домен и готовый TLS-прокси
 sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 ```
 
-Перед включением кнопок:
+При обычной установке домен не нужен: установщик берёт публичный IPv4,
+создаёт бесплатный хост вида `203-0-113-5.sslip.io`, ставит Caddy и выпускает
+сертификат Let's Encrypt. Нужны свободные порты `80` и `443` (если `443` занят,
+например Xray, используется `8443`) и открытый публичный IP. Отключить
+автонастройку: `--no-webapp-auto`.
 
-1. привяжите домен к боту: `@BotFather` → `/setdomain` → домен из
-   `WEBAPP_PUBLIC_ORIGIN` (например, `sentry.example.com`, без `https://`);
-2. поставьте HTTPS-прокси (Caddy/Nginx) перед `127.0.0.1:8787`: адрес из
-   `WEBAPP_PUBLIC_ORIGIN` должен открываться в браузере;
-3. после изменения `.env` перезапустите бота:
-   `sudo systemctl restart stacksentry-bot`.
+После установки остаётся один ручной шаг — привязать **домен** к боту:
+`@BotFather` → `/setdomain` → например, `203-0-113-5.sslip.io` (без `https://`
+и без порта). Затем перезапустите бота: `sudo systemctl restart stacksentry-bot`.
+Если Caddy недоступен в репозитории или порты заняты, установщик честно
+предложит задать свой `--webapp-origin`.
 
 - вход по подписи Telegram (`initData`), без паролей; только администраторы;
 - cookie `HttpOnly`, `SameSite=Strict`, срок 1 час; CSP без сторонних скриптов;
@@ -677,7 +684,7 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
   с TLS; без публичного адреса доступен через
   `ssh -L 8787:127.0.0.1:8787 root@сервер` → `http://127.0.0.1:8787`;
 - кнопки появляются только при `WEBAPP_ENABLED=1` **и** заданном
-  `WEBAPP_PUBLIC_ORIGIN`; установщик с `--webapp-origin` выставляет оба значения.
+  `WEBAPP_PUBLIC_ORIGIN`; установщик выставляет оба значения сам.
   Без публичного адреса Mini App работает только через SSH-туннель, а кнопок в
   Telegram нет;
 - при этих условиях бот добавляет кнопку «Панель» в меню чата (Mini App) и
@@ -873,16 +880,19 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 ```bash
 grep -E '^WEBAPP_(ENABLED|PUBLIC_ORIGIN)=' /opt/stacksentry/.env
 sudo stacksentry-menu webapp
-systemctl status stacksentry-bot stacksentry-webapp
+systemctl status stacksentry-bot stacksentry-webapp caddy
 journalctl -u stacksentry-bot -n 100 --no-pager | grep -i 'Mini App'
 ```
 
 Кнопки появляются только при `WEBAPP_ENABLED=1` и непустом
 `WEBAPP_PUBLIC_ORIGIN` (HTTPS), а inline-кнопка — только у администратора из
-`TELEGRAM_ADMIN_IDS`. Если origin задан, но кнопки нет:
+`TELEGRAM_ADMIN_IDS`. Если origin пустой, переустановите Mini App без домена:
+`sudo bash install.sh --webapp --no-terminal` — установщик поднимет
+`sslip.io` + Caddy автоматически. Если origin задан, но кнопки нет:
 
-- домен должен быть привязан через `@BotFather` → `/setdomain`;
-- публичный адрес должен открываться по HTTPS (проверьте прокси перед
+- домен должен быть привязан через `@BotFather` → `/setdomain`
+  (для `sslip.io` — только хост, без порта);
+- публичный адрес должен открываться по HTTPS (проверьте Caddy/прокси перед
   `127.0.0.1:8787`);
 - перезапустите бота после правки `.env`:
   `sudo systemctl restart stacksentry-bot`;

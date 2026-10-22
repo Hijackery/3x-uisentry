@@ -222,6 +222,8 @@ ROOT_TERMINAL_EXPLICIT=0
 WEBAPP=0
 WEBAPP_EXPLICIT=0
 WEBAPP_ORIGIN_EXPLICIT=0
+WEBAPP_AUTO_HTTPS="${WEBAPP_AUTO_HTTPS:-1}"
+WEBAPP_AUTO_ORIGIN=""
 PANEL_MODE_EXPLICIT=0
 ENABLE_2FA=0
 DISABLE_2FA=0
@@ -271,6 +273,7 @@ ${BOLD}Установка StackSentry${RESET}
   --webapp         поставить read-only Mini App (127.0.0.1:8787)
   --no-webapp      не ставить Mini App (на обновлении оставить как есть)
   --webapp-origin URL  публичный HTTPS-адрес Mini App (для кнопки в Telegram)
+  --no-webapp-auto     не настраивать HTTPS автоматически (sslip.io + Caddy)
   --help           эта справка
 
   При обычной интерактивной установке Mini App, терминал, root-сессия и 2FA
@@ -288,7 +291,7 @@ ${BOLD}English${RESET}
             --terminal · --no-terminal · --root-terminal · --no-root-terminal
             --terminal-origin URL · --2fa · --no-2fa
             --panel · --no-panel · --webapp · --no-webapp · --webapp-origin URL
-            --print-source · --menu · --uninstall · --purge · --no-start
+            --no-webapp-auto · --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
 EOF
@@ -323,6 +326,8 @@ while [ $# -gt 0 ]; do
         --webapp)       WEBAPP=1; WEBAPP_EXPLICIT=1; shift ;;
         --no-webapp)    WEBAPP=0; WEBAPP_EXPLICIT=1; shift ;;
         --webapp-origin) WEBAPP=1; WEBAPP_EXPLICIT=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; WEBAPP_ORIGIN_EXPLICIT=1; shift 2 ;;
+        --no-webapp-auto) WEBAPP_AUTO_HTTPS=0; shift ;;
+        --webapp-auto)  WEBAPP_AUTO_HTTPS=1; shift ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -430,6 +435,19 @@ uninstall() {
         /etc/systemd/system/stacksentry-webapp.service \
         /etc/sudoers.d/stacksentry-terminal \
         /etc/stacksentry/terminal.env /etc/stacksentry/terminal-secrets.env
+    # Caddy мог быть поставлен только ради авто-HTTPS Mini App.
+    if [ -f /etc/caddy/Caddyfile ] \
+        && grep -q 'StackSentry Mini App' /etc/caddy/Caddyfile 2>/dev/null; then
+        if [ -f /etc/caddy/Caddyfile.stacksentry.bak ]; then
+            mv -f /etc/caddy/Caddyfile.stacksentry.bak /etc/caddy/Caddyfile \
+                >/dev/null 2>&1 || true
+        else
+            rm -f /etc/caddy/Caddyfile
+        fi
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl disable --now caddy >/dev/null 2>&1 || true
+        fi
+    fi
     rm -rf /etc/stacksentry /var/lib/stacksentry-term /var/lib/stacksentry-shell
     for _term_user in stacksentry-term stacksentry-shell; do
         if id "$_term_user" >/dev/null 2>&1; then
@@ -2166,6 +2184,211 @@ EOF
 }
 
 
+# ------------------------------------------------------- автоматический HTTPS
+# Если домена нет, Mini App всё равно можно поднять «из коробки»: берём
+# публичный IPv4, строим бесплатный sslip.io-хост и просим Caddy выпустить
+# сертификат Let's Encrypt. Пользователю остаётся только /setdomain.
+
+detect_public_ipv4() {
+    WEBAPP_AUTO_IP=""
+    local url ip
+    for url in \
+        https://api.ipify.org \
+        https://ifconfig.me/ip \
+        https://icanhazip.com
+    do
+        if command -v curl >/dev/null 2>&1; then
+            ip="$(curl -4fsS --max-time 5 "$url" 2>/dev/null | tr -d '[:space:]' || true)"
+        elif command -v wget >/dev/null 2>&1; then
+            ip="$(wget -qO- --timeout=5 "$url" 2>/dev/null | tr -d '[:space:]' || true)"
+        else
+            return 1
+        fi
+        [ -n "$ip" ] || continue
+        if "$PYTHON_BIN" - "$ip" <<'PY' >/dev/null 2>&1
+import ipaddress
+import sys
+
+try:
+    addr = ipaddress.IPv4Address(sys.argv[1])
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if addr.is_global else 1)
+PY
+        then
+            WEBAPP_AUTO_IP="$ip"
+            return 0
+        fi
+    done
+    return 1
+}
+
+webapp_port_is_free() {
+    "$PYTHON_BIN" - "$1" <<'PY'
+import socket
+import sys
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind(("0.0.0.0", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
+webapp_open_firewall() {
+    local port
+    for port in 80 "$1"; do
+        if command -v ufw >/dev/null 2>&1 \
+            && ufw status 2>/dev/null | grep -qi '^Status: active'; then
+            ufw allow "${port}/tcp" >/dev/null 2>&1 || true
+        fi
+        if command -v firewall-cmd >/dev/null 2>&1 \
+            && firewall-cmd --state >/dev/null 2>&1; then
+            firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 || true
+            firewall-cmd --reload >/dev/null 2>&1 || true
+        fi
+    done
+}
+
+webapp_auto_https() {
+    WEBAPP_AUTO_ORIGIN=""
+    local host port origin site caddyfile backup code i
+    local caddy_was_installed=0 install_ok=0
+
+    [ "${WEBAPP_AUTO_HTTPS:-1}" = "0" ] && return 1
+    command -v curl >/dev/null 2>&1 || {
+        warn "Для авто-HTTPS нужен curl — пропускаю"
+        return 1
+    }
+    if ! command -v systemctl >/dev/null 2>&1; then
+        warn "Авто-HTTPS требует systemd — пропускаю"
+        return 1
+    fi
+
+    caddyfile="/etc/caddy/Caddyfile"
+    if command -v caddy >/dev/null 2>&1; then
+        caddy_was_installed=1
+        if ! grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null; then
+            warn "Caddy уже установлен со своей конфигурацией — авто-HTTPS пропущен"
+            return 1
+        fi
+    fi
+
+    if ! detect_public_ipv4; then
+        warn "Не удалось определить публичный IPv4 — авто-HTTPS пропущен"
+        return 1
+    fi
+    host="${WEBAPP_AUTO_IP//./-}.sslip.io"
+
+    if [ "$caddy_was_installed" -eq 0 ]; then
+        if ! webapp_port_is_free 80; then
+            warn "Порт 80 занят — авто-HTTPS пропущен (освободите его или задайте --webapp-origin)"
+            return 1
+        fi
+        if ! webapp_port_is_free 443 && ! webapp_port_is_free 8443; then
+            warn "Порты 443 и 8443 заняты — авто-HTTPS пропущен"
+            return 1
+        fi
+        info "Ставлю Caddy для автоматического HTTPS..."
+        # shellcheck disable=SC2086
+        DEBIAN_FRONTEND=noninteractive $PKG_INSTALL caddy >/dev/null 2>&1 \
+            && install_ok=1
+        if [ "$install_ok" -eq 0 ] && [ -n "$PKG_UPDATE" ]; then
+            # Пакет мог отсутствовать в устаревших списках — обновляем и пробуем ещё раз.
+            # shellcheck disable=SC2086
+            $PKG_UPDATE >/dev/null 2>&1 || true
+            # shellcheck disable=SC2086
+            DEBIAN_FRONTEND=noninteractive $PKG_INSTALL caddy >/dev/null 2>&1 \
+                && install_ok=1
+        fi
+        if [ "$install_ok" -eq 0 ] || ! command -v caddy >/dev/null 2>&1; then
+            warn "Пакет caddy недоступен — установите его вручную или задайте --webapp-origin"
+            return 1
+        fi
+    fi
+
+    if [ "$caddy_was_installed" -eq 1 ] \
+        && grep -q 'https://[^ ]*:8443' "$caddyfile" 2>/dev/null; then
+        # Наш прежний Caddy уже слушает 8443 — не проверяем занятость.
+        port=8443
+    elif [ "$caddy_was_installed" -eq 1 ] \
+        && grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null; then
+        port=443
+    elif webapp_port_is_free 443; then
+        port=443
+    elif webapp_port_is_free 8443; then
+        port=8443
+    else
+        warn "Порты 443 и 8443 заняты — авто-HTTPS пропущен"
+        return 1
+    fi
+
+    if [ "$port" = "443" ]; then
+        site="$host"
+    else
+        site="$host:$port"
+    fi
+    origin="https://$site"
+
+    mkdir -p /etc/caddy
+    backup=""
+    if [ -f "$caddyfile" ]; then
+        backup="${caddyfile}.stacksentry.bak"
+        cp -a "$caddyfile" "$backup" 2>/dev/null || backup=""
+    fi
+    cat > "$caddyfile" <<EOF
+# StackSentry Mini App — generated automatically. Do not edit.
+{
+    auto_https disable_redirects
+}
+
+https://$site {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8787
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+}
+EOF
+    chown root:caddy "$caddyfile" 2>/dev/null || chown root:root "$caddyfile"
+    chmod 644 "$caddyfile"
+    webapp_open_firewall "$port"
+
+    systemctl enable caddy >/dev/null 2>&1 || true
+    systemctl restart caddy >/dev/null 2>&1 || true
+    sleep 2
+    if ! systemctl is-active --quiet caddy; then
+        warn "Caddy не запустился: journalctl -u caddy -n 50"
+        if [ -n "$backup" ]; then
+            cp -a "$backup" "$caddyfile" 2>/dev/null || true
+            systemctl restart caddy >/dev/null 2>&1 || true
+        fi
+        return 1
+    fi
+
+    info "Жду сертификат Let's Encrypt для $host (до 60 секунд)..."
+    i=0
+    while [ "$i" -lt 30 ]; do
+        i=$((i + 1))
+        code="$(curl -4sS --max-time 5 --resolve "$host:$port:127.0.0.1" \
+            -o /dev/null -w '%{http_code}' "$origin/" 2>/dev/null || true)"
+        if [ -n "$code" ] && [ "$code" != "000" ]; then
+            ok "Автоматический HTTPS готов: $origin"
+            WEBAPP_AUTO_ORIGIN="$origin"
+            return 0
+        fi
+        sleep 2
+    done
+
+    warn "Сертификат не получен. Проверьте: journalctl -u caddy -n 50"
+    return 1
+}
+
 # ------------------------------------------------------------- Mini App
 
 install_webapp() {
@@ -2176,6 +2399,10 @@ install_webapp() {
     fi
     if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
         WEBAPP_ORIGIN="$(env_get WEBAPP_PUBLIC_ORIGIN)"
+    fi
+    if [ -z "$WEBAPP_ORIGIN" ] && [ "$WEBAPP_ORIGIN_EXPLICIT" -eq 0 ]; then
+        webapp_auto_https || true
+        [ -n "$WEBAPP_AUTO_ORIGIN" ] && WEBAPP_ORIGIN="$WEBAPP_AUTO_ORIGIN"
     fi
     if [ -z "$WEBAPP_ORIGIN" ] && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         question WEBAPP_ORIGIN \
@@ -2266,9 +2493,14 @@ EOF
         info "Mini App установлен, запуск пропущен (--no-start)"
     fi
     if [ -n "$WEBAPP_ORIGIN" ]; then
+        _webapp_domain="${WEBAPP_ORIGIN#https://}"
+        _webapp_domain="${_webapp_domain%%:*}"
         info "Публичный адрес Mini App: $WEBAPP_ORIGIN"
+        if [ -n "$WEBAPP_AUTO_ORIGIN" ]; then
+            info "HTTPS настроен автоматически: sslip.io + Caddy + Let's Encrypt."
+        fi
         info "Кнопка «Панель» появится в Telegram после перезапуска бота."
-        info "Один раз привяжите домен: @BotFather -> /setdomain ${WEBAPP_ORIGIN#https://}"
+        info "Один раз привяжите домен: @BotFather -> /setdomain $_webapp_domain"
     else
         info "Доступ только локально. С ноутбука:"
         info "  ssh -L 8787:127.0.0.1:8787 root@<сервер>"

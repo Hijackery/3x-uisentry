@@ -195,8 +195,8 @@ What the wizard asks:
 3. the panel address, `webBasePath` and API token (the address is verified);
 4. the services to watch;
 5. an optional alert chat;
-6. public HTTPS addresses for the Mini App and terminal; press Enter to skip
-   Telegram buttons and use an SSH tunnel only.
+6. the Mini App gets HTTPS automatically (`sslip.io` + Caddy); for the terminal
+   you can specify your own address or keep the SSH tunnel.
 
 The Mini App, terminal, root session and 2FA are installed by this same command;
 a separate `install.sh --terminal ...` after installation is not needed.
@@ -654,17 +654,25 @@ A dashboard in Telegram: overview, services, panel, traffic, subscriptions,
 history. Read-only — no actions and no secrets in the browser.
 
 ```bash
+# fully automatic: public IP -> <ip>.sslip.io -> Caddy -> Let's Encrypt
+sudo bash install.sh --webapp --no-terminal
+
+# your own domain and an existing TLS proxy
 sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 ```
 
-Before enabling the buttons:
+A domain is not required for a normal install: the installer detects the public
+IPv4, creates a free host such as `203-0-113-5.sslip.io`, installs Caddy and
+obtains a Let's Encrypt certificate. It needs free ports `80` and `443` (if
+`443` is taken, for example by Xray, it uses `8443`) and a reachable public IP.
+Disable this with `--no-webapp-auto`.
 
-1. bind the domain to the bot: `@BotFather` → `/setdomain` → the domain from
-   `WEBAPP_PUBLIC_ORIGIN` (for example, `sentry.example.com`, without `https://`);
-2. put an HTTPS proxy (Caddy/Nginx) in front of `127.0.0.1:8787`: the
-   `WEBAPP_PUBLIC_ORIGIN` URL must open in a browser;
-3. restart the bot after changing `.env`:
-   `sudo systemctl restart stacksentry-bot`.
+One manual step remains: bind the **domain** to the bot in `@BotFather` →
+`/setdomain` → for example, `203-0-113-5.sslip.io` (without `https://` and
+without the port). Then restart the bot:
+`sudo systemctl restart stacksentry-bot`. If Caddy is unavailable in the
+repositories or the ports are busy, the installer will ask for an explicit
+`--webapp-origin`.
 
 - login via Telegram `initData`, no passwords; administrators only;
 - `HttpOnly` cookie, `SameSite=Strict`, 1-hour TTL; CSP without third-party scripts;
@@ -672,9 +680,9 @@ Before enabling the buttons:
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
 - the buttons appear only with `WEBAPP_ENABLED=1` **and** a non-empty
-  `WEBAPP_PUBLIC_ORIGIN`; the installer with `--webapp-origin` sets both. Without
-  a public origin the Mini App is available only through an SSH tunnel, and there
-  are no Telegram buttons;
+  `WEBAPP_PUBLIC_ORIGIN`; the installer sets both automatically. Without a public
+  origin the Mini App is available only through an SSH tunnel, and there are no
+  Telegram buttons;
 - under these conditions the bot adds a “Panel” chat menu button (Mini App) and
   an inline “📱 Open Mini App” button to the administrator's main menu. “Panel”
   is the menu next to the attachment icon; the inline button lives in the bot
@@ -860,17 +868,20 @@ Check the settings and the log:
 ```bash
 grep -E '^WEBAPP_(ENABLED|PUBLIC_ORIGIN)=' /opt/stacksentry/.env
 sudo stacksentry-menu webapp
-systemctl status stacksentry-bot stacksentry-webapp
+systemctl status stacksentry-bot stacksentry-webapp caddy
 journalctl -u stacksentry-bot -n 100 --no-pager | grep -i 'Mini App'
 ```
 
 The buttons appear only with `WEBAPP_ENABLED=1` and a non-empty
 `WEBAPP_PUBLIC_ORIGIN` (HTTPS), and the inline button is shown only to an
-administrator from `TELEGRAM_ADMIN_IDS`. If the origin is set but there is no
-button:
+administrator from `TELEGRAM_ADMIN_IDS`. If the origin is empty, reinstall the
+Mini App without a domain: `sudo bash install.sh --webapp --no-terminal` — the
+installer sets up `sslip.io` + Caddy automatically. If the origin is set but
+there is no button:
 
-- bind the domain via `@BotFather` → `/setdomain`;
-- the public URL must open over HTTPS (check the proxy in front of
+- bind the domain via `@BotFather` → `/setdomain`
+  (for `sslip.io`, host only, without the port);
+- the public URL must open over HTTPS (check Caddy/proxy in front of
   `127.0.0.1:8787`);
 - restart the bot after editing `.env`:
   `sudo systemctl restart stacksentry-bot`;
