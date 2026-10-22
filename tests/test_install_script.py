@@ -888,3 +888,17 @@ def test_installer_does_not_put_secrets_in_curl_argv() -> None:
     assert '-H "Token: $PANEL_TOKEN"' not in text
     assert '-H "Hiddify-API-Key: $PANEL_TOKEN"' not in text
     assert '--data-urlencode "password=$PANEL_PASSWORD_VALUE"' not in text
+
+
+def test_self_update_works_without_manual_pin() -> None:
+    """Массовой установке не нужен ручной UPDATE_SHA256; пин опционален."""
+    installer = INSTALL_SH.read_text(encoding="utf-8")
+    ctl = (BASE_DIR / "install" / "stacksentry-ctl").read_text(encoding="utf-8")
+    menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
+
+    assert "Обновление без контрольной суммы запрещено" not in installer
+    assert "не задан UPDATE_SHA256" not in ctl
+    assert "не задан UPDATE_SHA256" not in menu
+    assert "unpinned" in ctl
+    assert "Пин SHA256 не задан" in menu
+    assert "--sha256" in ctl and "--sha256" in menu

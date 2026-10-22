@@ -499,15 +499,16 @@ cmd_update() {
 
     local sha ref
     { read -r sha; read -r ref; } < <(read_update_pin) || true
-    [ -n "${sha:-}" ] || die "не задан UPDATE_SHA256 в /etc/stacksentry.conf
-  Добавьте: UPDATE_SHA256=<sha256 архива> и при необходимости UPDATE_REF=<тег>.
-  Обновление без pinned SHA256 запрещено."
     [ -n "${ref:-}" ] || ref="main"
 
-    info "Запускаю установщик (ref=$ref, sha=${sha:0:12}…)"
-    local prefix="$PREFIX"
-    PREFIX="$prefix" bash "$installer" --yes --update \
-        --prefix "$prefix" --ref "$ref" --sha256 "$sha"
+    local -a args=(--yes --update --prefix "$PREFIX" --ref "$ref")
+    if [ -n "${sha:-}" ]; then
+        info "Запускаю установщик (ref=$ref, sha=${sha:0:12}…)"
+        args+=(--sha256 "$sha")
+    else
+        warn "Пин SHA256 не задан — обновляю ref=$ref без проверки хеша."
+    fi
+    PREFIX="$PREFIX" bash "$installer" "${args[@]}"
 }
 
 cmd_uninstall() {

@@ -561,8 +561,12 @@ case "$cmd" in
             *[2367]) die "$installer доступен на запись группе/другим" ;;
         esac
         { read -r _pin_sha; read -r _pin_ref; } < <(update_pin) || true
-        [ -n "${_pin_sha:-}" ] || die "не задан UPDATE_SHA256 в $PREFIX_CONF: обновление без pinned SHA256 запрещено"
-        log "self-update requested ($prefix, ref=$_pin_ref, sha=${_pin_sha:0:12}…)"
+        [ -n "${_pin_ref:-}" ] || _pin_ref="main"
+        if [ -n "${_pin_sha:-}" ]; then
+            log "self-update requested ($prefix, ref=$_pin_ref, sha=${_pin_sha:0:12}…)"
+        else
+            log "self-update requested ($prefix, ref=$_pin_ref, unpinned)"
+        fi
         if command -v systemctl >/dev/null 2>&1 \
             && systemctl is-active --quiet "$unit" 2>/dev/null; then
             echo "Обновление уже выполняется."
@@ -583,14 +587,14 @@ case "$cmd" in
         # Копируем установщик в пустой каталог: иначе он найдёт локальные
         # исходники рядом с собой и «обновит» старую копию вместо main.
         { read -r _pin_sha; read -r _pin_ref; } < <(update_pin) || true
-        [ -n "${_pin_sha:-}" ] || die "не задан UPDATE_SHA256 в $PREFIX_CONF: обновление без pinned SHA256 запрещено"
         [ -n "${_pin_ref:-}" ] || _pin_ref="main"
         tmp="$(mktemp -d)"
         cp -a "$installer" "$tmp/install.sh"
         cd "$tmp"
+        _args=(--yes --update --prefix "$prefix" --ref "$_pin_ref")
+        [ -n "${_pin_sha:-}" ] && _args+=(--sha256 "$_pin_sha")
         rc=0
-        bash "$tmp/install.sh" --yes --update --prefix "$prefix" \
-            --ref "$_pin_ref" --sha256 "$_pin_sha" || rc=$?
+        bash "$tmp/install.sh" "${_args[@]}" || rc=$?
         rm -rf "$tmp"
         exit "$rc"
         ;;
