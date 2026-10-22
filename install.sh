@@ -174,7 +174,7 @@ show_totp_qr() {
 # Mini App и опасных действий бота. Если выключена — секрет удаляется,
 # TOTP не спрашивается нигде.
 configure_2fa() {
-    local current secret enable new_value uri answer attempt
+    local current secret enable uri answer attempt
     current="$(env_get TOTP_REQUIRED)"
     secret="$(env_get TOTP_SECRET)"
 
@@ -182,10 +182,10 @@ configure_2fa() {
         enable=0
     elif [ "$TWOFA_EXPLICIT" -eq 1 ]; then
         enable=1
-    elif [ -n "$secret" ] && [ "$current" != "0" ]; then
+    elif [ -n "$secret" ] && [ "$current" = "1" ]; then
         enable=1
-    elif [ "$current" = "0" ]; then
-        enable=0
+    elif [ -n "$secret" ] && [ -z "$current" ]; then
+        enable=1
     elif [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         ask "Установить 2FA (TOTP) для Mini App и опасных действий? [Y/n] "
         read -r answer <&$READ_FD || answer=""
@@ -193,6 +193,8 @@ configure_2fa() {
             [nNнН]*) enable=0 ;;
             *) enable=1 ;;
         esac
+    elif [ "$current" = "0" ]; then
+        enable=0
     elif [ "$CONFIG_COMPLETE" -eq 1 ]; then
         # Обновление без TTY: не решаем за пользователя молча. Самопроверка
         # попросит явно указать --2fa или --no-2fa.
@@ -214,10 +216,8 @@ configure_2fa() {
         return 0
     fi
 
-    new_value=0
     secret="$(env_get TOTP_SECRET)"
     if [ -z "$secret" ]; then
-        new_value=1
         secret="$("$PYTHON_BIN" -c \
             'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
         printf '\n%s+------------------------------------------------------------+%s\n' "$YELLOW" "$RESET"
@@ -239,8 +239,7 @@ configure_2fa() {
         show_totp_qr "$uri"
     fi
 
-    if [ "$new_value" -eq 1 ] && [ "$INTERACTIVE" -eq 1 ] \
-        && [ "$ASSUME_YES" -eq 0 ]; then
+    if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         attempt=0
         while [ "$attempt" -lt 3 ]; do
             ask "Введите 6-значный код из аутентификатора (Enter — пропустить): "

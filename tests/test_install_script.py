@@ -763,6 +763,22 @@ def test_2fa_enable_generates_secret_and_qr(  # type: ignore[no-untyped-def]
     assert "QR:otpauth://totp/StackSentry:admin?" in result.stdout
 
 
+def test_2fa_disabled_is_offered_again_on_interactive_update(  # type: ignore[no-untyped-def]
+    tmp_path,
+) -> None:
+    result = _run_configure_2fa(
+        tmp_path,
+        "TOTP_REQUIRED=0\n",
+        "DISABLE_2FA=0\nTWOFA_EXPLICIT=0\nINTERACTIVE=1\n"
+        "ASSUME_YES=0\nCONFIG_COMPLETE=1\n",
+        stdin="y\n\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "RESULT_REQUIRED=1" in result.stdout
+    assert "RESULT_SECRET=\n" not in result.stdout
+    assert "QR:otpauth://totp/StackSentry:admin?" in result.stdout
+
+
 def test_installer_supports_2fa() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "--2fa" in text
