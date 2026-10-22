@@ -226,6 +226,7 @@ WEBAPP_ORIGIN_EXPLICIT=0
 WEBAPP_AUTO_HTTPS="${WEBAPP_AUTO_HTTPS:-1}"
 WEBAPP_AUTO_ORIGIN=""
 WEBAPP_AUTO_TERMINAL_ORIGIN=""
+WEBAPP_CADDY_ADOPT=0
 WEBAPP_PREFLIGHT_OK=0
 WEBAPP_PREFLIGHT_IP=""
 WEBAPP_PREFLIGHT_HOST=""
@@ -456,6 +457,7 @@ uninstall() {
         else
             rm -f /etc/caddy/Caddyfile
         fi
+        rm -f /etc/caddy/.stacksentry-managed
         if command -v systemctl >/dev/null 2>&1; then
             systemctl disable --now caddy >/dev/null 2>&1 || true
         fi
@@ -2314,9 +2316,26 @@ webapp_https_preflight() {
     caddyfile="/etc/caddy/Caddyfile"
     if command -v caddy >/dev/null 2>&1; then
         WEBAPP_PREFLIGHT_CADDY_INSTALLED=1
-        if ! grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null; then
-            WEBAPP_PREFLIGHT_REASON="Caddy уже установлен со своей конфигурацией"
-            return 1
+        if [ -f "$caddyfile" ] \
+            && ! grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null \
+            && [ ! -f /etc/caddy/.stacksentry-managed ]; then
+            if [ "$WEBAPP_CADDY_ADOPT" -eq 1 ]; then
+                :
+            elif [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+                warn "Caddy уже установлен, но конфиг не от StackSentry."
+                ask "Заменить конфиг Caddy для StackSentry? Старый сохранится. [y/N] "
+                read -r _caddy_adopt <&$READ_FD || _caddy_adopt=""
+                case "$_caddy_adopt" in
+                    y|Y|yes|да|д) WEBAPP_CADDY_ADOPT=1 ;;
+                    *)
+                        WEBAPP_PREFLIGHT_REASON="Caddy уже установлен со своей конфигурацией"
+                        return 1
+                        ;;
+                esac
+            else
+                WEBAPP_PREFLIGHT_REASON="Caddy уже установлен со своей конфигурацией"
+                return 1
+            fi
         fi
     fi
 
@@ -2567,6 +2586,15 @@ webapp_auto_https() {
         fi
     fi
 
+    if [ "$WEBAPP_PREFLIGHT_CADDY_INSTALLED" -eq 1 ] \
+        && [ -f "$caddyfile" ] \
+        && ! grep -q 'StackSentry Mini App' "$caddyfile" 2>/dev/null \
+        && [ ! -f /etc/caddy/.stacksentry-managed ] \
+        && [ "$WEBAPP_CADDY_ADOPT" -ne 1 ]; then
+        warn "Caddy уже установлен со своей конфигурацией — авто-HTTPS пропущен"
+        return 1
+    fi
+
     mkdir -p /etc/caddy
     backup=""
     if [ -f "$caddyfile" ]; then
@@ -2605,6 +2633,7 @@ EOF
     fi
     chown root:caddy "$caddyfile" 2>/dev/null || chown root:root "$caddyfile"
     chmod 644 "$caddyfile"
+    touch /etc/caddy/.stacksentry-managed
     webapp_open_firewall "$port"
 
     systemctl enable caddy >/dev/null 2>&1 || true

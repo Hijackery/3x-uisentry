@@ -680,6 +680,8 @@ def test_installer_can_enable_https_without_a_domain() -> None:
     assert "--terminal-auto" in text
     assert "/etc/stacksentry/botfather.txt" in text
     assert 'local caddyfile="/etc/caddy/Caddyfile"' in text
+    assert ".stacksentry-managed" in text
+    assert "Заменить конфиг Caddy для StackSentry?" in text
     assert "Без этого шага кнопка Mini App не появится." in text
     assert "Отправьте ровно эту строку" in text
     assert "detect_public_ipv4" in text
