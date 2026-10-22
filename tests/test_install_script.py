@@ -58,12 +58,12 @@ def test_fresh_interactive_install_enables_full_stack() -> None:
     assert 'if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]' in text
     assert '[ ! -f "$ENV_FILE" ]' in text
     assert "TERMINAL_ALLOW_ROOT=1" in text
-    assert "ENABLE_2FA=1" in text
+    assert "configure_2fa" in text
     # На обновлении уже установленные компоненты не теряются без --no-*.
     assert "stacksentry-terminal.service" in text
     assert "env_get WEBAPP_ENABLED" in text
-    # --2fa/полный набор не должен сбрасываться веткой "нет CURRENT_2FA".
-    assert 'elif [ "$ENABLE_2FA" -eq 1 ]; then' in text
+    # --2fa должен иметь приоритет над старым значением в .env.
+    assert "--2fa)          TWOFA_EXPLICIT=1; shift ;;" in text
 
 
 @pytest.mark.skipif(
@@ -671,6 +671,98 @@ def test_installer_verifies_first_totp_code(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def _run_configure_2fa(
+    tmp_path: Path, env_text: str, settings: str, stdin: str = ""
+) -> subprocess.CompletedProcess[str]:
+    import shlex
+    import sys
+
+    script = INSTALL_SH.read_text(encoding="utf-8")
+    start = script.index("configure_2fa() {")
+    end = script.index("\n}\n", start) + 3
+    env_file = tmp_path / ".env"
+    env_file.write_text(env_text, encoding="utf-8")
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        f"ENV_FILE={shlex.quote(str(env_file))}\n"
+        "READ_FD=0\n"
+        f"PYTHON_BIN={shlex.quote(sys.executable)}\n"
+        f"SOURCE_DIR={shlex.quote(str(BASE_DIR))}\n"
+        "PKG_INSTALL=\n"
+        "YELLOW=\nRESET=\nBOLD=\nGREEN=\n"
+        "info(){ printf 'INFO:%s\\n' \"$1\"; }\n"
+        "ok(){ printf 'OK:%s\\n' \"$1\"; }\n"
+        "warn(){ printf 'WARN:%s\\n' \"$1\"; }\n"
+        "ask(){ :; }\n"
+        "show_totp_qr(){ printf 'QR:%s\\n' \"$1\"; }\n"
+        "verify_totp_code(){ return 0; }\n"
+        'env_get(){ sed -n "s/^$1=//p" "$ENV_FILE" | head -1; }\n'
+        'set_env(){ grep -vE "^$1=" "$ENV_FILE" > "$ENV_FILE.tmp" || true; '
+        'printf \'%s=%s\\n\' "$1" "$2" >> "$ENV_FILE.tmp"; '
+        'mv "$ENV_FILE.tmp" "$ENV_FILE"; }\n'
+        f"{script[start:end]}\n"
+        f"{settings}\n"
+        "configure_2fa\n"
+        "printf 'RESULT_REQUIRED=%s\\n' \"$(env_get TOTP_REQUIRED)\"\n"
+        "printf 'RESULT_SECRET=%s\\n' \"$(env_get TOTP_SECRET)\"\n",
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", str(probe)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def test_2fa_disable_removes_secret(  # type: ignore[no-untyped-def]
+    tmp_path,
+) -> None:
+    result = _run_configure_2fa(
+        tmp_path,
+        "TOTP_REQUIRED=1\nTOTP_SECRET=OLD\n",
+        "DISABLE_2FA=1\nTWOFA_EXPLICIT=1\nINTERACTIVE=0\n"
+        "ASSUME_YES=0\nCONFIG_COMPLETE=1\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "RESULT_REQUIRED=0" in result.stdout
+    assert "RESULT_SECRET=\n" in result.stdout
+    assert "2FA отключена" in result.stdout
+
+
+def test_2fa_update_without_choice_stays_undecided(  # type: ignore[no-untyped-def]
+    tmp_path,
+) -> None:
+    result = _run_configure_2fa(
+        tmp_path,
+        "",
+        "DISABLE_2FA=0\nTWOFA_EXPLICIT=0\nINTERACTIVE=0\n"
+        "ASSUME_YES=1\nCONFIG_COMPLETE=1\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "RESULT_REQUIRED=\n" in result.stdout
+    assert "укажите --2fa или --no-2fa" in result.stdout
+
+
+def test_2fa_enable_generates_secret_and_qr(  # type: ignore[no-untyped-def]
+    tmp_path,
+) -> None:
+    result = _run_configure_2fa(
+        tmp_path,
+        "",
+        "DISABLE_2FA=0\nTWOFA_EXPLICIT=1\nINTERACTIVE=1\n"
+        "ASSUME_YES=1\nCONFIG_COMPLETE=1\n",
+    )
+    assert result.returncode == 0, result.stderr
+    assert "RESULT_REQUIRED=1" in result.stdout
+    assert "RESULT_SECRET=\n" not in result.stdout
+    assert "otpauth://totp/StackSentry:admin?" in result.stdout
+    assert "QR:otpauth://totp/StackSentry:admin?" in result.stdout
+
+
 def test_installer_supports_2fa() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
     assert "--2fa" in text
@@ -679,12 +771,16 @@ def test_installer_supports_2fa() -> None:
     menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
     assert "cmd_totp" in menu
     assert "TOTP secret" in menu
-    assert "Включить 2FA (TOTP) для входа в Mini App" in text
+    assert "Установить 2FA (TOTP) для Mini App и опасных действий?" in text
     assert "2FA ВКЛЮЧЕНА" in text
     assert "verify_totp_code()" in text
-    assert 'bash "$installer" --2fa' in menu
-    assert "2FA не настроена — запускаю мастер настройки." in menu
-    assert "2FA не настроена — выполните: sudo bash ${PREFIX}/install.sh --2fa" in text
+    assert "show_totp_qr()" in text
+    assert "show_totp_qr()" in menu
+    assert "2FA отключена — TOTP не используется." in menu
+    assert (
+        "2FA не настроена — выберите: sudo bash ${PREFIX}/install.sh --2fa"
+        " (или --no-2fa)"
+    ) in text
     assert "Код подтверждён" in text
     assert "26) cmd_totp" in menu
     assert "27) cmd_webapp" in menu
@@ -734,7 +830,7 @@ def test_installer_can_enable_https_without_a_domain() -> None:
 
 def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:
     text = INSTALL_SH.read_text(encoding="utf-8")
-    assert "Флаги должны работать и на уже готовом .env" in text
+    assert "Флаги и обязательная проверка 2FA работают и на уже готовом .env" in text
     assert "--no-root-terminal" in text
     assert "_old_totp" in text
     assert "_old_root" in text

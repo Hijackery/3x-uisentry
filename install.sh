@@ -148,6 +148,124 @@ raise SystemExit(0 if verify_totp(sys.argv[1], sys.argv[2]) else 1)
 PY
 }
 
+# Печатает QR для otpauth в терминале. qrencode ставится только когда 2FA
+# действительно включают; без него остаётся рабочий otpauth.
+show_totp_qr() {
+    local uri="$1" kind="UTF8"
+    if ! command -v qrencode >/dev/null 2>&1 && [ -n "$PKG_INSTALL" ]; then
+        info "Ставлю qrencode для QR-кода…"
+        # shellcheck disable=SC2086
+        DEBIAN_FRONTEND=noninteractive $PKG_INSTALL qrencode >/dev/null 2>&1 || true
+    fi
+    if command -v qrencode >/dev/null 2>&1; then
+        if qrencode --help 2>&1 | grep -q 'ANSIUTF8'; then
+            kind="ANSIUTF8"
+        fi
+        printf '\n'
+        qrencode -t "$kind" -m 2 -s 1 -o - "$uri" \
+            || warn "Не удалось нарисовать QR — отсканируйте otpauth вручную."
+        printf '\n'
+    else
+        warn "qrencode не установлен — отсканируйте otpauth вручную."
+    fi
+}
+
+# Опциональная 2FA: выбор пользователя. Если включена — обязательна для
+# Mini App и опасных действий бота. Если выключена — секрет удаляется,
+# TOTP не спрашивается нигде.
+configure_2fa() {
+    local current secret enable new_value uri answer attempt
+    current="$(env_get TOTP_REQUIRED)"
+    secret="$(env_get TOTP_SECRET)"
+
+    if [ "$DISABLE_2FA" -eq 1 ]; then
+        enable=0
+    elif [ "$TWOFA_EXPLICIT" -eq 1 ]; then
+        enable=1
+    elif [ -n "$secret" ] && [ "$current" != "0" ]; then
+        enable=1
+    elif [ "$current" = "0" ]; then
+        enable=0
+    elif [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+        ask "Установить 2FA (TOTP) для Mini App и опасных действий? [Y/n] "
+        read -r answer <&$READ_FD || answer=""
+        case "$answer" in
+            [nNнН]*) enable=0 ;;
+            *) enable=1 ;;
+        esac
+    elif [ "$CONFIG_COMPLETE" -eq 1 ]; then
+        # Обновление без TTY: не решаем за пользователя молча. Самопроверка
+        # попросит явно указать --2fa или --no-2fa.
+        info "2FA не настроена — укажите --2fa или --no-2fa."
+        return 0
+    else
+        enable=0
+    fi
+
+    if [ "$enable" -eq 0 ]; then
+        set_env TOTP_REQUIRED 0
+        set_env TOTP_SECRET ""
+        info "2FA отключена — TOTP не используется."
+        return 0
+    fi
+
+    if [ -n "$secret" ] && [ "$current" = "1" ] && [ "$TWOFA_EXPLICIT" -eq 0 ]; then
+        info "2FA уже включена."
+        return 0
+    fi
+
+    new_value=0
+    secret="$(env_get TOTP_SECRET)"
+    if [ -z "$secret" ]; then
+        new_value=1
+        secret="$("$PYTHON_BIN" -c \
+            'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
+        printf '\n%s+------------------------------------------------------------+%s\n' "$YELLOW" "$RESET"
+        printf '%s| %-58s |%s\n' "$YELLOW" "2FA ВКЛЮЧЕНА — ДОБАВЬТЕ СЕКРЕТ В АУТЕНТИФИКАТОР" "$RESET"
+        printf '+------------------------------------------------------------+\n'
+        printf '| %-58s |\n' "1. Откройте Google Authenticator / Aegis / 1Password."
+        printf '| %-58s |\n' "2. Отсканируйте QR ниже или введите секрет вручную."
+        printf '| %-58s |\n' "3. Код понадобится для Mini App и опасных действий."
+        printf '+------------------------------------------------------------+\n'
+        printf '| %-58s |\n' "TOTP secret:"
+        printf '| %s%s%-58s%s |\n' "$BOLD" "$GREEN" "$secret" "$RESET"
+        printf '+------------------------------------------------------------+\n\n'
+    else
+        info "2FA уже настроена."
+    fi
+    uri="otpauth://totp/StackSentry:admin?secret=${secret}&issuer=StackSentry"
+    printf 'otpauth: %s\n' "$uri"
+    if [ "$INTERACTIVE" -eq 1 ]; then
+        show_totp_qr "$uri"
+    fi
+
+    if [ "$new_value" -eq 1 ] && [ "$INTERACTIVE" -eq 1 ] \
+        && [ "$ASSUME_YES" -eq 0 ]; then
+        attempt=0
+        while [ "$attempt" -lt 3 ]; do
+            ask "Введите 6-значный код из аутентификатора (Enter — пропустить): "
+            read -r answer <&$READ_FD || answer=""
+            if [ -z "$answer" ]; then
+                warn "Код не проверен — добавьте секрет в аутентификатор вручную."
+                break
+            fi
+            if verify_totp_code "$secret" "$answer"; then
+                ok "Код подтверждён — 2FA работает."
+                break
+            fi
+            attempt=$((attempt + 1))
+            if [ "$attempt" -lt 3 ]; then
+                warn "Код не подошёл. Проверьте время на телефоне и попробуйте снова."
+            else
+                warn "Код не подтверждён — проверьте секрет через меню."
+            fi
+        done
+    fi
+    set_env TOTP_SECRET "$secret"
+    set_env TOTP_REQUIRED 1
+    ok "2FA включена: Mini App и опасные действия требуют код"
+}
+
 # check_ok / check_fail — строки самопроверки в конце установки
 check_ok()   { CHECKS=$((CHECKS + 1)); ok "$1"; }
 check_fail() { CHECKS=$((CHECKS + 1)); FAILURES=$((FAILURES + 1)); bad "$1"; }
@@ -246,7 +364,6 @@ WEBAPP_PREFLIGHT_TERMINAL_ORIGIN=""
 WEBAPP_PREFLIGHT_REASON=""
 WEBAPP_PREFLIGHT_CADDY_INSTALLED=0
 PANEL_MODE_EXPLICIT=0
-ENABLE_2FA=0
 DISABLE_2FA=0
 TWOFA_EXPLICIT=0
 PANEL_MODE="auto"
@@ -343,7 +460,7 @@ while [ $# -gt 0 ]; do
         --no-root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
         --terminal-origin) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; TERMINAL_PUBLIC=1; shift 2 ;;
         --terminal-auto) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_PUBLIC=1; shift ;;
-        --2fa)          ENABLE_2FA=1; TWOFA_EXPLICIT=1; shift ;;
+        --2fa)          TWOFA_EXPLICIT=1; shift ;;
         --no-2fa)       DISABLE_2FA=1; TWOFA_EXPLICIT=1; shift ;;
         --panel)        PANEL_MODE=1; PANEL_MODE_EXPLICIT=1; shift ;;
         --no-panel)     PANEL_MODE=0; PANEL_MODE_EXPLICIT=1; shift ;;
@@ -1005,7 +1122,6 @@ if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ] \
     [ "$WEBAPP_EXPLICIT" -eq 0 ] && WEBAPP=1
     [ "$TERMINAL_EXPLICIT" -eq 0 ] && [ "$ROOT_TERMINAL_EXPLICIT" -eq 0 ] \
         && TERMINAL_ALLOW_ROOT=1
-    [ "$DISABLE_2FA" -eq 0 ] && ENABLE_2FA=1
 fi
 
 # Уже установленный бот: предложить недостающие компоненты, а не молча
@@ -1237,87 +1353,7 @@ else
         || fail "ADMIN_IDS должны быть числами через запятую, получено: $ADMIN_IDS"
 
     # --- 2FA: Mini App и опасные действия ---
-    CURRENT_2FA="$(env_get TOTP_REQUIRED)"
-    if [ "$DISABLE_2FA" -eq 1 ]; then
-        ENABLE_2FA=0
-    elif [ "$ENABLE_2FA" -eq 1 ] && [ -z "$CURRENT_2FA" ] \
-        && [ "$TWOFA_EXPLICIT" -eq 0 ] \
-        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        ask "Включить 2FA (TOTP) для входа в Mini App и опасных действий? [Y/n] "
-        read -r _2fa_answer <&$READ_FD || _2fa_answer=""
-        case "$_2fa_answer" in
-            [nNнН]*) ENABLE_2FA=0 ;;
-            *) ENABLE_2FA=1 ;;
-        esac
-    elif [ "$ENABLE_2FA" -eq 1 ]; then
-        : # явный --2fa или неинтерактивная установка
-    elif [ "$ENABLE_2FA" -eq 0 ] && [ -z "$CURRENT_2FA" ] \
-        && [ "$TWOFA_EXPLICIT" -eq 0 ] \
-        && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
-        ask "Включить 2FA (TOTP) для входа в Mini App и опасных действий? [Y/n] "
-        read -r _2fa_answer <&$READ_FD || _2fa_answer=""
-        case "$_2fa_answer" in
-            [nNнН]*) ENABLE_2FA=0 ;;
-            *) ENABLE_2FA=1 ;;
-        esac
-    elif [ -z "$CURRENT_2FA" ]; then
-        ENABLE_2FA=0
-    else
-        [ "$CURRENT_2FA" = "1" ] && ENABLE_2FA=1
-    fi
-    if [ "$DISABLE_2FA" -eq 1 ]; then
-        set_env TOTP_REQUIRED 0
-        info "2FA выключена. Секрет сохранён — включить позже: --2fa."
-    elif [ "$ENABLE_2FA" -eq 1 ]; then
-        TOTP_NEW=0
-        TOTP_SECRET_VALUE="$(env_get TOTP_SECRET)"
-        if [ -z "$TOTP_SECRET_VALUE" ]; then
-            TOTP_NEW=1
-            TOTP_SECRET_VALUE="$("$PYTHON_BIN" -c \
-                'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
-            printf '\n%s+------------------------------------------------------------+%s\n' "$YELLOW" "$RESET"
-            printf '%s| %-58s |%s\n' "$YELLOW" "2FA ВКЛЮЧЕНА — ДОБАВЬТЕ СЕКРЕТ В АУТЕНТИФИКАТОР" "$RESET"
-            printf '+------------------------------------------------------------+\n'
-            printf '| %-58s |\n' "1. Откройте Google Authenticator / Aegis / 1Password."
-            printf '| %-58s |\n' "2. Добавьте аккаунт вручную и введите секрет ниже."
-            printf '| %-58s |\n' "3. Код понадобится для Mini App и опасных действий."
-            printf '+------------------------------------------------------------+\n'
-            printf '| %-58s |\n' "TOTP secret:"
-            printf '| %s%s%-58s%s |\n' "$BOLD" "$GREEN" "$TOTP_SECRET_VALUE" "$RESET"
-            printf '+------------------------------------------------------------+\n\n'
-            printf 'otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n\n' "$TOTP_SECRET_VALUE"
-        else
-            info "2FA уже настроена. Секрет: sudo stacksentry-menu totp"
-        fi
-        if [ "$TOTP_NEW" -eq 1 ] && [ "$INTERACTIVE" -eq 1 ] \
-            && [ "$ASSUME_YES" -eq 0 ]; then
-            _2fa_try=0
-            while [ "$_2fa_try" -lt 3 ]; do
-                ask "Введите 6-значный код из аутентификатора (Enter — пропустить): "
-                read -r _2fa_check <&$READ_FD || _2fa_check=""
-                if [ -z "$_2fa_check" ]; then
-                    warn "Код не проверен — добавьте секрет в аутентификатор вручную."
-                    break
-                fi
-                if verify_totp_code "$TOTP_SECRET_VALUE" "$_2fa_check"; then
-                    ok "Код подтверждён — 2FA работает."
-                    break
-                fi
-                _2fa_try=$((_2fa_try + 1))
-                if [ "$_2fa_try" -lt 3 ]; then
-                    warn "Код не подошёл. Проверьте время на телефоне и попробуйте снова."
-                else
-                    warn "Код не подтверждён — проверьте секрет через меню."
-                fi
-            done
-        fi
-        set_env TOTP_SECRET "$TOTP_SECRET_VALUE"
-        set_env TOTP_REQUIRED 1
-        ok "2FA включена: Mini App и опасные действия требуют код"
-    else
-        set_env TOTP_REQUIRED 0
-        [ -n "$(env_get TOTP_SECRET)" ] || set_env TOTP_SECRET ""
-    fi
+    configure_2fa
 
     # --- API панели: автоопределение типа (3X-UI/Marzban/Remnawave/S-UI/Hiddify) ---
     if [ "$PANEL_MODE" = "auto" ]; then
@@ -1652,25 +1688,10 @@ else
     ok "Конфигурация записана в $ENV_FILE"
 fi
 
-# Флаги должны работать и на уже готовом .env (обычный update).
+# Флаги и обязательная проверка 2FA работают и на уже готовом .env
+# (обычный update): если пункт не настраивался ранее — спросим.
 if [ "$CONFIG_COMPLETE" -eq 1 ]; then
-    if [ "$DISABLE_2FA" -eq 1 ]; then
-        set_env TOTP_REQUIRED 0
-        info "2FA выключена (--no-2fa). Секрет сохранён."
-    fi
-    if [ "$ENABLE_2FA" -eq 1 ]; then
-        _totp_value="$(env_get TOTP_SECRET)"
-        if [ -z "$_totp_value" ]; then
-            _totp_value="$("$PYTHON_BIN" -c \
-                'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')"
-            info "2FA включена. Добавьте секрет в аутентификатор:"
-            printf '        TOTP secret: %s\n' "$_totp_value"
-            printf '        otpauth: otpauth://totp/StackSentry:admin?secret=%s&issuer=StackSentry\n' "$_totp_value"
-        fi
-        set_env TOTP_SECRET "$_totp_value"
-        set_env TOTP_REQUIRED 1
-        ok "2FA включена: Mini App и опасные действия требуют код"
-    fi
+    configure_2fa
     if [ "$PANEL_MODE" = "0" ]; then
         set_env PANEL_URL ""
         set_env PANEL_API_TOKEN ""
@@ -1730,9 +1751,7 @@ step "Копируем бота в $PREFIX"
 
 mkdir -p "$PREFIX"
 if [ "$(readlink -f "$SOURCE_DIR")" = "$(readlink -f "$PREFIX")" ]; then
-    info "Исходники уже в $PREFIX — копирую поверх"
-    cp -a "$SOURCE_DIR/stacksentry/." "$PREFIX/stacksentry/"
-    cp -a "$SOURCE_DIR/install/." "$PREFIX/install/"
+    info "Исходники уже в $PREFIX — копирование не требуется"
 else
     cp -a "$SOURCE_DIR/stacksentry" "$SOURCE_DIR/install" "$PREFIX/"
 fi
@@ -2969,10 +2988,10 @@ if [ "$_2fa_required_check" = "1" ] && [ -n "$_2fa_secret_check" ]; then
     check_ok "2FA включена: Mini App и опасные действия требуют TOTP"
 elif [ "$_2fa_required_check" = "1" ]; then
     check_fail "2FA включена, но TOTP_SECRET пуст — выполните: sudo bash ${PREFIX}/install.sh --2fa"
-elif [ "$DISABLE_2FA" -eq 1 ]; then
-    check_ok "2FA отключена явно (--no-2fa)"
+elif [ "$_2fa_required_check" = "0" ]; then
+    check_ok "2FA отключена — TOTP не требуется"
 else
-    check_fail "2FA не настроена — выполните: sudo bash ${PREFIX}/install.sh --2fa"
+    check_fail "2FA не настроена — выберите: sudo bash ${PREFIX}/install.sh --2fa (или --no-2fa)"
 fi
 
 TG_TOKEN_VALUE="$(env_get TELEGRAM_BOT_TOKEN)"

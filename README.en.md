@@ -191,7 +191,7 @@ so the dialogue works even when the script is piped.
 What the wizard asks:
 
 1. the bot token and admin IDs (the token is verified with Telegram immediately);
-2. 2FA (TOTP) — enabled by default; the code is required for Mini App login and dangerous actions;
+2. 2FA (TOTP) — optional; when enabled, the code is required for Mini App login and dangerous actions; when declined, TOTP is not used;
 3. the panel address, `webBasePath` and API token (the address is verified);
 4. the services to watch;
 5. an optional alert chat;
@@ -767,7 +767,7 @@ TLS in front of `127.0.0.1:8788`.
 
 ## 2FA: Mini App and dangerous actions
 
-The Mini App requires a TOTP code at login. In the bot, viewing state, logs and
+When 2FA is enabled, the Mini App requires a TOTP code at login. In the bot, viewing state, logs and
 subscriptions still needs **no code**; a code is required only where the server
 can be broken (step-up). This is deliberate: otherwise you would have to re-enter
 a code every 15 minutes just to read status.

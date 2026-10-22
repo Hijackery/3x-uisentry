@@ -163,6 +163,21 @@ menu_status_line() {
 ok()   { printf '      %s✓%s %s\n' "$GREEN" "$RESET" "$1"; }
 info() { printf '      %s\n' "$1"; }
 warn() { printf '      %s!%s %s\n' "$YELLOW" "$RESET" "$1"; }
+
+show_totp_qr() {
+    local uri="$1" kind="UTF8"
+    if command -v qrencode >/dev/null 2>&1; then
+        if qrencode --help 2>&1 | grep -q 'ANSIUTF8'; then
+            kind="ANSIUTF8"
+        fi
+        printf '\n'
+        qrencode -t "$kind" -m 2 -s 1 -o - "$uri" \
+            || info "QR не нарисован — отсканируйте otpauth вручную."
+        printf '\n'
+    else
+        info "QR: установите qrencode: sudo apt install qrencode"
+    fi
+}
 die()  { printf '%s✗ %s%s\n' "$RED" "$1" "$RESET" >&2; exit 1; }
 head1(){ printf '\n%s%s%s\n' "$BOLD$BLUE" "$1" "$RESET"; }
 
@@ -546,18 +561,15 @@ cmd_totp() {
     secret="$(sed -n 's/^TOTP_SECRET=//p' "$ENV_FILE" | head -1)"
     required="$(sed -n 's/^TOTP_REQUIRED=//p' "$ENV_FILE" | head -1)"
     if [ -z "$secret" ]; then
-        local installer="$PREFIX/install.sh"
-        if [ ! -f "$installer" ]; then
-            info "2FA не настроена, установщик не найден: $installer"
-            return 1
-        fi
-        info "2FA не настроена — запускаю мастер настройки."
-        bash "$installer" --2fa
-        return $?
+        info "2FA отключена — TOTP не используется."
+        info "Включить: sudo bash $PREFIX/install.sh --2fa"
+        return 0
     fi
     printf 'TOTP_REQUIRED=%s\n' "${required:-0}"
     printf 'TOTP secret: %s\n' "$secret"
-    printf 'otpauth: otpauth://totp/StackSentry:admin?secret=%s&issuer=StackSentry\n' "$secret"
+    local uri="otpauth://totp/StackSentry:admin?secret=${secret}&issuer=StackSentry"
+    printf 'otpauth: %s\n' "$uri"
+    show_totp_qr "$uri"
     info "Код 6 цифр меняется каждые 30 секунд."
 }
 
