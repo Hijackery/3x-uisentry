@@ -30,7 +30,16 @@
       <p class="sub">Обязательный второй фактор: код TOTP защищает вход, даже
         если Telegram-аккаунт администратора скомпрометирован.</p>
 
-      <label for="totp">Код из приложения-аутентификатора</label>
+      <div id="setup" class="setup" hidden>
+        <p class="sub"><strong>Первый вход:</strong> добавьте терминал в
+          приложение-аутентификатор. Это отдельный секрет от входа в Mini App.</p>
+        <div id="setup-qr" class="setup-qr" aria-label="QR-код для TOTP"></div>
+        <p class="hint">Секрет: <code id="setup-secret"></code></p>
+        <p class="hint">После добавления введите 6-значный код ниже. QR больше
+          не будет показываться.</p>
+      </div>
+
+      <label for="totp">Код TOTP терминала</label>
       <input id="totp" inputmode="numeric" autocomplete="one-time-code"
              pattern="[0-9]*" maxlength="6" placeholder="000000" required>
 

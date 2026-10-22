@@ -18,10 +18,13 @@ import pty
 import signal
 import struct
 import termios
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
+import segno
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +56,12 @@ class SessionRequest(BaseModel):
     token: str = Field(default="", max_length=512)
     totp: str = Field(default="", max_length=32)
     root: bool = False
+
+
+class SetupRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    init_data: str = Field(default="", alias="initData", max_length=8192)
 
 
 def _security_headers(
@@ -221,9 +230,35 @@ def create_app(settings: TerminalSettings) -> FastAPI:
     init_replay = ReplayGuard(ttl=360.0, claim=claim)
     sessions: dict[int, WebSocket] = {}
 
+    def enrolled_path() -> Path | None:
+        if settings.totp_enrolled_file:
+            return Path(settings.totp_enrolled_file)
+        # Старые установки: отметка рядом с durable replay DB.
+        if settings.replay_db:
+            return Path(settings.replay_db).with_name("totp-enrolled")
+        return None
+
+    def totp_enrolled() -> bool:
+        path = enrolled_path()
+        return path is not None and path.exists()
+
+    def mark_totp_enrolled() -> None:
+        target = enrolled_path()
+        if target is None:
+            return
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(str(int(time.time())), encoding="utf-8")
+            target.chmod(0o600)
+        except OSError as exc:
+            logger.warning("не удалось сохранить отметку TOTP-настройки: %s", exc)
+
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Any:
-        if request.method == "POST" and request.url.path == "/api/session":
+        if request.method == "POST" and request.url.path in {
+            "/api/session",
+            "/api/setup",
+        }:
             length = request.headers.get("content-length", "")
             if not length.isdigit() or int(length) > MAX_AUTH_BODY:
                 return JSONResponse(
@@ -242,7 +277,36 @@ def create_app(settings: TerminalSettings) -> FastAPI:
             "root": settings.allow_root,
             "ssh": bool(settings.ssh_key),
             "totp": True,
+            "setup": enrolled_path() is not None and not totp_enrolled(),
         }
+
+    @app.post("/api/setup")
+    async def setup(request: Request, body: SetupRequest) -> dict[str, Any]:
+        """Одноразовая выдача QR для терминала после проверки Telegram initData."""
+        client = request.client.host if request.client else "unknown"
+        if not preauth_limiter.allow(client):
+            raise HTTPException(status_code=429, detail="слишком много попыток")
+        origin = request.headers.get("origin", "")
+        if origin and not _origin_allowed(origin, settings):
+            raise HTTPException(status_code=403, detail="чужой Origin")
+        if enrolled_path() is None:
+            raise HTTPException(status_code=404, detail="настройка недоступна")
+        if totp_enrolled():
+            raise HTTPException(status_code=403, detail="TOTP уже настроен")
+        try:
+            user = validate_init_data(body.init_data, settings.bot_token, max_age=120)
+            user_id = int(user["id"])
+        except (AuthError, KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        if user_id not in settings.admin_ids:
+            raise HTTPException(status_code=403, detail="не администратор")
+        label = quote("StackSentry:terminal", safe=":")
+        uri = (
+            f"otpauth://totp/{label}?secret={settings.totp_secret}"
+            "&issuer=StackSentry&algorithm=SHA1&digits=6&period=30"
+        )
+        svg = segno.make(uri, error="m").svg_inline(scale=5, border=2)
+        return {"secret": settings.totp_secret, "otpauth": uri, "qr_svg": svg}
 
     @app.post("/api/session")
     async def session(request: Request, body: SessionRequest) -> dict[str, Any]:
@@ -287,6 +351,7 @@ def create_app(settings: TerminalSettings) -> FastAPI:
                         "initData уже использован — откройте Mini App заново"
                     )
             ticket = tickets.issue(user_id, root=body.root and settings.allow_root)
+            mark_totp_enrolled()
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         logger.info(

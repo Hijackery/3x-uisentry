@@ -76,6 +76,23 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(76, 194, 2
 }
 .error { min-height: 20px; margin: 12px 0 0; color: var(--danger); font-size: 13px; }
 .hint { margin: 16px 0 0; color: var(--muted); font-size: 12px; }
+.setup {
+  margin: 14px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0a1017;
+}
+.setup .sub { margin-bottom: 10px; }
+.setup-qr {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff;
+}
+.setup-qr svg { width: min(240px, 100%); height: auto; display: block; }
+code { color: var(--accent); word-break: break-all; }
 
 .terminal-wrap {
   position: fixed;

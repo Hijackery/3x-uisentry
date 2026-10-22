@@ -341,22 +341,27 @@ is_secret_key() {
 }
 
 cmd_set() {
-    local key value from_stdin=0
+    local key value="" from_stdin=0 have_value=0
     if [ "${1:-}" = "--stdin" ]; then
         from_stdin=1
         key="${2:-}"
     else
         key="${1:-}"
+        if [ "$#" -ge 2 ]; then
+            value="${2:-}"
+            have_value=1
+        fi
     fi
-    value="${3:-}"
     need_root "set"
     need_env
     [ -n "$key" ] || die "set: укажите ключ и значение"
     is_editable "$key" || die "ключ $key менять нельзя (см. stacksentry-menu keys)"
     if [ "$from_stdin" -eq 1 ]; then
         IFS= read -r value || value=""
+        [ -n "$value" ] || die "set: значение не должно быть пустым"
+    elif [ "$have_value" -eq 0 ]; then
+        die "set: укажите ключ и значение"
     fi
-    [ -n "$value" ] || die "set: значение не должно быть пустым"
     # Приводим адрес и путь к каноническому виду: без пробелов и лишних слешей,
     # иначе бот получит «https://host:5580//» и панель ответит 404.
     case "$key" in
@@ -602,6 +607,21 @@ cmd_totp() {
     printf 'otpauth: %s\n' "$uri"
     show_totp_qr "$uri"
     info "Код 6 цифр меняется каждые 30 секунд."
+
+    # Терминал — отдельный сервис и отдельный TOTP-секрет. Частая ошибка:
+    # ввести в терминале код от входа в Mini App — он не подойдёт.
+    local term_secrets="/etc/stacksentry/terminal-secrets.env"
+    if [ -r "$term_secrets" ]; then
+        local term_secret term_uri
+        term_secret="$(sed -n 's/^TERMINAL_TOTP_SECRET=//p' "$term_secrets" | head -1)"
+        if [ -n "$term_secret" ]; then
+            printf '\nТерминал использует ОТДЕЛЬНЫЙ TOTP-секрет:\n'
+            printf 'TERMINAL_TOTP_SECRET: %s\n' "$term_secret"
+            term_uri="otpauth://totp/StackSentry:terminal?secret=${term_secret}&issuer=StackSentry"
+            printf 'otpauth: %s\n' "$term_uri"
+            show_totp_qr "$term_uri"
+        fi
+    fi
 }
 
 cmd_webapp() {

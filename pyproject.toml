@@ -17,7 +17,7 @@ warn_unreachable = true
 
 [[tool.mypy.overrides]]
 # У этих библиотек нет type stubs.
-module = ["psutil", "respx", "dotenv"]
+module = ["psutil", "respx", "dotenv", "segno"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

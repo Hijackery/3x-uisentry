@@ -13,6 +13,9 @@
   const tokenRow = $("token-row");
   const modeEl = $("mode");
   const connEl = $("conn");
+  const setupEl = $("setup");
+  const setupQr = $("setup-qr");
+  const setupSecret = $("setup-secret");
 
   // initData приходит из Telegram (hash) или от родительского Mini App через
   // postMessage. В URL его не оставляем — это одноразовый админ-креденшел.
@@ -33,7 +36,10 @@
     if (!event.data || event.data.type !== "stacksentry-init") return;
     if (parentOrigin && event.origin !== parentOrigin) return;
     initData = String(event.data.initData || "").slice(0, 8192);
-    if (initData) tokenRow.hidden = true;
+    if (initData) {
+      tokenRow.hidden = true;
+      loadSetup();
+    }
   });
 
   let socket = null;
@@ -50,12 +56,31 @@
     connEl.classList.toggle("down", !ok);
   }
 
+  async function loadSetup() {
+    if (!initData || !setupEl) return;
+    try {
+      const response = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData }),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setupQr.innerHTML = String(data.qr_svg || "");
+      setupSecret.textContent = String(data.secret || "");
+      setupEl.hidden = !data.qr_svg;
+    } catch (_) {
+      /* Настройка не критична: обычный вход с уже добавленным кодом работает. */
+    }
+  }
+
   async function loadHealth() {
     try {
       const response = await fetch("/api/health", { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
       if (data.root) rootRow.hidden = false;
+      if (data.setup) await loadSetup();
     } catch (_) {
       /* health не критичен */
     }
@@ -141,6 +166,7 @@
         throw new Error(data.detail || "Не удалось войти.");
       }
       rootSession = Boolean(data.root);
+      if (setupEl) setupEl.hidden = true;
       modeEl.textContent = rootSession ? "root" : "shell";
       modeEl.classList.toggle("root", rootSession);
       startTerminal();

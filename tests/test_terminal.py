@@ -61,6 +61,8 @@ def _settings(tmp_path) -> TerminalSettings:  # type: ignore[no-untyped-def]
                 "TERMINAL_ALLOW_ROOT=1",
                 "TERMINAL_PORT=8788",
                 "TERMINAL_PUBLIC_ORIGIN=https://term.example.com",
+                f"TERMINAL_REPLAY_DB={tmp_path / 'replay.db'}",
+                f"TERMINAL_TOTP_ENROLLED={tmp_path / 'totp-enrolled'}",
             ]
         ),
         encoding="utf-8",
@@ -330,3 +332,43 @@ def test_replay_is_durable_across_app_restarts(tmp_path) -> None:  # type: ignor
     )
     assert second.status_code == 401
     assert "уже использован" in second.text
+
+
+def test_setup_shows_qr_until_first_successful_login(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    settings = _settings(tmp_path)
+    app = create_app(settings)
+    client = TestClient(app)
+
+    health = client.get("/api/health").json()
+    assert health["setup"] is True
+
+    no_auth = client.post("/api/setup", json={"initData": ""})
+    assert no_auth.status_code == 401
+
+    setup = client.post("/api/setup", json={"initData": _init_data()})
+    assert setup.status_code == 200, setup.text
+    body = setup.json()
+    assert body["secret"] == settings.totp_secret
+    assert body["otpauth"].startswith("otpauth://totp/")
+    assert "<svg" in body["qr_svg"]
+
+    accepted = client.post(
+        "/api/session",
+        json={"initData": _init_data(), "totp": totp_code(settings.totp_secret)},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert (tmp_path / "totp-enrolled").exists()
+
+    assert client.get("/api/health").json()["setup"] is False
+    again = TestClient(create_app(settings)).post(
+        "/api/setup", json={"initData": _init_data()}
+    )
+    assert again.status_code == 403
+
+
+def test_setup_rejects_non_admin(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    app = create_app(_settings(tmp_path))
+    response = TestClient(app).post(
+        "/api/setup", json={"initData": _init_data(user_id=99)}
+    )
+    assert response.status_code == 403

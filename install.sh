@@ -2213,6 +2213,8 @@ install_terminal() {
     TERM_ACCESS_TOKEN="${_old_access:-$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(32))')}"
     _old_totp="$(sed -n 's/^TERMINAL_TOTP_SECRET=//p' "$TERM_SECRETS" 2>/dev/null | head -1)"
     TERM_TOTP="${_old_totp:-$("$PYTHON_BIN" -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode().rstrip("="))')}"
+    # Новый секрет — старую отметку «QR уже показан» сбрасываем.
+    [ -n "$_old_totp" ] || rm -f "$TERM_HOME/totp-enrolled"
     if [ "$TERMINAL_ORIGIN_EXPLICIT" -eq 0 ]; then
         TERMINAL_ORIGIN="$(sed -n 's/^TERMINAL_PUBLIC_ORIGIN=//p' "$TERM_ENV" 2>/dev/null | head -1)"
         case "$TERMINAL_ORIGIN" in
@@ -2287,6 +2289,7 @@ TERMINAL_SSH_PORT=22
 TERMINAL_SSH_KNOWN_HOSTS=$TERM_SSH_KNOWN_HOSTS
 TERMINAL_ENV=$TERM_ENV
 TERMINAL_REPLAY_DB=$TERM_HOME/replay.db
+TERMINAL_TOTP_ENROLLED=$TERM_HOME/totp-enrolled
 EOF
     chown root:root "$TERM_ENV"
     chmod 600 "$TERM_ENV"
