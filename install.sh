@@ -2511,7 +2511,8 @@ webapp_auto_https() {
     WEBAPP_AUTO_ORIGIN=""
     WEBAPP_AUTO_TERMINAL_ORIGIN=""
     local host port origin site term_host term_site term_origin
-    local caddyfile backup code i install_ok=0
+    local backup code i install_ok=0
+    local caddyfile="/etc/caddy/Caddyfile"
 
     if [ "$WEBAPP_PREFLIGHT_OK" -ne 1 ]; then
         if ! webapp_https_preflight; then
@@ -3060,21 +3061,39 @@ $BOTFATHER_DOMAIN
 EOF
     chmod 600 "$BOTFATHER_FILE" 2>/dev/null || true
 
-    printf '\n%s%s============================================================%s\n' \
-        "$BOLD" "$YELLOW" "$RESET"
-    printf '%s%s  ВАЖНО: ОДИН РУЧНОЙ ШАГ В TELEGRAM%s\n' "$BOLD" "$YELLOW" "$RESET"
-    printf '%s%s============================================================%s\n\n' \
-        "$BOLD" "$YELLOW" "$RESET"
-    printf '  Без этого шага кнопка Mini App не появится.\n\n'
-    printf '  1. Откройте Telegram.\n'
-    printf '  2. Найдите @BotFather.\n'
-    printf '  3. Отправьте команду: %s/setdomain%s\n' "$BOLD" "$RESET"
-    printf '  4. Выберите бота: %s%s%s\n' "$BOLD" "$BOTFATHER_BOT" "$RESET"
-    printf '  5. Отправьте ровно эту строку:\n\n'
-    printf '       %s%s%s\n\n' "$BOLD" "$GREEN" "$BOTFATHER_DOMAIN"
-    printf '     Без https://, без /, без порта.\n'
-    printf '  6. Если BotFather попросит подтверждение — подтвердите.\n'
-    printf '  7. Вернитесь в терминал.\n\n'
+    "$PY" - "$BOTFATHER_BOT" "$BOTFATHER_DOMAIN" "$WEBAPP_ORIGIN" <<'PY'
+import sys
+
+bot, domain, origin = sys.argv[1:4]
+lines = [
+    "ВАЖНО: ОДИН РУЧНОЙ ШАГ В TELEGRAM",
+    "",
+    "Без этого шага кнопка Mini App не появится.",
+    "",
+    "1. Откройте Telegram.",
+    "2. Найдите @BotFather.",
+    "3. Отправьте команду: /setdomain",
+    f"4. Выберите бота: {bot}",
+    "5. Отправьте ровно эту строку:",
+    "",
+    f"      {domain}",
+    "",
+    "   Без https://, без /, без порта.",
+    "6. Если BotFather попросит подтверждение — подтвердите.",
+    "7. Вернитесь в терминал.",
+]
+width = max(len(line) for line in lines) + 4
+border = "+" + "-" * (width - 2) + "+"
+print()
+print(border)
+for index, line in enumerate(lines):
+    if index == 0:
+        print("| " + line.center(width - 4) + " |")
+    else:
+        print("| " + line.ljust(width - 4) + " |")
+print(border)
+print(f"\nАдрес Mini App: {origin}")
+PY
     info "Эта же инструкция сохранена: $BOTFATHER_FILE"
 
     if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
