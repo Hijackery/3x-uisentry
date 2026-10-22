@@ -55,7 +55,6 @@ from .alerts import AlertEngine
 from .app_commands import CommandMixin
 from .app_constants import (
     ACTION_TITLES,
-    CONFIRM_DESCRIPTIONS,
     CRITICAL_ACTIONS,
     CRITICAL_FRESH_WINDOW,
     HEAVY_COOLDOWN,
@@ -66,6 +65,9 @@ from .app_constants import (
     SNAPSHOT_MAX_AGE,
     TWOFA_PROMPT_TTL,
 )
+from .app_constants import (
+    CONFIRM_DESCRIPTIONS as CONFIRM_DESCRIPTIONS,
+)
 from .app_jobs import JobsMixin
 from .app_utils import (
     _alert_actions as _alert_actions,
@@ -75,13 +77,19 @@ from .app_utils import (
     _message_of,
     _safe_edit,
     _safe_endpoint,
-    _ScrubbingFormatter,
-    _send_with_retry,
-    _split,
     _user_id,
 )
 from .app_utils import (
     _parse_apt_status as _parse_apt_status,
+)
+from .app_utils import (
+    _ScrubbingFormatter as _ScrubbingFormatter,
+)
+from .app_utils import (
+    _send_with_retry as _send_with_retry,
+)
+from .app_utils import (
+    _split as _split,
 )
 from .app_utils import (
     _split_alerts as _split_alerts,
