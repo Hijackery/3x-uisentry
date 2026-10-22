@@ -214,16 +214,18 @@ UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 SUDOERS_PATH="/etc/sudoers.d/${SERVICE_NAME}"
 START_SERVICE=1
 TERMINAL=0
+TERMINAL_EXPLICIT=0
 TERMINAL_ALLOW_ROOT=0
 TERMINAL_ORIGIN=""
 TERMINAL_ORIGIN_EXPLICIT=0
 ROOT_TERMINAL_EXPLICIT=0
+WEBAPP=0
+WEBAPP_EXPLICIT=0
 WEBAPP_ORIGIN_EXPLICIT=0
 PANEL_MODE_EXPLICIT=0
 ENABLE_2FA=0
 DISABLE_2FA=0
 PANEL_MODE="auto"
-WEBAPP=0
 WEBAPP_ORIGIN=""
 INIT="${INIT:-}"
 ASSUME_YES=0
@@ -260,14 +262,19 @@ ${BOLD}Установка StackSentry${RESET}
   --terminal       поставить отдельный веб-терминал (TOTP, только localhost)
   --root-terminal  то же + разрешить root-сессию (sudo -i) через sudoers
   --no-root-terminal  выключить root-сессию, остальное сохранить
+  --no-terminal    не ставить терминал (на обновлении оставить как есть)
   --terminal-origin URL  публичный HTTPS-адрес терминала (иначе SSH-туннель)
   --2fa            включить 2FA (TOTP) для опасных действий
   --no-2fa         выключить 2FA (секрет сохраняется)
   --panel          настроить API панели (по умолчанию — автоопределение)
   --no-panel       не настраивать API панели (только мониторинг служб)
   --webapp         поставить read-only Mini App (127.0.0.1:8787)
+  --no-webapp      не ставить Mini App (на обновлении оставить как есть)
   --webapp-origin URL  публичный HTTPS-адрес Mini App (для кнопки в Telegram)
   --help           эта справка
+
+  При обычной интерактивной установке Mini App, терминал, root-сессия и 2FA
+  включаются по умолчанию — отдельные флаги нужны только для автоматизации.
 
 Переменные окружения (для --yes и unattended-установки):
   REPO, REPO_OWNER, REPO_NAME, REPO_REF, REPO_URL, TARBALL_URL, GIT_URL,
@@ -278,9 +285,9 @@ ${BOLD}English${RESET}
   Install: bash <(curl -Ls .../main/install.sh)
   Options:  --prefix DIR · --user NAME · --repo owner/name · --ref BRANCH
             --tarball URL · --sha256 HASH · --init systemd|openrc|sysv
-            --terminal · --root-terminal · --terminal-origin URL · --2fa · --no-2fa
-            --panel · --no-panel · --webapp · --webapp-origin URL
-            --root-terminal · --no-root-terminal
+            --terminal · --no-terminal · --root-terminal · --no-root-terminal
+            --terminal-origin URL · --2fa · --no-2fa
+            --panel · --no-panel · --webapp · --no-webapp · --webapp-origin URL
             --print-source · --menu · --uninstall · --purge · --no-start
             --force-config · --yes · --help
   Docs:     README.en.md (English) · README.md (Русский)
@@ -304,16 +311,18 @@ while [ $# -gt 0 ]; do
         --force-config) KEEP_CONFIG=0; shift ;;
         --no-start)     START_SERVICE=0; shift ;;
         --init)         INIT="${2:?--init требует systemd|openrc|sysv}"; shift 2 ;;
-        --terminal)     TERMINAL=1; shift ;;
-        --root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=1; ROOT_TERMINAL_EXPLICIT=1; shift ;;
-        --no-root-terminal) TERMINAL=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
-        --terminal-origin) TERMINAL=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; shift 2 ;;
+        --terminal)     TERMINAL=1; TERMINAL_EXPLICIT=1; shift ;;
+        --no-terminal)  TERMINAL=0; TERMINAL_EXPLICIT=1; shift ;;
+        --root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=1; ROOT_TERMINAL_EXPLICIT=1; shift ;;
+        --no-root-terminal) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ALLOW_ROOT=0; ROOT_TERMINAL_EXPLICIT=1; shift ;;
+        --terminal-origin) TERMINAL=1; TERMINAL_EXPLICIT=1; TERMINAL_ORIGIN="${2:?--terminal-origin требует URL}"; TERMINAL_ORIGIN_EXPLICIT=1; shift 2 ;;
         --2fa)          ENABLE_2FA=1; shift ;;
         --no-2fa)       DISABLE_2FA=1; shift ;;
         --panel)        PANEL_MODE=1; PANEL_MODE_EXPLICIT=1; shift ;;
         --no-panel)     PANEL_MODE=0; PANEL_MODE_EXPLICIT=1; shift ;;
-        --webapp)       WEBAPP=1; shift ;;
-        --webapp-origin) WEBAPP=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; WEBAPP_ORIGIN_EXPLICIT=1; shift 2 ;;
+        --webapp)       WEBAPP=1; WEBAPP_EXPLICIT=1; shift ;;
+        --no-webapp)    WEBAPP=0; WEBAPP_EXPLICIT=1; shift ;;
+        --webapp-origin) WEBAPP=1; WEBAPP_EXPLICIT=1; WEBAPP_ORIGIN="${2:?--webapp-origin требует URL}"; WEBAPP_ORIGIN_EXPLICIT=1; shift 2 ;;
         --help|-h)      usage; exit 0 ;;
         *) fail "Неизвестная опция: $1 (см. --help)" ;;
     esac
@@ -934,6 +943,28 @@ set_env() {
     chmod 640 "$ENV_FILE" 2>/dev/null || true
 }
 
+# Обновление не должно молча терять уже установленные компоненты.
+if [ "$TERMINAL_EXPLICIT" -eq 0 ] \
+    && [ -f /etc/systemd/system/stacksentry-terminal.service ]; then
+    TERMINAL=1
+fi
+if [ "$WEBAPP_EXPLICIT" -eq 0 ] \
+    && { [ -f /etc/systemd/system/stacksentry-webapp.service ] \
+        || [ "$(env_get WEBAPP_ENABLED)" = "1" ]; }; then
+    WEBAPP=1
+fi
+
+# Свежая обычная установка: полный набор сразу, без отдельных флагов.
+# Явные --no-terminal/--no-webapp/--no-root-terminal/--no-2fa это отключают.
+if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ] \
+    && [ ! -f "$ENV_FILE" ]; then
+    [ "$TERMINAL_EXPLICIT" -eq 0 ] && TERMINAL=1
+    [ "$WEBAPP_EXPLICIT" -eq 0 ] && WEBAPP=1
+    [ "$TERMINAL_EXPLICIT" -eq 0 ] && [ "$ROOT_TERMINAL_EXPLICIT" -eq 0 ] \
+        && TERMINAL_ALLOW_ROOT=1
+    [ "$DISABLE_2FA" -eq 0 ] && ENABLE_2FA=1
+fi
+
 question() {
     # question ПЕРЕМЕННАЯ "подсказка" "значение по умолчанию"
     local __var="$1" __prompt="$2" __default="$3" __answer=""
@@ -1144,6 +1175,8 @@ else
     CURRENT_2FA="$(env_get TOTP_REQUIRED)"
     if [ "$DISABLE_2FA" -eq 1 ]; then
         ENABLE_2FA=0
+    elif [ "$ENABLE_2FA" -eq 1 ]; then
+        : # явный --2fa или полный набор по умолчанию
     elif [ "$ENABLE_2FA" -eq 0 ] && [ -z "$CURRENT_2FA" ] \
         && [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
         ask "Включить 2FA (TOTP) для опасных действий? [y/N] "
@@ -2213,6 +2246,7 @@ EOF
     if [ -n "$WEBAPP_ORIGIN" ]; then
         info "Публичный адрес Mini App: $WEBAPP_ORIGIN"
         info "Кнопка «Панель» появится в Telegram после перезапуска бота."
+        info "Один раз привяжите домен: @BotFather -> /setdomain ${WEBAPP_ORIGIN#https://}"
     else
         info "Доступ только локально. С ноутбука:"
         info "  ssh -L 8787:127.0.0.1:8787 root@<сервер>"

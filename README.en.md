@@ -191,9 +191,15 @@ so the dialogue works even when the script is piped.
 What the wizard asks:
 
 1. the bot token and admin IDs (the token is verified with Telegram immediately);
-2. the panel address, `webBasePath` and API token (the address is verified);
-3. the services to watch;
-4. an optional alert chat.
+2. 2FA (TOTP) — enabled by default;
+3. the panel address, `webBasePath` and API token (the address is verified);
+4. the services to watch;
+5. an optional alert chat;
+6. public HTTPS addresses for the Mini App and terminal; press Enter to skip
+   Telegram buttons and use an SSH tunnel only.
+
+The Mini App, terminal, root session and 2FA are installed by this same command;
+a separate `install.sh --terminal ...` after installation is not needed.
 
 ### 3. After installation
 
@@ -204,15 +210,20 @@ systemctl status stacksentry-bot
 
 Open the bot in Telegram, press `/start` → `/status`. If something is wrong, the
 bot tells you what exactly. `/version` shows the version, OS, package manager and
-selected panel; `/stack` shows what was found on the server. With the Mini App
-installed, a “Panel” button appears next to the attachment icon and an inline
-“📱 Open Mini App” button appears in the main menu.
+selected panel; `/stack` shows what was found on the server. The Mini App and
+terminal are already installed: if you provided public HTTPS addresses during
+installation, a “Panel” button appears next to the attachment icon, and the main
+menu gets an inline “📱 Open Mini App” button and a “Terminal” tab. Only one
+manual step remains: bind the domain once via `@BotFather` → `/setdomain`
+(without `https://`). This is a Telegram requirement; there is no API for it.
 
 ### Unattended install
 
 For automation and re-installs: `--yes` asks no questions and takes values from
 the environment or an existing `.env`. A complete `.env` is kept as is; you can
-provide the missing values in advance.
+provide the missing values in advance. Enable the full set explicitly in
+unattended mode:
+`--webapp --webapp-origin https://... --terminal --root-terminal --terminal-origin https://...`.
 
 ```bash
 sudo env \
@@ -671,13 +682,15 @@ Before enabling the buttons:
 - if the panel API is not configured, the dashboard shows services/VPN/hardware
   and honestly says inbounds/subscriptions are unavailable.
 
-### Terminal (optional)
+### Terminal (installed by the normal setup)
 
 A full browser shell — a separate service, openable standalone or embedded as a
-tab inside the Mini App:
+tab inside the Mini App. The normal interactive install already sets it up with
+the root session and the Mini App tab; a separate command is only needed for
+reconfiguration or automation:
 
 ```bash
-sudo bash install.sh --terminal              # shell as stacksentry-term
+sudo bash install.sh --terminal              # terminal only, no root
 sudo bash install.sh --root-terminal         # + root session (sudo -i)
 sudo bash install.sh --terminal --terminal-origin https://term.example.com
 ```
@@ -699,12 +712,16 @@ What happens:
   systemd injects them, the service user never reads the file;
 - the normal shell runs as a separate `stacksentry-shell` user **without sudo**;
   a root session uses only the exact
-  `stacksentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule (`--root-terminal`);
+  `stacksentry-term ALL=(root) NOPASSWD: /bin/bash -l` rule. It is enabled in the
+  normal setup; disable it with `--no-root-terminal`;
 - terminal secrets (TOTP, tickets, access token, bot token) are **not passed**
   to the PTY: the shell gets only PATH/TERM/LANG/HOME/USER;
 - the “Terminal” tab inside the Mini App appears when `WEBAPP_TERMINAL_ORIGIN`
   is set; the installer takes it from `--terminal-origin`. The terminal opens in
   an iframe, initData is passed via the hash, but TOTP is still requested separately.
+
+Need only the bot without the extra services? Disable them at install time:
+`--no-webapp`, `--no-terminal`, `--no-root-terminal`, `--no-2fa`.
 
 Default access is local/SSH tunnel only:
 

@@ -44,9 +44,26 @@ def test_help_lists_install_options_and_exits_zero() -> None:
         "--uninstall",
         "--purge",
         "--keep-state",
+        "--no-terminal",
+        "--no-webapp",
+        "--no-root-terminal",
         "TARBALL_URL",
     ):
         assert fragment in result.stdout, fragment
+
+
+def test_fresh_interactive_install_enables_full_stack() -> None:
+    """Обычная установка не должна требовать второй команды для Mini App/терминала."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]' in text
+    assert '[ ! -f "$ENV_FILE" ]' in text
+    assert "TERMINAL_ALLOW_ROOT=1" in text
+    assert "ENABLE_2FA=1" in text
+    # На обновлении уже установленные компоненты не теряются без --no-*.
+    assert "stacksentry-terminal.service" in text
+    assert "env_get WEBAPP_ENABLED" in text
+    # --2fa/полный набор не должен сбрасываться веткой "нет CURRENT_2FA".
+    assert 'elif [ "$ENABLE_2FA" -eq 1 ]; then' in text
 
 
 @pytest.mark.skipif(
