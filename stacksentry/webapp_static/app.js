@@ -13,6 +13,7 @@
   const BASE_TABS = [
     ["overview", "Обзор"], ["services", "Службы"], ["panel", "Панель"],
     ["traffic", "Трафик"], ["subs", "Подписки"], ["history", "История"],
+    ["help", "Помощь"],
   ];
 
   const state = {
@@ -283,6 +284,22 @@
       </section>`,
       panelPreview(),
     ].filter(Boolean).join("");
+  }
+
+  function renderHelp() {
+    const cards = [
+      ["Обзор", "Вердикт по серверу, CPU/RAM/диск, клиенты и трафик. Данные обновляются автоматически; кнопка «Обновить» перезапрашивает снимок."],
+      ["Службы", "Статус systemd-служб и панели. Если служба не работает — откройте её в боте и посмотрите журнал."],
+      ["Панель", "Доступность API панели, версия и состояние xray. Если API не настроен, раздел честно скажет об этом."],
+      ["Трафик и подписки", "Inbound'ы, клиенты, остаток трафика и сроки подписок. В «Подписках» есть поиск и сортировка."],
+      ["История", "Средние CPU/RAM/диска за 24 часа или 7 дней."],
+      ["Терминал", "Появляется, только если включён веб-терминал. Это отдельная сессия со своим TOTP; при первом открытии введите код."],
+      ["2FA", "Если 2FA включена при установке, вход в Mini App требует 6-значный код, а опасные действия в боте — подтверждение. Если 2FA выключена, TOTP не запрашивается нигде. Секрет и QR: <code>sudo stacksentry-menu totp</code>."],
+      ["Бот", "Команды: <code>/status</code>, <code>/subs</code>, <code>/traffic</code>, <code>/history</code>, <code>/maint</code>, <code>/help</code>. Опасные действия — только в личке администратора."],
+      ["Обновление", "Проверка обновлений — в боте «Обслуживание» или <code>sudo stacksentry-menu update-check</code>; установка — <code>sudo stacksentry-menu update</code>."],
+    ];
+    return renderHero("ok", "Помощь", "Короткая инструкция по разделам Mini App и боту.") +
+      cards.map(([title, text]) => `<section class="card"><div class="card-head"><h2>${title}</h2></div><p class="hint">${text}</p></section>`).join("");
   }
 
   function renderServices() {
@@ -667,6 +684,7 @@
     else if (state.active === "panel") view.innerHTML = renderPanel();
     else if (state.active === "traffic") view.innerHTML = renderTraffic();
     else if (state.active === "subs") renderSubs();
+    else if (state.active === "help") view.innerHTML = renderHelp();
     else if (state.active === "history") {
       view.innerHTML = renderHistoryShell();
       await loadHistory();
@@ -747,7 +765,7 @@
     $("tabs").innerHTML = "";
     setStatus("warn", "нужен вход");
     const help = showTotp
-      ? `<p class="hint">Код выдаёт приложение-аутентификатор. Секрет можно посмотреть командой <code>sudo stacksentry-menu totp</code>.</p>`
+      ? `<p class="hint">Код выдаёт приложение-аутентификатор. Секрет и QR можно посмотреть командой <code>sudo stacksentry-menu totp</code>. Если 2FA выключена, этот экран не появляется.</p>`
       : initData
         ? '<p class="hint">Не удалось подтвердить подпись Telegram. Откройте Mini App заново из бота.</p>'
         : '<p class="hint">Откройте это приложение кнопкой в Telegram — вход по подписи Telegram, без паролей.</p>';

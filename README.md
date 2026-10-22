@@ -1,7 +1,6 @@
 # StackSentry
 
-> Мониторинг VPS, панелей и VPN в Telegram. Рабочее имя продукта — **StackSentry**;
-> технические идентификаторы `stacksentry`/`stacksentry-*` сохранены для совместимости.
+> Мониторинг VPS, панелей и VPN в Telegram.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
@@ -85,7 +84,7 @@ GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
 | **История** | почасовые средние CPU/RAM/диска за сутки — видно, как вёл себя сервер ночью |
 | **Установка** | одна команда, адаптивный мастер по ОС/службам/панели, неинтерактивный режим, самопроверка |
 | **Универсальность** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`; Python 3.10+ |
-| **Mini App** | read-only панель в Telegram: вход по Telegram + TOTP, кнопка «Панель» у скрепки и inline-кнопка в меню |
+| **Mini App** | read-only панель в Telegram: обзор, службы, панель, трафик, подписки, история, терминал и встроенная «Помощь»; вход по Telegram (+ TOTP, если 2FA включена) |
 | **Терминал** | `stacksentry-menu` — настройки, диагностика, рестарт, журнал, обновление; секреты маскируются |
 | **Безопасность** | отдельный непривилегированный пользователь, узкий sudoers, подтверждение и аудит опасных действий |
 
@@ -655,8 +654,10 @@ sudo stacksentry-menu apt-logs 100
 
 ### Mini App (опционально, read-only)
 
-Красивый дашборд в Telegram: обзор, службы, панель, трафик, подписки, история.
-Только чтение — никаких действий и секретов в браузере.
+Красивый дашборд в Telegram: обзор, службы, панель, трафик, подписки, история,
+терминал (если включён) и вкладка «Помощь» с краткой инструкцией по всем
+разделам, 2FA, терминалу и обновлениям. Только чтение — никаких действий и
+секретов в браузере.
 
 ```bash
 # всё автоматически: публичный IP -> <ip>.sslip.io -> Caddy -> Let's Encrypt
@@ -695,7 +696,9 @@ sudo bash install.sh --webapp --webapp-origin https://sentry.example.com
 Если Caddy недоступен в репозитории или порты заняты, установщик покажет
 причину и предложит другой вариант.
 
-- вход по подписи Telegram (`initData`) **и TOTP**, без паролей; только администраторы;
+- вход по подписи Telegram (`initData`), без паролей; только администраторы.
+  Если 2FA включена — дополнительно TOTP-код на новую сессию; если выключена,
+  Mini App не спрашивает код;
 - cookie `HttpOnly`, срок 1 час; при публичном HTTPS — `Secure; SameSite=None` (Telegram Web), локально — `SameSite=Lax`; CSP без сторонних скриптов;
 - сервис `stacksentry-webapp` слушает `127.0.0.1:8787`, наружу — только Caddy/Nginx
   с TLS; без публичного адреса доступен через

@@ -1,7 +1,6 @@
 # StackSentry
 
-> VPS, panel and VPN monitoring in Telegram. The product name is **StackSentry**;
-> the technical `stacksentry`/`stacksentry-*` identifiers are kept for compatibility.
+> VPS, panel and VPN monitoring in Telegram.
 
 [![CI](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml/badge.svg)](https://github.com/Hijackery/stacksentry/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
@@ -86,7 +85,7 @@ matters to Telegram and stays quiet when everything is fine.
 | **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
 | **Install** | one command, an adaptive wizard for OS/services/panel, unattended mode, self-check |
 | **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`; Python 3.10+ |
-| **Mini App** | read-only Telegram dashboard with Telegram + TOTP login: a “Panel” button next to the attachment icon and an inline menu button |
+| **Mini App** | read-only Telegram dashboard: overview, services, panel, traffic, subscriptions, history, terminal and built-in Help; Telegram login (+ TOTP when 2FA is enabled) |
 | **Terminal** | `stacksentry-menu` — settings, diagnostics, restart, log, update; secrets are masked |
 | **Security** | a dedicated unprivileged user, a narrow sudoers list, confirmations and an audit log for risky actions |
 
@@ -651,7 +650,9 @@ group will see them. Commands and buttons still work only in private chat.
 ### Mini App (optional, read-only)
 
 A dashboard in Telegram: overview, services, panel, traffic, subscriptions,
-history. Read-only — no actions and no secrets in the browser.
+history, terminal (when enabled) and a Help tab with a short guide to every
+section, 2FA, the terminal and updates. Read-only — no actions and no secrets in
+the browser.
 
 ```bash
 # fully automatic: public IP -> <ip>.sslip.io -> Caddy -> Let's Encrypt
@@ -691,7 +692,9 @@ without the port). Then restart the bot:
 repositories or the ports are busy, the installer shows the reason and offers
 another option.
 
-- login via Telegram `initData` **and TOTP**, no passwords; administrators only;
+- login via Telegram `initData`, no passwords; administrators only. If 2FA is
+  enabled, an additional TOTP code is required for each new session; if disabled,
+  the Mini App never asks for a code;
 - `HttpOnly` cookie, 1-hour TTL; with public HTTPS — `Secure; SameSite=None` (Telegram Web), locally — `SameSite=Lax`; CSP without third-party scripts;
 - `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use

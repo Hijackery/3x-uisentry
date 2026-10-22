@@ -365,6 +365,9 @@ def test_help_manual_explains_metrics() -> None:
         "Подписки",
         "Что значат цифры",
         "stacksentry-menu",
+        "Mini App",
+        "опционально",
+        "QR",
     ):
         assert marker in text, marker
     assert "/services" in text

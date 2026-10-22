@@ -226,6 +226,18 @@ def test_installer_webapp_flag() -> None:
     assert 'chmod 600 "$TERM_SSH_KEY"' in text
 
 
+def test_mini_app_has_help_tab() -> None:
+    from stacksentry.settings import BASE_DIR
+
+    js = (BASE_DIR / "stacksentry" / "webapp_static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    assert '["help", "Помощь"]' in js
+    assert "function renderHelp()" in js
+    assert 'state.active === "help"' in js
+    assert "Если 2FA выключена, TOTP не запрашивается нигде" in js
+
+
 def test_cookie_flags(make_settings: Callable[..., Settings], storage: Storage) -> None:
     settings = make_settings(webapp_enabled=True, webapp_secret=SECRET)
     app = create_app(
