@@ -2945,6 +2945,9 @@ install_webapp() {
     # член этой группы, но не получает прав на sudo-обёртку или ключи терминала.
     usermod -aG "${SERVICE_GROUP:-$SERVICE_USER}" "$WEBAPP_USER" 2>/dev/null || true
     install -d -m 0750 -o "$WEBAPP_USER" -g "$WEBAPP_GROUP" "$WEBAPP_HOME"
+    # Каталог мог остаться от прерванного запуска/старой раскладки.
+    chown -R "$WEBAPP_USER":"$WEBAPP_GROUP" "$WEBAPP_HOME" 2>/dev/null || true
+    chmod 0750 "$WEBAPP_HOME" 2>/dev/null || true
 
     cat > /etc/systemd/system/stacksentry-webapp.service <<EOF
 [Unit]
@@ -2960,8 +2963,9 @@ SupplementaryGroups=${SERVICE_GROUP:-$SERVICE_USER}
 WorkingDirectory=$PREFIX
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
-# Своя база: веб-слой не пишет в аудит/состояние бота.
-Environment=STATE_PATH=$WEBAPP_HOME/state.db
+# Своя база: веб-слой не пишет в аудит/состояние бота. Не STATE_PATH:
+# он уже занят в .env бота, а EnvironmentFile имеет приоритет над Environment.
+Environment=WEBAPP_STATE_PATH=$WEBAPP_HOME/state.db
 ExecStart=$PREFIX/.venv/bin/uvicorn --factory stacksentry.webapp:create_app_from_env --host 127.0.0.1 --port 8787 --no-access-log
 Restart=on-failure
 RestartSec=5

@@ -11,9 +11,10 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,11 @@ class WebAppConfig:
     @classmethod
     def load(cls, env_file: Path | None = None) -> WebAppConfig:
         settings = load_settings(env_file)
+        # Отдельная база Mini App. Не используем STATE_PATH: он уже задан в
+        # .env для бота, а systemd EnvironmentFile перебивает Environment=.
+        webapp_state = os.getenv("WEBAPP_STATE_PATH", "").strip()
+        if webapp_state:
+            settings = replace(settings, state_path=Path(webapp_state))
         if len(settings.webapp_secret) < 32:
             raise ConfigError("WEBAPP_SECRET: нужен случайный секрет ≥ 32 символов")
         if (

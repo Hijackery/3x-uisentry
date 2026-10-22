@@ -268,3 +268,27 @@ def test_cookie_flags(make_settings: Callable[..., Settings], storage: Storage) 
     secure_cookie = secure_response.headers.get("set-cookie", "").lower()
     assert "secure" in secure_cookie
     assert "samesite=none" in secure_cookie
+
+
+def test_webapp_uses_own_state_path_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env_file = tmp_path / "web.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "TELEGRAM_BOT_TOKEN=123456789:AAtest",
+                "TELEGRAM_ADMIN_IDS=42",
+                "WEBAPP_ENABLED=1",
+                f"WEBAPP_SECRET={SECRET}",
+                "STATE_PATH=/var/lib/stacksentry/state.db",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    own_state = tmp_path / "webapp" / "state.db"
+    monkeypatch.setenv("WEBAPP_STATE_PATH", str(own_state))
+
+    config = WebAppConfig.load(env_file)
+
+    assert config.settings.state_path == own_state

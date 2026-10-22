@@ -871,7 +871,8 @@ def test_webapp_has_separate_user_and_state() -> None:
     assert 'WEBAPP_USER="${WEBAPP_USER:-stacksentry-webapp}"' in text
     assert "User=$WEBAPP_USER" in text
     assert "SupplementaryGroups=${SERVICE_GROUP:-$SERVICE_USER}" in text
-    assert "Environment=STATE_PATH=$WEBAPP_HOME/state.db" in text
+    assert "Environment=WEBAPP_STATE_PATH=$WEBAPP_HOME/state.db" in text
+    assert "Environment=STATE_PATH=$WEBAPP_HOME/state.db" not in text
     assert "ReadWritePaths=$WEBAPP_HOME" in text
     assert 'useradd --system --no-create-home --home-dir "$WEBAPP_HOME"' in text
 
