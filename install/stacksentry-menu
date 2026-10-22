@@ -80,8 +80,12 @@ MENU_ROWS=(
     "23|Перезапустить ядро панели (3X-UI/Marzban/PasarGuard/S-UI)"
     "24|Обновить бота с GitHub"
     "s|"
+    "g|Безопасность и доступ"
     "25|Проверить обновления StackSentry"
-    "26|Удалить бота"
+    "26|Показать TOTP-секрет и otpauth (2FA)"
+    "27|Статус Mini App и адрес для /setdomain"
+    "s|"
+    "28|Удалить бота"
     "0|Выход"
 )
 
@@ -547,7 +551,33 @@ cmd_totp() {
     fi
     printf 'TOTP_REQUIRED=%s\n' "${required:-0}"
     printf 'TOTP secret: %s\n' "$secret"
-    printf 'otpauth: otpauth://totp/3X-UI%%20Sentry:admin?secret=%s&issuer=3X-UI%%20Sentry\n' "$secret"
+    printf 'otpauth: otpauth://totp/StackSentry:admin?secret=%s&issuer=StackSentry\n' "$secret"
+    info "Код 6 цифр меняется каждые 30 секунд."
+}
+
+cmd_webapp() {
+    need_root "webapp"
+    need_env
+    local enabled origin state
+    enabled="$(sed -n 's/^WEBAPP_ENABLED=//p' "$ENV_FILE" | head -1)"
+    origin="$(sed -n 's/^WEBAPP_PUBLIC_ORIGIN=//p' "$ENV_FILE" | head -1)"
+    printf 'WEBAPP_ENABLED=%s\n' "${enabled:-0}"
+    printf 'WEBAPP_PUBLIC_ORIGIN=%s\n' "${origin:-<пусто>}"
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl is-active --quiet stacksentry-webapp 2>/dev/null; then
+            state="работает"
+        else
+            state="не работает"
+        fi
+        printf 'служба stacksentry-webapp: %s\n' "$state"
+    fi
+    if [ "${enabled:-0}" != "1" ] || [ -z "$origin" ]; then
+        info "Кнопок Mini App не будет: нужны WEBAPP_ENABLED=1 и HTTPS-адрес."
+        info "Включить: sudo bash install.sh --webapp --webapp-origin https://..."
+        return 0
+    fi
+    info "После рестарта бота: sudo stacksentry-menu restart"
+    info "Домен в Telegram: @BotFather -> /setdomain ${origin#https://}"
 }
 
 cmd_apt_logs() {
@@ -674,7 +704,9 @@ menu() {
                 ;;
             24) cmd_update ;;
             25) cmd_update_check ;;
-            26)
+            26) cmd_totp ;;
+            27) cmd_webapp ;;
+            28)
                 ask "Удалить бота? Это необратимо, введите yes: "
                 local confirm=""
                 read -r confirm <&$READ_FD || confirm=""
@@ -713,6 +745,7 @@ ${BOLD}stacksentry-menu${RESET} — панель управления StackSentr
   sudo stacksentry-menu restart-xray        перезапустить ядро панели (где поддерживается)
   sudo stacksentry-menu apt-logs [N]        журнал фоновых apt-обновлений
   sudo stacksentry-menu totp               TOTP-секрет и otpauth (только root)
+  sudo stacksentry-menu webapp             статус Mini App и адрес для /setdomain
   sudo stacksentry-menu logs [N]            журнал бота (по умолчанию 50 строк)
   sudo stacksentry-menu update-check        проверить обновления StackSentry
   sudo stacksentry-menu update              обновить бота с GitHub
@@ -733,6 +766,7 @@ ${BOLD}English${RESET}
   sudo stacksentry-menu restart-xray        restart the panel core when supported
   sudo stacksentry-menu apt-logs [N]        log of background apt upgrades
   sudo stacksentry-menu totp               TOTP secret and otpauth (root only)
+  sudo stacksentry-menu webapp             Mini App status and /setdomain address
   sudo stacksentry-menu update-check        check for StackSentry updates
   sudo stacksentry-menu update              update the bot from GitHub
   sudo stacksentry-menu uninstall [--keep-state]  remove the bot (full cleanup by default)
@@ -753,6 +787,7 @@ case "${1:-}" in
     restart-xray) cmd_restart_xray ;;
     apt-logs) cmd_apt_logs "${2:-80}" ;;
     totp) cmd_totp ;;
+    webapp|mini-app|miniapp) cmd_webapp ;;
     logs) cmd_logs "${2:-50}" ;;
     update) cmd_update ;;
     update-check|check-updates) cmd_update_check ;;

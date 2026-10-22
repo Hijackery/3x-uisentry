@@ -859,6 +859,7 @@ Check the settings and the log:
 
 ```bash
 grep -E '^WEBAPP_(ENABLED|PUBLIC_ORIGIN)=' /opt/stacksentry/.env
+sudo stacksentry-menu webapp
 systemctl status stacksentry-bot stacksentry-webapp
 journalctl -u stacksentry-bot -n 100 --no-pager | grep -i 'Mini App'
 ```

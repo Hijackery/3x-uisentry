@@ -414,6 +414,7 @@ def test_apt_status_header_is_parsed() -> None:
 
     fields, tail = _parse_apt_status(
         "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"
+        "PACKAGES=2\nPACKAGE_LIST=curl bash\n"
         "Reading package lists...\nDone"
     )
     assert fields == {
@@ -421,6 +422,8 @@ def test_apt_status_header_is_parsed() -> None:
         "RESULT": "success",
         "EXIT": "0",
         "LOAD": "loaded",
+        "PACKAGES": "2",
+        "PACKAGE_LIST": "curl bash",
     }
     assert tail == "Reading package lists...\nDone"
 

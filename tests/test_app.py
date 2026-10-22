@@ -184,6 +184,63 @@ async def test_apt_watcher_reports_finished_job(
     assert bot_app.storage.list_pending_jobs() == []
 
 
+async def test_apt_watcher_shows_upgradable_packages(
+    bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """apt update: список пакетов должен быть в начале отчёта, а не в хвосте лога."""
+    from stacksentry.models import CommandResult
+
+    job_id = bot_app.storage.add_pending_job(
+        "apt_update", "update", chat_id=1, user_id=ADMIN_ID
+    )
+
+    async def fake_status(_action: str) -> CommandResult:
+        return CommandResult(
+            action="apt_status",
+            command="apt_status update",
+            returncode=0,
+            stdout=(
+                "STATE=inactive\nRESULT=success\nEXIT=0\nLOAD=loaded\n"
+                "PACKAGES=2\nPACKAGE_LIST=docker-compose-plugin ghostscript\n"
+                "Starting stacksentry-apt-update.service...\n"
+                "apt: обновление индексов завершено (код 0)"
+            ),
+            stderr="",
+            duration=0.1,
+        )
+
+    notified: list[tuple[int, str]] = []
+
+    async def fake_notify(chat_id: int, text: str, **_kwargs: object) -> bool:
+        notified.append((chat_id, text))
+        return True
+
+    monkeypatch.setattr(bot_app.actions, "apt_status", fake_status)
+    monkeypatch.setattr(bot_app, "_notify", fake_notify)
+
+    class Job:
+        data = {
+            "job_id": job_id,
+            "action": "apt_update",
+            "chat_id": 1,
+            "user_id": ADMIN_ID,
+            "created_at": 0.0,
+            "attempts": 0,
+            "errors": 0,
+        }
+
+    class Ctx:
+        job = Job()
+
+    await bot_app._job_watch_apt(Ctx())  # type: ignore[arg-type]
+
+    assert notified
+    report = notified[0][1]
+    assert "К обновлению (2)" in report
+    assert "docker-compose-plugin ghostscript" in report
+    assert bot_app.storage.list_pending_jobs() == []
+
+
 async def test_apt_watcher_keeps_polling_while_active(
     bot_app: MonitorBot, monkeypatch: pytest.MonkeyPatch
 ) -> None:

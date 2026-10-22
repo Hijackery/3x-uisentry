@@ -104,7 +104,8 @@ apt_enqueue() {
     local unit="$1" worker="$2" description="$3" log_name="$4" kind="$5"
     local apt_dir="${STATE_DIR:-/var/lib/stacksentry}"
     mkdir -p "$apt_dir" 2>/dev/null || true
-    rm -f "$apt_dir/apt-${kind}.status" 2>/dev/null || true
+    rm -f "$apt_dir/apt-${kind}.status" "$apt_dir/apt-${kind}.packages" \
+        2>/dev/null || true
     # 1) Постоянный юнит (ставится установщиком). Это надёжнее transient-юнита:
     #    systemd-run в daemon-контексте проходит polkit и без терминала падает.
     local service="${unit}.service"
@@ -357,6 +358,8 @@ case "$cmd" in
         require_no_extra_args 0 "$@"
         pkg_backend
         export DEBIAN_FRONTEND=noninteractive
+        rm -f "${STATE_DIR:-/var/lib/stacksentry}/apt-update.packages" \
+            2>/dev/null || true
         rc=0
         case "$PKG_KIND" in
             apt)    apt-get update || rc=$? ;;
@@ -372,10 +375,15 @@ case "$cmd" in
         esac
         if [ "$rc" -eq 0 ] && [ "$PKG_KIND" = "apt" ]; then
             # Показываем не только «индексы обновлены», но и что именно
-            # доступно к обновлению. Одна строка — чтобы не резать отчёт.
+            # доступно к обновлению. Список дублируем в файл: журнал systemd
+            # длинный, и бот раньше обрезал строку с пакетами.
             _pkgs="$(apt list --upgradable 2>/dev/null | sed -n '2,$p' \
                 | cut -d/ -f1 | sed '/^$/d')"
             _count="$(printf '%s\n' "$_pkgs" | sed '/^$/d' | wc -l | tr -d ' ')"
+            _pkg_file="${STATE_DIR:-/var/lib/stacksentry}/apt-update.packages"
+            printf '%s\n%s\n' "${_count:-0}" \
+                "$(printf '%s' "$_pkgs" | tr '\n' ' ' | sed 's/ *$//')" \
+                > "$_pkg_file" 2>/dev/null || true
             if [ "${_count:-0}" -eq 0 ]; then
                 echo "Обновлений нет."
             else
@@ -568,8 +576,16 @@ case "$cmd" in
                 if [ "$_rc" = "0" ]; then result="success"; else result="failed"; fi
             fi
         fi
-        printf 'STATE=%s\nRESULT=%s\nEXIT=%s\nLOAD=%s\n' \
-            "${state:-unknown}" "${result:-unknown}" "${code:-unknown}" "${load:-unknown}"
+        _pkg_file="${STATE_DIR:-/var/lib/stacksentry}/apt-$2.packages"
+        _pkg_count=""
+        _pkg_list=""
+        if [ -f "$_pkg_file" ]; then
+            _pkg_count="$(sed -n '1p' "$_pkg_file" 2>/dev/null || true)"
+            _pkg_list="$(sed -n '2p' "$_pkg_file" 2>/dev/null || true)"
+        fi
+        printf 'STATE=%s\nRESULT=%s\nEXIT=%s\nLOAD=%s\nPACKAGES=%s\nPACKAGE_LIST=%s\n' \
+            "${state:-unknown}" "${result:-unknown}" "${code:-unknown}" \
+            "${load:-unknown}" "${_pkg_count:-}" "${_pkg_list:-}"
         if command -v journalctl >/dev/null 2>&1; then
             journalctl -u "$unit" -n 40 --no-pager -o cat 2>/dev/null || true
         elif [ -f "${STATE_DIR:-/var/lib/stacksentry}/apt-$2.log" ]; then

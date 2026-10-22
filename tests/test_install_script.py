@@ -653,6 +653,14 @@ def test_installer_supports_2fa() -> None:
     menu = (BASE_DIR / "install" / "stacksentry-menu").read_text(encoding="utf-8")
     assert "cmd_totp" in menu
     assert "TOTP secret" in menu
+    assert "26) cmd_totp" in menu
+    assert "27) cmd_webapp" in menu
+    assert "webapp|mini-app|miniapp) cmd_webapp" in menu
+    assert "Показать TOTP-секрет" in menu
+    assert "Статус Mini App" in menu
+    # После обновления существующей установки недостающие компоненты спрашиваем.
+    assert "Установить Mini App (панель в Telegram)?" in text
+    assert "Установить веб-терминал (TOTP + root)?" in text
 
 
 def test_flags_apply_to_complete_env_and_terminal_secrets_preserved() -> None:

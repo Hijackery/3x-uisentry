@@ -965,6 +965,28 @@ if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ] \
     [ "$DISABLE_2FA" -eq 0 ] && ENABLE_2FA=1
 fi
 
+# Уже установленный бот: предложить недостающие компоненты, а не молча
+# оставить Mini App/терминал выключенными после обновления.
+if [ "$INTERACTIVE" -eq 1 ] && [ "$ASSUME_YES" -eq 0 ]; then
+    if [ "$WEBAPP_EXPLICIT" -eq 0 ] && [ "$WEBAPP" -eq 0 ]; then
+        ask "Установить Mini App (панель в Telegram)? [Y/n] "
+        read -r _component_answer <&$READ_FD || _component_answer=""
+        case "$_component_answer" in
+            ""|y|Y|yes|да|д) WEBAPP=1 ;;
+        esac
+    fi
+    if [ "$TERMINAL_EXPLICIT" -eq 0 ] && [ "$TERMINAL" -eq 0 ]; then
+        ask "Установить веб-терминал (TOTP + root)? [Y/n] "
+        read -r _component_answer <&$READ_FD || _component_answer=""
+        case "$_component_answer" in
+            ""|y|Y|yes|да|д)
+                TERMINAL=1
+                [ "$ROOT_TERMINAL_EXPLICIT" -eq 0 ] && TERMINAL_ALLOW_ROOT=1
+                ;;
+        esac
+    fi
+fi
+
 question() {
     # question ПЕРЕМЕННАЯ "подсказка" "значение по умолчанию"
     local __var="$1" __prompt="$2" __default="$3" __answer=""

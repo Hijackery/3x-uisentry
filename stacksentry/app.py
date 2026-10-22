@@ -1699,11 +1699,26 @@ class MonitorBot:
 
         ok = fields.get("RESULT") == "success" and fields.get("EXIT") == "0"
         icon = "✅" if ok else "⚠️"
-        body = tail[-2500:] if tail else "(вывод пуст)"
+        packages_block = ""
+        if action == ACTION_APT_UPDATE:
+            count = fields.get("PACKAGES", "").strip()
+            package_list = fields.get("PACKAGE_LIST", "").strip()
+            if count == "0":
+                packages_block = "📦 <b>Обновлений нет.</b>\n\n"
+            elif count:
+                shown = ui.esc(package_list[:1500])
+                suffix = "…" if len(package_list) > 1500 else ""
+                packages_block = (
+                    f"📦 <b>К обновлению ({ui.esc(count)}):</b>\n"
+                    f"<pre>{shown}{suffix}</pre>\n\n"
+                )
+        # Список пакетов важнее «шума» systemd: при его наличии оставляем
+        # меньше журнала, чтобы сообщение целиком влезло в Telegram.
+        body = tail[-(1200 if packages_block else 2500) :] if tail else "(вывод пуст)"
         text = (
             f"{icon} <b>{ui.esc(ACTION_TITLES.get(action, action))}</b>\n"
             f"код возврата {ui.esc(fields.get('EXIT', 'unknown'))}\n\n"
-            f"<pre>{ui.esc(body)}</pre>"
+            f"{packages_block}<pre>{ui.esc(body)}</pre>"
         )
         if ok and _needs_reboot():
             text += (
@@ -2093,7 +2108,14 @@ def _parse_apt_status(stdout: str) -> tuple[dict[str, str], str]:
     for line in stdout.splitlines():
         if header:
             key, sep, value = line.partition("=")
-            if sep and key in {"STATE", "RESULT", "EXIT", "LOAD"}:
+            if sep and key in {
+                "STATE",
+                "RESULT",
+                "EXIT",
+                "LOAD",
+                "PACKAGES",
+                "PACKAGE_LIST",
+            }:
                 fields[key] = value.strip()
                 continue
             header = False

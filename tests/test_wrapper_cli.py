@@ -317,3 +317,6 @@ def test_apt_update_worker_lists_upgradable_packages() -> None:
     text = WRAPPER.read_text(encoding="utf-8")
     assert "apt list --upgradable" in text
     assert "К обновлению (" in text
+    # Список пишется в отдельный файл: иначе длинный журнал обрезает его.
+    assert "apt-update.packages" in text
+    assert "PACKAGE_LIST=" in text
