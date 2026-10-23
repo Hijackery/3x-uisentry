@@ -1,17 +1,17 @@
 name: Баг-репорт / Bug report
-description: Что-то не работает: установка, бот, уведомления
+description: "Что-то не работает: установка, бот, уведомления"
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
         ⚠️ **Не прикладывайте токены и `.env`.** Токены и Telegram ID заменяйте на `***`.
-        Уязвимости не сюда — см. [SECURITY.md](../security/policy).
+        Уязвимости не сюда, см. [SECURITY.md](../security/policy).
   - type: textarea
     id: what
     attributes:
       label: Что произошло
-      description: Что ожидали и что получили. При сбое установки — последние 20 строк вывода.
+      description: Что ожидали и что получили. При сбое установки приложите последние 20 строк вывода.
     validations:
       required: true
   - type: textarea

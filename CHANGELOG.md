@@ -1,12 +1,12 @@
 # История изменений / Changelog
 
-Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
-GitHub Releases и теги не публикуются: актуальная версия — `main`. Версия
-хранится в `stacksentry/__init__.py`. Обновление — кнопка «Проверить обновления»
+Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
+GitHub Releases и теги не публикуются: актуальная версия в `main`. Версия
+хранится в `stacksentry/__init__.py`. Обновление запускается кнопкой «Проверить обновления»
 в боте, `sudo stacksentry-menu update` (пункт 24) или повторный запуск
-установщика; подробности — в [docs/RELEASING.md](docs/RELEASING.md).
+установщика; подробности в [docs/RELEASING.md](docs/RELEASING.md).
 
-## [1.0.0] — 2026-10-21
+## [1.0.0] (2026-10-21)
 
 Версия 1.0.0 (без отдельного GitHub Release). Включает всё перечисленное ниже в
 разделе `Unreleased`: мониторинг сервера/служб/VPN, восемь API-панелей,
@@ -21,7 +21,7 @@ read-only Mini App и web/root-терминал. Добавлены публич
 - Продукт называется **StackSentry** (панели + VPN + службы + сервер). Технические
   идентификаторы `stacksentry`, `stacksentry-bot`, `stacksentry-menu`, `stacksentry-ctl`
   сохранены для совместимости с уже установленными ботами; полный технический
-  rename — отдельным обновлением с миграцией.
+  rename: отдельным обновлением с миграцией.
 
 ### Переименование
 
@@ -57,7 +57,7 @@ read-only Mini App и web/root-терминал. Добавлены публич
 
 - Адаптация под сервер: установщик определяет ОС, пакетный менеджер, службы и
   тип панели (3X-UI/Marzban/Remnawave/S-UI/Hiddify) и предлагает только
-  подходящие поля — токен либо логин/пароль, с проверкой API. В меню добавлен
+  подходящие поля: токен либо логин/пароль, с проверкой API. В меню добавлен
   пункт «Что найдено на сервере», тип панели и доступы Marzban; рестарт ядра
   выбирает нужный endpoint. Главное меню бота скрывает «Трафик»/«Подписки» без
   API, кнопка рестарта ядра появляется только для поддерживаемых панелей, а
@@ -84,15 +84,15 @@ read-only Mini App и web/root-терминал. Добавлены публич
   `PANEL_URL`/`PANEL_API_TOKEN` можно оставить пустыми (оба сразу), установщик
   сам определяет 3X-UI и спрашивает, настраивать ли API. `--no-panel`/`--panel`.
 
-- 2FA (TOTP) для опасных действий бота: step-up — просмотр без кода, рестарты и
+- 2FA (TOTP) для опасных действий бота: step-up означает просмотр без кода, рестарты и
   apt update после кода с разблокировкой на 15 минут, обновления ОС и
-  перезагрузка — только со свежим кодом. Код одноразовый, 3 попытки, блокировка
+  перезагрузка только со свежим кодом. Код одноразовый, 3 попытки, блокировка
   на 5 минут, аудит; сообщение с кодом удаляется. Установщик спрашивает и
   печатает otpauth; `sudo stacksentry-menu totp` показывает секрет.
 
 - Обновления в боте разделены и отчитываются в чат: `apt update`, `full-upgrade`,
   `phased`, проверка релиза (`do-release-upgrade --check`) и запуск
-  `do-release-upgrade` — отдельные пункты. Бот сам следит за systemd-юнитом и
+  `do-release-upgrade`: отдельные пункты. Бот сам следит за systemd-юнитом и
   присылает код возврата и хвост журнала; состояние задачи переживает рестарт
   бота (SQLite).
 - Команду сервера можно прислать в любом разделе (или `/run <команда>`): бот
@@ -100,9 +100,9 @@ read-only Mini App и web/root-терминал. Добавлены публич
 - Новый экран `/traffic` (раньше была только кнопка).
 - Меню больше не копятся: при переходе предыдущий экран заменяется (кроме
   «Подробнее»/«Свернуть», которые разворачивают тот же экран).
-- `/help` — полноценная инструкция: разделы, обновления, команды, метрики,
+- `/help`: полноценная инструкция, разделы, обновления, команды, метрики,
   безопасность, диагностика и настройки.
-- `stacksentry-menu apt-logs [N]` — журнал фоновых обновлений; README описывает каждый
+- `stacksentry-menu apt-logs [N]`: журнал фоновых обновлений; README описывает каждый
   пункт меню: что вписать и пример значения.
 - Обновление через `stacksentry-menu` переустанавливает код, обёртку, меню, юниты и
   sudoers, поэтому новые фичи применяются и при будущих обновлениях.
@@ -143,8 +143,8 @@ read-only Mini App и web/root-терминал. Добавлены публич
 
 ### Безопасность
 
-- Аудит терминала: секреты больше не наследуются PTY-shell; обычный shell — под
-  `stacksentry-shell` без sudo, root — отдельным правилом; TOTP-код нормализуется
+- Аудит терминала: секреты больше не наследуются PTY-shell; обычный shell работает под
+  `stacksentry-shell` без sudo, root через отдельное правило; TOTP-код нормализуется
   для replay-защиты; исправлены утечка fd, гонка карты сессий и битые cookie/
   тикеты с не-ASCII.
 - Установщик: `--2fa`/`--no-2fa`/`--no-panel` работают и на готовом `.env`;
@@ -166,7 +166,7 @@ read-only Mini App и web/root-терминал. Добавлены публич
   определяется через `id -gn`, а не предполагается равной имени пользователя.
 - Трафик: экран показывает итоги по inbound'ам и топ клиентов по расходу; при
   пустом ответе объясняет, что проверить (scope, webBasePath, токен).
-- Одно действие — одно сообщение: «в очереди» → «запущено» → отчёт (раньше
+- Одно действие даёт одно сообщение: «в очереди» → «запущено» → отчёт (раньше
   копились «Запущено в фоне» и «… запущено»). Заголовки приведены в порядок.
 - Убрана дублирующая кнопка проверки релиза: `do-release-upgrade` сам проверяет
   версию; «No new release found» (код 1) считается успехом, а не ошибкой.
@@ -181,22 +181,22 @@ read-only Mini App и web/root-терминал. Добавлены публич
 - Меню: «Обновить/В меню» не оставляют экран без клавиатуры при throttle;
   длинные HTML-сообщения режутся с закрытием/повторным открытием тегов.
 - Кулдаун считается по цели (x-ui и fail2ban не блокируют друг друга), TTL и
-  кулдаун — на `monotonic`; несовпадение действия не сжигает подтверждение;
+  кулдаун на `monotonic`; несовпадение действия не сжигает подтверждение;
   имя юнита не может начинаться с `-`; `summary(0)` не возвращает весь вывод;
   неудачный рестарт xray тоже учитывается кулдауном.
 - Безопасные команды расширены и документированы: логи ОС/ядра/x-ui, сеть,
-  службы, обновления, железо — только чтение, без shell.
+  службы, обновления, железо: только чтение, без shell.
 
 ### Исправлено (старое)
 
-- Удаление бота: отчёт теперь короткий — одна строка «Бот удалён.» вместо
+- Удаление бота: отчёт теперь короткий, одна строка «Бот удалён.» вместо
   списка того, что и где стёрто (`--keep-state` по-прежнему предупреждает об
   оставшихся базе и пользователе). `stacksentry-menu` после удаления завершается, а не
-  открывает меню заново — возвращаться уже некуда.
+  открывает меню заново, возвращаться уже некуда.
 - Раздел «Обслуживание» больше не «зависает»: при таймауте команды в
   `run_command` переменные вывода не были инициализированы и задача падала с
   `UnboundLocalError` без отчёта. Теперь вывод заводится заранее, а при
-  таймауте гасится вся группа процессов — внук (`do-release-upgrade` → `apt`)
+  таймауте гасится вся группа процессов, внук (`do-release-upgrade` → `apt`)
   не держит пайпы и не переживает прерывание.
 - Любая ошибка действия (не только `ActionError`) теперь возвращается в чат и
   пишется в аудит, а не оставляет сообщение «Выполняю…» навсегда.
@@ -208,17 +208,17 @@ read-only Mini App и web/root-терминал. Добавлены публич
   (Ubuntu 26.04) отбивается polkit («требуется интерактивная аутентификация»),
   и кнопка молча не работала. Установщик ставит постоянные юниты
   `stacksentry-apt-upgrade.service` и `stacksentry-apt-phased.service`
-  (`User=root`), обёртка запускает их через `systemctl`; при их отсутствии —
+  (`User=root`), обёртка запускает их через `systemctl`; при их отсутствии
   transient-юнит, затем фоновый запуск.
-- `webBasePath`: путь `/panel` из адресной строки — не webBasePath (в 3X-UI
+- `webBasePath`: путь `/panel` из адресной строки не является webBasePath (в 3X-UI
   интерфейс всегда на `.../panel`, а «URL панели» задаётся отдельно, обычно `/`).
   Установщик теперь проверяет путь до запроса токена (правильный отвечает 401,
-  неверный — 404) и молча исправляет лишний сегмент `.../panel/panel/api`.
+  неверный 404) и молча исправляет лишний сегмент `.../panel/panel/api`.
 - При неверном токене панель отдаёт пустой 401, поэтому установщик и
   самопроверка писали «панель не ответила». Теперь различаются 401/403 (токен и
   его scope), 404 (адрес API) и недоступность, а в самопроверке виден HTTP-код.
 - Юнит больше не использует `ProcSubset=pid`: он оставлял в `/proc` только
-  процессы и прятал `/proc/stat`, `/proc/meminfo`, `/proc/net` — из-за этого
+  процессы и прятал `/proc/stat`, `/proc/meminfo`, `/proc/net`, из-за этого
   psutil не мог собрать метрики и бот писал «Системные метрики недоступны».
 - Проблемы железа и проблемы подписок разделены: раньше предупреждения о метриках
   попадали в находку «Подписки: нужна проверка», а одинаковые строки дублировались.
@@ -226,7 +226,7 @@ read-only Mini App и web/root-терминал. Добавлены публич
 - Установка на чистой машине: каталог `/opt/stacksentry` создаётся до записи
   `.env` (иначе установщик падал на шаге 4).
 - Недозаполненный `.env` после прерванного запуска больше не требует правки
-  руками — мастер дозаполняет недостающие значения.
+  руками: мастер дозаполняет недостающие значения.
 - Адрес панели: лишние пробелы и слеши убираются (`https://host:5580/`), путь из
   адреса переносится в `webBasePath`, двойной слеш невозможен ни в проверке, ни
   в адресе API.
@@ -238,17 +238,17 @@ read-only Mini App и web/root-терминал. Добавлены публич
 - Разметка: `render_overview` не падает на NULL-метриках, длинные сообщения
   режутся по строкам, HTML-теги не рвутся.
 - Совместимость с `sudo-rs` (Ubuntu 26.04+, `visudo-rs`): правила теперь
-  генерируются точным списком команд — без шаблонов в аргументах, без алиасов и
+  генерируются точным списком команд, без шаблонов в аргументах, без алиасов и
   без `Defaults`, которые sudo-rs не принимает. `journal`/`journal_errors`/
-  `journal_more` — отдельные подкоманды, `run_command` получает ключ команды.
+  `journal_more`: отдельные подкоманды, `run_command` получает ключ команды.
 - Установщик больше не скрывает причину отказа `visudo`: строка ошибки попадает в
   вывод, а если сборка sudo не принимает расширенные `Defaults`, ставится
-  упрощённый вариант правил — бот устанавливается в любом случае.
+  упрощённый вариант правил: бот устанавливается в любом случае.
 
 ### Безопасность
 
 - Установщик проверяет `--prefix` и `STATE_DIR`: `/`, `/etc`, `/usr`, `/var` и
-  подобные пути отклоняются (обход — `ALLOW_UNSAFE_PREFIX=1`). Раньше
+  подобные пути отклоняются (обход: `ALLOW_UNSAFE_PREFIX=1`). Раньше
   `--prefix /etc` мог сделать `chmod -R` и `rm -rf` по системному каталогу.
 - При заданном `--sha256` git-fallback отключён: непроверенный код не ставится.
 - init-скрипт больше не выполняет `.env` как shell-скрипт; `reboot` работает
@@ -312,7 +312,7 @@ re-running the installer (see [docs/RELEASING.md](docs/RELEASING.md)).
   hardware; `PANEL_URL`/`PANEL_API_TOKEN` may both be empty, the installer detects
   3X-UI and asks whether to configure the API. `--no-panel`/`--panel`.
 
-- TOTP 2FA for dangerous bot actions: step-up — read-only without a code,
+- TOTP 2FA for dangerous bot actions: step-up means read-only without a code,
   restarts and apt update after a code with a 15-minute unlock, OS upgrades and
   reboot require a fresh code. Codes are one-time, 3 attempts, 5-minute lockout,
   audited; the code message is deleted. The installer asks and prints otpauth;
@@ -418,7 +418,7 @@ re-running the installer (see [docs/RELEASING.md](docs/RELEASING.md)).
   unit names cannot start with `-`; `summary(0)` no longer returns everything;
   a failed xray restart is also rate-limited.
 - The safe command set is expanded and documented: OS/kernel/x-ui logs, network,
-  services, updates, hardware — read-only, no shell.
+  services, updates, hardware: read-only, no shell.
 
 ### Fixed (older)
 
@@ -427,8 +427,8 @@ re-running the installer (see [docs/RELEASING.md](docs/RELEASING.md)).
 - Panel address handling: spaces/trailing slashes stripped, a path pasted with the
   address is moved into `webBasePath`, double slashes are impossible.
 - `webBasePath` is now verified before the token is requested (a valid API path
-  answers 401, a wrong one 404): the `/panel` browser path — which is not
-  `webBasePath` — no longer produces a doubled `.../panel/panel/api` segment.
+  answers 401, a wrong one 404): the `/panel` browser path, which is not
+  `webBasePath`, no longer produces a doubled `.../panel/panel/api` segment.
   A bad token (empty 401) is no longer reported as “panel did not respond”;
   401/403, 404 and unreachable are told apart in the wizard and the self-check.
 - `asyncio.TimeoutError` on Python 3.10 (command timeouts did not fire); orphan
@@ -440,7 +440,7 @@ re-running the installer (see [docs/RELEASING.md](docs/RELEASING.md)).
 - The Maintenance section no longer “hangs”: on a command timeout `run_command`
   left its output variables unset and the job died with `UnboundLocalError` and
   no report. Output is now pre-initialised, and on timeout the whole process
-  group is killed — a grandchild (`do-release-upgrade` → `apt`) can no longer
+  group is killed, so a grandchild (`do-release-upgrade` → `apt`) can no longer
   hold the pipes or survive. Any action error (not just `ActionError`) is now
   reported in the chat and audited.
 - Release-upgrade check: `do-release-upgrade` wrote to the read-only

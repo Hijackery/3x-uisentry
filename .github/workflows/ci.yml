@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.10 — обещанный минимум из README, 3.13 — актуальный (ruff + mypy strict).
+        # 3.10: обещанный минимум из README, 3.13: актуальный (ruff + mypy strict).
         python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4

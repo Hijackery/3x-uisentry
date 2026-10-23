@@ -11,7 +11,7 @@
 
 GitHub Releases и теги не публикуются. Обновляйтесь кнопкой «Проверить
 обновления» в боте, через `sudo stacksentry-menu update` (пункт 24) или повторный
-установщик. GitHub может отдавать ветку из кэша пару минут — сверяйте commit
+установщик. GitHub может отдавать ветку из кэша пару минут, сверяйте commit
 через `/version` или `git rev-parse`.
 
 ## Как сообщить об уязвимости
@@ -19,18 +19,18 @@ GitHub Releases и теги не публикуются. Обновляйтес�
 - Не открывайте публичный issue: используйте **GitHub Security Advisories**
   («Security» → «Report a vulnerability») или письмо владельцу репозитория.
 - Что приложить: коммит/дата установки, дистрибутив и версия Python, шаги
-  воспроизведения, логи. **Токены и ID маскируйте** — `.env` не пересылайте.
-- Ответ: подтверждение в течение 72 часов, исправление — как только получится;
+  воспроизведения, логи. **Токены и ID маскируйте**. Не пересылайте `.env`.
+- Ответ: подтверждение в течение 72 часов, исправление после проверки;
   по желанию укажем вас в описании исправления.
 
 ## Модель безопасности (что уже защищено)
 
 - Сервис работает непривилегированным пользователем `stacksentry`; код и venv
-  принадлежат `root`, `.env` — `640 root:stacksentry`.
-- Привилегированные операции — только через `/usr/local/bin/stacksentry-ctl` и узкий
+  принадлежат `root`, `.env` имеет права `640 root:stacksentry`.
+- Привилегированные операции выполняются только через `/usr/local/bin/stacksentry-ctl` и узкий
   sudoers-список: 9 фиксированных подкоманд, аргументы проверяются (`safe_unit`,
   `safe_int`, запрет лишних аргументов). Произвольного shell нет: `run_command`
-  — шесть литералов из белого списка, запуск через `exec "$@"` без `bash -c`.
+  запускает шесть литералов из белого списка через `exec "$@"` без `bash -c`.
 - Опасные действия требуют подтверждения кнопкой (токен одноразовый, привязан к
   администратору), ограничены `ACTION_COOLDOWN`, журналируются в `audit_log`.
 - Команды и кнопки работают только в личном чате администратора; отказы пишутся
@@ -48,8 +48,8 @@ GitHub Releases и теги не публикуются. Обновляйтес�
 ## Зависимости и обновления
 
 - Зависимости обновляются через Dependabot; код анализируется CodeQL.
-- Версии — SemVer в `stacksentry/__init__.py`; теги и GitHub Releases не
-  публикуются. Порядок обновления и откат — в
+- Версии указаны в SemVer в `stacksentry/__init__.py`; теги и GitHub Releases не
+  публикуются. Порядок обновления и откат описаны в
   [docs/RELEASING.md](docs/RELEASING.md).
 - Проверяйте `CHANGELOG.md` и `git log` перед обновлением продакшена.
 - Кнопка обновления запускает установщик из `main`; она требует подтверждения и
@@ -60,7 +60,7 @@ GitHub Releases и теги не публикуются. Обновляйтес�
 
 - Доступ к серверу под root, физический доступ, компрометация аккаунта
   администратора в Telegram.
-- Уязвимости самой панели 3X-UI, Xray и сторонних пакетов — сообщайте их авторам.
+- Уязвимости самой панели 3X-UI, Xray и сторонних пакетов: сообщайте их авторам.
 - Социальная инженерия и последствия явно подтверждённых действий (`reboot`,
   `apt upgrade`): они доступны администратору по замыслу.
 
@@ -71,7 +71,7 @@ GitHub Releases и теги не публикуются. Обновляйтес�
 **Supported versions:** `main` is the only supported version and receives
 security and regression fixes. GitHub Releases and tags are not published; update
 via the in-bot check/update buttons, `sudo stacksentry-menu update` (item 24), or
-the installer. GitHub may serve a cached branch for a couple of minutes — verify
+the installer. GitHub may serve a cached branch for a couple of minutes, so verify
 the commit with `/version` or `git rev-parse`.
 
 **Dependencies and updates:** Dependabot and CodeQL are enabled; versions are
@@ -81,7 +81,7 @@ keeps `.env`/state. See [docs/RELEASING.md](docs/RELEASING.md).
 
 
 **Reporting:** use GitHub Security Advisories (“Security” → “Report a
-vulnerability”) or email the repository owner — do not open a public issue.
+vulnerability”) or email the repository owner. Do not open a public issue.
 Include the commit/date, distribution, Python version, reproduction steps and
 logs with **tokens and IDs masked** (never share `.env`). We acknowledge reports
 within 72 hours.

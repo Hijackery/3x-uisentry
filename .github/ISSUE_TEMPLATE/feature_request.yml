@@ -6,7 +6,7 @@ body:
     id: problem
     attributes:
       label: Какая задача не решается
-      description: Опишите ситуацию, а не готовое решение — так проще подобрать вариант.
+      description: "Опишите ситуацию, а не готовое решение: так проще подобрать вариант."
     validations:
       required: true
   - type: textarea
