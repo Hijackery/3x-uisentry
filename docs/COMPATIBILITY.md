@@ -7,7 +7,7 @@ StackSentry не привязан к одному дистрибутиву ил�
 
 | Компонент | Поддержка |
 |---|---|
-| Init | systemd, OpenRC, SysVinit; rc.d — по мере доступности |
+| Init | systemd, OpenRC, SysVinit; rc.d: по мере доступности |
 | Дистрибутивы | Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch, Alpine, Void, Gentoo, Solus, FreeBSD (best effort) |
 | Пакеты | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` |
 | Python | 3.10+ |
@@ -33,7 +33,7 @@ StackSentry не привязан к одному дистрибутиву ил�
 
 Особенности адресов:
 
-- 3X-UI: `PANEL_URL` — схема/хост/порт, `PANEL_BASE_PATH` — `webBasePath`.
+- 3X-UI: `PANEL_URL`: схема/хост/порт, `PANEL_BASE_PATH`: `webBasePath`.
 - S-UI: `PANEL_URL` включает web path, например `http://host:2095/app`.
 - Hiddify: `PANEL_URL` включает admin proxy path, например `https://host/AbCdEf`.
 - Outline: `PANEL_URL` включает секретный `SB_API_PREFIX`, например
@@ -41,7 +41,7 @@ StackSentry не привязан к одному дистрибутиву ил�
 - Marzneshin/PasarGuard/Marzban/Remnawave: корневой адрес панели.
 
 Marzneshin не имеет отдельного endpoint перезапуска. Бот читает список узлов,
-берёт backend (приоритет — xray), получает его конфиг и отправляет тот же конфиг
+берёт backend (приоритет: xray), получает его конфиг и отправляет тот же конфиг
 обратно: панель вызывает `RestartBackend` на marznode. Нужен sudo-админ панели и
 живой узел; настройки не меняются.
 
@@ -63,6 +63,6 @@ root-эквивалентные права.
 - Рестарт ядра доступен только там, где панель предоставляет операцию (см. таблицу).
 - Outline не имеет рестарта в Management API; используйте рестарт службы/контейнера.
 - Marzneshin-рестарт зависит от доступности узла и прав администратора панели.
-- Релиз-обновления ОС и phased-обновления — только APT/Ubuntu.
+- Релиз-обновления ОС и phased-обновления: только APT/Ubuntu.
 - Сторонние панели и протоколы могут менять API между версиями: адаптеры стоит
   проверять после крупных обновлений панели.

@@ -12,8 +12,8 @@
 **StackSentry** is a Telegram bot for VPS: it watches hardware, services, panels
 (3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline) and
 VPN stacks (WireGuard, OpenVPN, AmneziaWG, sing-box, Xray, Shadowsocks,
-Tailscale), sends clear alerts and shows subscriptions. Risky actions — restart,
-system upgrade, reboot — happen only from a confirmed button and only for an
+Tailscale), sends alerts and shows subscriptions. Risky actions (restart, system
+upgrade, reboot) happen only from a confirmed button and only for an
 administrator.
 
 Current version: **1.0.0**. The project is public:
@@ -40,14 +40,13 @@ gh api repos/Hijackery/stacksentry/contents/install.sh \
   -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
 sudo bash /tmp/stacksentry-install.sh
 
-# private fork or corporate GitHub — with a token
+# private fork or corporate GitHub with a token
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
   https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
 
-> One command: the wizard downloads the code, asks for tokens, installs
-> dependencies, creates a dedicated user, enables autostart and verifies that
-> everything works.
+> The wizard downloads the code, asks for tokens, installs dependencies, creates a
+> dedicated user, enables autostart and verifies that everything works.
 
 ## Contents
 
@@ -82,16 +81,16 @@ matters to Telegram and stays quiet when everything is fine.
 | **Alerts** | hysteresis without flapping, cooldown, an “I know, until morning” mute; restart and log buttons right on the alert |
 | **Actions** | service and panel core restart, package updates, OS release upgrade (APT), reboot, allow-listed commands |
 | **Updates** | `main` check and an “Update StackSentry” button with confirmation and 2FA; no GitHub Releases or tags |
-| **History** | hourly CPU/RAM/disk averages for the last day — see how the server behaved overnight |
+| **History** | hourly CPU/RAM/disk averages for the last day, so you can see how the server behaved overnight |
 | **Install** | one command, an adaptive wizard for OS/services/panel, unattended mode, self-check |
 | **Universality** | systemd, OpenRC, SysVinit; `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`; Python 3.10+ |
 | **Mini App** | read-only Telegram dashboard: overview, services, panel, traffic, subscriptions, history, terminal and built-in Help; Telegram login (+ TOTP when 2FA is enabled) |
-| **Terminal** | `stacksentry-menu` — settings, diagnostics, restart, log, update; secrets are masked |
+| **Terminal** | `stacksentry-menu` handles settings, diagnostics, restart, log and update; secrets are masked |
 | **Security** | a dedicated unprivileged user, a narrow sudoers list, confirmations and an audit log for risky actions |
 
 ## What it looks like
 
-The summary starts with a verdict — one glance is enough at night:
+The summary starts with a verdict: one glance is enough at night:
 
 ```text
 🟢 Server state: all good · CPU 12% · RAM 41% · Disk 63% · x-ui 🟢 · panel 🟢
@@ -125,12 +124,12 @@ Service x-ui restarted
 | Item | Support |
 |---|---|
 | **Services** | systemd (Debian/Ubuntu, RHEL/Rocky/Alma, Fedora, openSUSE, Arch), OpenRC (Alpine, Gentoo), SysVinit |
-| **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` — detected automatically |
+| **Packages** | `apt`, `dnf`, `yum`, `zypper`, `pacman`, `apk`, `xbps`, `emerge`, `eopkg`, `pkg` are detected automatically |
 | **Python** | 3.10+; the installer picks a suitable interpreter |
 | **Panels** | API: 3X-UI, Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify, Outline. Other VPN/proxy stacks are detected as service/port/process |
 | **Core restart** | 3X-UI, Marzban, Marzneshin, PasarGuard, S-UI via API; Remnawave/Hiddify/Outline via service/container only |
 | **sudo** | classic sudo and `sudo-rs` (Ubuntu 26.04+): rules are generated without wildcards or aliases |
-| **Architectures** | x86_64, ARM — anything with Python and a supported init system |
+| **Architectures** | x86_64, ARM, and anything else with Python and a supported init system |
 
 You can pick the service manager explicitly with `--init systemd|openrc|sysv`.
 Without systemd the bot still works: the log is read from `bot.log`, and service
@@ -143,7 +142,7 @@ state is reported as unavailable (no false “crit” alerts).
 - a Linux server with the 3X-UI panel;
 - a Telegram bot token from [@BotFather](https://t.me/BotFather);
 - your numeric ID (e.g. [@userinfobot](https://t.me/userinfobot));
-- a panel API token with the `node-sync` or `admin` scope — see the
+- a panel API token with the `node-sync` or `admin` scope. See the
   [next section](#connecting-to-the-panel).
 
 ### 2. Install
@@ -167,7 +166,7 @@ gh api repos/Hijackery/stacksentry/contents/install.sh \
   -H "Accept: application/vnd.github.raw" > /tmp/stacksentry-install.sh
 sudo bash /tmp/stacksentry-install.sh
 
-# private fork or corporate GitHub — with a token
+# private fork or corporate GitHub with a token
 GH_TOKEN=... bash -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
   https://raw.githubusercontent.com/Hijackery/stacksentry/main/install.sh | bash'
 ```
@@ -190,7 +189,7 @@ so the dialogue works even when the script is piped.
 What the wizard asks:
 
 1. the bot token and admin IDs (the token is verified with Telegram immediately);
-2. 2FA (TOTP) — optional; when enabled, the code is required for Mini App login and dangerous actions; when declined, TOTP is not used;
+2. 2FA (TOTP) is optional: when enabled, the code is required for Mini App login and dangerous actions; when declined, TOTP is not used;
 3. the panel address, `webBasePath` and API token (the address is verified);
 4. the services to watch;
 5. an optional alert chat;
@@ -236,13 +235,13 @@ sudo env \
 
 For Marzban/Marzneshin/PasarGuard pass `PANEL_USERNAME` and `PANEL_PASSWORD`
 instead of a token; for Outline pass only `PANEL_URL` with the secret path.
-`PANEL_TYPE` may be omitted — the wizard uses the detected type or `3x-ui`. The
+`PANEL_TYPE` may be omitted; the wizard uses the detected type or `3x-ui`. The
 full type/auth matrix is in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 Useful options: `--repo owner/name`, `--ref branch`, `--prefix DIR`, `--user NAME`,
 `--no-start`, `--force-config`, `--print-source`, `--sha256 HASH`, `--init TYPE`,
 `--webapp --webapp-origin https://...`, `--terminal`, `--root-terminal`, `--2fa`,
-`--menu`. Full list — `bash install.sh --help`.
+`--menu`. Full list: `bash install.sh --help`.
 
 Re-running the installer updates the code and keeps `.env`/state; to check for
 updates from the bot use `/updatecheck` and the Maintenance button.
@@ -279,8 +278,8 @@ URL notes:
 
 The installer, menu and bot adapt to the server. The wizard detects the OS,
 package manager, services and panel type, then asks only for the relevant
-credentials — a token for 3X-UI/Remnawave/S-UI/Hiddify, username/password for
-Marzban/Marzneshin/PasarGuard, or a secret path for Outline — and probes the API.
+credentials: a token for 3X-UI/Remnawave/S-UI/Hiddify, username/password for
+Marzban/Marzneshin/PasarGuard, or a secret path for Outline, then probes the API.
 `stacksentry-menu detect` shows what was found, the menu has a panel type item,
 and the core restart picks the right endpoint. The bot hides
 Traffic/Subscriptions until an API is configured and shows update actions for the
@@ -297,7 +296,7 @@ Tailscale, ZeroTier, NetBird, Headscale, Nebula.
 Detection uses units (systemd/OpenRC/SysV), config paths and process names
 (`ps`). API integration exists for 3X-UI (inbounds, subscriptions, xray restart),
 Marzban, Marzneshin, PasarGuard, Remnawave, S-UI, Hiddify and Outline
-(users/clients, traffic); the rest are shown as service/port and honestly marked
+(users/clients, traffic); the rest are shown as service/port and marked
 “API not supported”.
 Docker containers are visible as the `docker` service but are not queried via the
 Docker API (that would give the bot root-equivalent rights).
@@ -305,9 +304,9 @@ Docker API (that would give the bot root-equivalent rights).
 ### No panel: monitor-only
 
 The installer detects panels/VPN by services, paths and ports. If no supported
-panel is found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty — the bot then monitors
+panel is found, leave `PANEL_URL` and `PANEL_API_TOKEN` empty, and the bot then monitors
 services, the VPN stack, hardware and alerts, while panel/subscription screens
-honestly say the API is not configured. Enable it later via `sudo stacksentry-menu`
+say the API is not configured. Enable it later via `sudo stacksentry-menu`
 (panel address and token) or reinstall with `--panel`.
 
 ### 3X-UI token
@@ -318,7 +317,7 @@ The token is created **inside the panel**, not in Telegram and not in the bot.
 
 1. “Panel settings → Account → API token” → create.
 2. Scope: **`node-sync`** (or `admin`).
-3. **Copy the value immediately** — the panel shows it once, later only a
+3. **Copy the value immediately**: the panel shows it once, later only a
    “configured” marker remains.
 
 The same via API: `POST /panel/api/setting/apiTokens/create` with `name`, `scope`,
@@ -332,13 +331,13 @@ The same via API: `POST /panel/api/setting/apiTokens/create` with `name`, `scope
 sudo x-ui setting -getApiToken true -tokenName monitor-bot -tokenScope node-sync
 ```
 
-On v3 this command no longer creates tokens — it only rotates the service
+On v3 this command no longer creates tokens; it only rotates the service
 `cli-fallback` one.
 
 Why not `monitor`: that scope only exposes panel status. Inbounds and
 subscriptions need `node-sync`; actions inside the panel need `admin`.
 
-### `webBasePath` — a common mistake
+### `webBasePath`: a common mistake
 
 `webBasePath` is the separate **“Panel URL”** setting in 3X-UI. It is usually `/`,
 and then the wizard field is left empty.
@@ -377,34 +376,34 @@ The response must contain `"success":true`.
   public IP and there is no hairpin NAT, use `http://127.0.0.1:2053` with the same
   `PANEL_BASE_PATH`. Write IPv6 in brackets: `http://[::1]:2053`.
 - `http` is fine when the panel listens on localhost: traffic never leaves the
-  machine. If the panel is reachable publicly, use `https://` only — otherwise the
+  machine. If the panel is reachable publicly, use `https://` only, otherwise the
   token and API contents travel in plain text. For a self-signed certificate, do
   not disable verification; set `PANEL_CA_BUNDLE` instead.
-- The bot does not follow redirects: if `http` redirects to `https`, just change
+- The bot does not follow redirects: if `http` redirects to `https`, change
   the scheme.
 
 ## How it works
 
 ```text
 Telegram / Mini App  ⇄  bot (unprivileged user stacksentry)
-                          ├─ psutil / systemctl / journalctl   — metrics and services
-                          ├─ inventory                         — OS, packages, panels, VPN
-                          ├─ panel API (8 types)               — users, traffic, core restart
-                          ├─ updates                           — commit check against main
-                          └─ sudo stacksentry-ctl (narrow sudoers) — restart, updates, reboot, journal
+                          ├─ psutil / systemctl / journalctl: metrics and services
+                          ├─ inventory: OS, packages, panels, VPN
+                          ├─ panel API (8 types): users, traffic, core restart
+                          ├─ updates: commit check against main
+                          └─ sudo stacksentry-ctl (narrow sudoers): restart, updates, reboot, journal
 ```
 
-- **Code** — `/opt/stacksentry`, owned by `root`; the bot cannot rewrite itself.
-- **Secrets** — `.env` with `640 root:stacksentry`.
-- **State** — SQLite in `/var/lib/stacksentry` (history, audit, mutes).
-- **Privileges** — only through `sudo stacksentry-ctl`; the allowed subcommands are listed
+- **Code**: `/opt/stacksentry`, owned by `root`; the bot cannot rewrite itself.
+- **Secrets**: `.env` with `640 root:stacksentry`.
+- **State**: SQLite in `/var/lib/stacksentry` (history, audit, mutes).
+- **Privileges**: only through `sudo stacksentry-ctl`; the allowed subcommands are listed
   exactly, without wildcards.
-- **Updates** — run in dedicated systemd units (`stacksentry-apt-*.service`)
+- **Updates** run in dedicated systemd units (`stacksentry-apt-*.service`)
   because the bot lives with `ProtectSystem=strict`; `stacksentry-ctl` detects
   `apt`/`dnf`/`yum`/`zypper`/`pacman`/`apk`/`xbps`/`emerge`/`eopkg`/`pkg`.
-- **Self-update** — the installer runs in a separate unit from `main`, keeps
+- **Self-update**: the installer runs in a separate unit from `main`, keeps
   `.env`/state and restarts the bot.
-- **Mini App** — a separate read-only service on `127.0.0.1:8787`; expose it only
+- **Mini App**: a separate read-only service on `127.0.0.1:8787`; expose it only
   via an HTTPS proxy; login is via Telegram initData.
 
 ## Commands and screens
@@ -428,14 +427,14 @@ stuck. Guests do not see the buttons. Moving between menus replaces the previous
 screen, so no chain of messages piles up (Details and Collapse are the exception:
 they expand the same screen).
 
-**A server command can be sent from any section** — just send it as a message (or
+**A server command can be sent from any section**. Just send it as a message (or
 `/run <command>`). The bot asks for confirmation and returns the output. Only safe
 diagnostic commands from `COMMAND_ALLOWLIST` are allowed; `/run` without arguments
 lists them. There is no arbitrary shell.
 
 ### Safe diagnostic commands
 
-`/run <command>` (or just send it as a message) executes only commands from
+`/run <command>` (or send it as a message) executes only commands from
 `COMMAND_ALLOWLIST`. All of them are **read-only** and run as argv without a
 shell: no pipes, redirects or writes. If a command is not installed, the bot says
 so explicitly.
@@ -463,7 +462,7 @@ and “🔎 Errors only” buttons, just like service logs.
 
 **Commands and buttons work only in the administrator's private chat.** In a group
 the bot refuses: addresses, subscriptions and traffic must not leak into a shared
-chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only — management there
+chat. `ALERT_CHAT_ID` allows *outgoing* alerts to a group only; management there
 is unavailable.
 
 **Maintenance actions are separate and report to the chat.** `apt update` refreshes
@@ -471,13 +470,13 @@ indexes and lists the packages available for upgrade; `full-upgrade` installs ev
 updates; “run release” runs `do-release-upgrade`, which first checks for a new OS
 version and says so if there is none. These are different things: `apt update`
 does not check for a new OS version. The bot watches the background systemd unit
-and sends the exit code plus the log tail when it finishes — no `journalctl`
+and sends the exit code plus the log tail when it finishes, so no `journalctl`
 needed. One action is one message: “queued” → “running” → report, no pile-up. To
 look manually: `sudo stacksentry-menu apt-logs`.
 
 `/status` starts with a verdict; details are hidden behind “📋 Details”. Metrics
 are aligned in a monospace block, and time is labelled “server time”. Alerts carry
-`♻️ Restart`, `📜 Log` and `😴 I know, until morning` — an 8-hour mute stored in
+`♻️ Restart`, `📜 Log` and `😴 I know, until morning`, an 8-hour mute stored in
 SQLite that survives restarts.
 
 ## `stacksentry-menu` settings menu
@@ -502,7 +501,7 @@ service state is shown on top:
 
 ```text
 ╔════════════════════════════════════════════════════════╗
-│              StackSentry — control panel               │
+│              StackSentry: control panel               │
 │  Service stacksentry-bot: ● running                    │
 │   Diagnostics                                          │
 │    1. Service state and recent errors                  │
@@ -525,13 +524,13 @@ service state is shown on top:
 
 | Item | What it does | What to enter | Example |
 |---|---|---|---|
-| 1 | service state and recent errors | — | — |
-| 2 | shows settings, secrets masked | — | — |
-| 3 | bot log, 50 lines | — | — |
-| 4 | auto-detect: OS, package manager, panels, VPN, services | — | — |
+| 1 | service state and recent errors | - | - |
+| 2 | shows settings, secrets masked | - | - |
+| 3 | bot log, 50 lines | - | - |
+| 4 | auto-detect: OS, package manager, panels, VPN, services | - | - |
 | 5 | Telegram bot token | the value from @BotFather | `123456789:AAH...` |
 | 6 | administrator IDs | numbers separated by commas | `11111111,22222222` |
-| 7 | alert chat | chat ID; group IDs are negative; empty — private | `-1001234567890` |
+| 7 | alert chat | chat ID; group IDs are negative; empty: private | `-1001234567890` |
 | 8 | panel type (`PANEL_TYPE`) | one of the supported types | `s-ui` |
 | 9 | panel address (`PANEL_URL`) | scheme, host, port and (S-UI/Hiddify) the panel path | `https://panel.example.com:5580` |
 | 10 | panel path (`PANEL_BASE_PATH`) | 3X-UI `webBasePath`; S-UI/Hiddify usually include it in the URL | empty or `mypanel` |
@@ -546,10 +545,10 @@ service state is shown on top:
 | 19 | monitored services | service names separated by commas | `x-ui,fail2ban` |
 | 20 | log level | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
 | 21 | any allow-listed key | the key name first, then the value | `DISK_PATH` → `/` |
-| 22 | restart the bot and verify | — | — |
+| 22 | restart the bot and verify | - | - |
 | 23 | restart the panel core | `y` to confirm | `y` |
-| 24 | update from `main` | — | — |
-| 25 | check for StackSentry updates | — | — |
+| 24 | update from `main` | - | - |
+| 25 | check for StackSentry updates | - | - |
 | 26 | removal | `yes` to confirm | `yes` |
 
 An empty value clears a setting: `sudo stacksentry-menu set PANEL_BASE_PATH ""`.
@@ -594,7 +593,7 @@ over the file.
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | bot token from @BotFather |
 | `TELEGRAM_ADMIN_IDS` | administrator IDs, comma-separated |
-| `ALERT_CHAT_ID` | alert chat (empty — admins in private) |
+| `ALERT_CHAT_ID` | alert chat (empty: admins in private) |
 | `TELEGRAM_API_URL` | custom Bot API or proxy (official by default) |
 | `PANEL_URL` | panel address, e.g. `https://panel.example.com:2053` |
 | `PANEL_BASE_PATH` | “Panel URL” (`webBasePath`), if set |
@@ -619,12 +618,12 @@ over the file.
 | `CHECK_INTERVAL` | background check period, seconds (minimum 15) |
 | `ACTION_COOLDOWN` | pause between identical actions, seconds |
 | `CONFIRM_TTL` | confirmation button lifetime, seconds |
-| `TOTP_SECRET` | TOTP secret (base32) for 2FA; empty — disabled |
-| `TOTP_REQUIRED` | `1` — require a code for Mini App login and dangerous bot actions |
+| `TOTP_SECRET` | TOTP secret (base32) for 2FA; empty: disabled |
+| `TOTP_REQUIRED` | `1`: require a code for Mini App login and dangerous bot actions |
 | `ELEVATION_TTL` | how long an unlock lasts, seconds |
 | `TOTP_MAX_ATTEMPTS` | code attempts before lockout |
 | `TOTP_LOCKOUT` | lockout duration after too many attempts, seconds |
-| `WEBAPP_ENABLED` | `1` — enable the read-only Mini App |
+| `WEBAPP_ENABLED` | `1`: enable the read-only Mini App |
 | `WEBAPP_HOST` | listen address (default `127.0.0.1`) |
 | `WEBAPP_PORT` | Mini App port (default 8787) |
 | `WEBAPP_PUBLIC_ORIGIN` | public HTTPS URL for the Telegram menu button |
@@ -644,14 +643,14 @@ Leave `ALERT_CHAT_ID` empty and alerts go to every ID in `TELEGRAM_ADMIN_IDS` in
 private. For a shared chat, add the bot there, send a message and find the chat ID
 (`@userinfobot`, `@getidsbot`); group IDs are negative, e.g. `-1001234567890`.
 
-Remember: alerts contain addresses, subscriptions and traffic — everyone in the
+Remember: alerts contain addresses, subscriptions and traffic: everyone in the
 group will see them. Commands and buttons still work only in private chat.
 
 ### Mini App (optional, read-only)
 
 A dashboard in Telegram: overview, services, panel, traffic, subscriptions,
 history, terminal (when enabled) and a Help tab with a short guide to every
-section, 2FA, the terminal and updates. Read-only — no actions and no secrets in
+section, 2FA, the terminal and updates. Read-only, with no actions and no secrets in
 the browser.
 
 ```bash
@@ -671,9 +670,9 @@ Disable this with `--no-webapp-auto`.
 During an interactive install the wizard shows the public IP, the future address
 and any warnings, then offers three choices:
 
-1. **Automatic** — `sslip.io` + Caddy (recommended).
-2. **Your own domain** — enter a ready HTTPS URL with a valid certificate.
-3. **Local only** — no public address, access through an SSH tunnel.
+1. **Automatic**: `sslip.io` + Caddy (recommended).
+2. **Your own domain**: enter a ready HTTPS URL with a valid certificate.
+3. **Local only**: no public address, access through an SSH tunnel.
 
 If the automatic option fails, the installer offers to retry, enter a custom
 domain, or keep the Mini App local.
@@ -682,7 +681,7 @@ If the terminal is installed, the installer asks whether to open it inside the
 Mini App. With automatic HTTPS it creates a separate `term.<host>` address and
 the “Terminal” tab appears without any manual Caddy setup. For a custom domain
 you can provide a ready HTTPS terminal URL. Terminal login is always protected
-by Telegram and TOTP. If you do not need a public terminal, answer `n` — access
+by Telegram and TOTP. If you do not need a public terminal, answer `n`, and access
 stays available only through an SSH tunnel.
 
 One manual step remains: bind the **domain** to the bot in `@BotFather` →
@@ -695,7 +694,7 @@ another option.
 - login via Telegram `initData`, no passwords; administrators only. If 2FA is
   enabled, an additional TOTP code is required for each new session; if disabled,
   the Mini App never asks for a code;
-- `HttpOnly` cookie, 1-hour TTL; with public HTTPS — `Secure; SameSite=None` (Telegram Web), locally — `SameSite=Lax`; CSP without third-party scripts;
+- `HttpOnly` cookie, 1-hour TTL; public HTTPS uses `Secure; SameSite=None` (Telegram Web), local access uses `SameSite=Lax`; CSP without third-party scripts;
 - `stacksentry-webapp` listens on `127.0.0.1:8787`; expose it only via Caddy/Nginx
   with TLS; without a public origin use
   `ssh -L 8787:127.0.0.1:8787 root@server` → `http://127.0.0.1:8787`;
@@ -708,11 +707,11 @@ another option.
   is the menu next to the attachment icon; the inline button lives in the bot
   menu itself and is shown only to IDs from `TELEGRAM_ADMIN_IDS`;
 - if the panel API is not configured, the dashboard shows services/VPN/hardware
-  and honestly says inbounds/subscriptions are unavailable.
+  and says inbounds/subscriptions are unavailable.
 
 ### Terminal (installed by the normal setup)
 
-A full browser shell — a separate service, openable standalone or embedded as a
+A full browser shell is a separate service, openable standalone or embedded as a
 tab inside the Mini App. The normal interactive install already sets it up with
 the root session and the Mini App tab; a separate command is only needed for
 reconfiguration or automation:
@@ -772,8 +771,8 @@ TLS in front of `127.0.0.1:8788`.
 
 When 2FA is enabled, the Mini App requires a TOTP code at login. In the bot, viewing state, logs and
 subscriptions still needs **no code**; a code is required only where the server
-can be broken (step-up). This is deliberate: otherwise you would have to re-enter
-a code every 15 minutes just to read status.
+can be broken (step-up). Otherwise you would have to re-enter a code every 15
+minutes just to read status.
 
 | Level | What | 2FA |
 |---|---|---|
@@ -819,7 +818,7 @@ The terminal uses a separate TOTP secret and asks for a code for every session.
 - The bot runs as the unprivileged `stacksentry` user; code and venv belong to
   `root`, and `.env` is read-only for the service.
 - All privileged operations go through `sudo stacksentry-ctl` and a narrow sudoers list of
-  **exact commands** (no wildcards in arguments — required by both classic sudo
+  **exact commands** (no wildcards in arguments, as required by both classic sudo
   and `sudo-rs`). There is no arbitrary shell.
 - `apt` runs in dedicated `stacksentry-apt-*.service` units that do not inherit the
   bot's sandbox; a fallback exists when a transient unit is denied.
@@ -874,7 +873,7 @@ Removal prints a single “Bot removed.” line and closes `stacksentry-menu`. W
 `--keep-state` a warning remains that the database and user were preserved.
 
 > The project publishes no releases or tags: the current version is always the
-> `main` branch. GitHub may serve it from cache for a couple of minutes — simply
+> `main` branch. GitHub may serve it from cache for a couple of minutes, so
 > re-run the installer.
 
 ## Troubleshooting
@@ -886,13 +885,13 @@ journalctl -u stacksentry-bot -n 50 --no-pager
 
 | Symptom | What to do |
 |---|---|
-| “Invalid sudoers syntax” | the installer prints the `visudo` line — attach it to an issue |
+| “Invalid sudoers syntax” | the installer prints the `visudo` line, attach it to an issue |
 | “System metrics unavailable: `/proc/stat`” | an old install still has `ProcSubset=pid`: `sudo sed -i '/^ProcSubset=/d' /etc/systemd/system/stacksentry-bot.service && sudo systemctl daemon-reload && sudo systemctl restart stacksentry-bot` |
 | “Token rejected” | check `TELEGRAM_BOT_TOKEN` and `PANEL_API_TOKEN` via `sudo stacksentry-menu` → “Show settings” |
 | `inbounds/list unavailable` | the panel token lacks the `node-sync` scope |
 | Panel returns `404` for the API | check `PANEL_URL`/`PANEL_BASE_PATH` (a common mistake is `/panel` in `webBasePath`) |
 | Service logs are not visible | check the `journal` sudoers rule and that the call goes through `sudo` |
-| Ubuntu 26.04+ | `sudo-rs` forbids wildcards in arguments — the installer already accounts for it |
+| Ubuntu 26.04+ | `sudo-rs` forbids wildcards in arguments, and the installer already accounts for it |
 
 ### No Mini App button
 
@@ -908,7 +907,7 @@ journalctl -u stacksentry-bot -n 100 --no-pager | grep -i 'Mini App'
 The buttons appear only with `WEBAPP_ENABLED=1` and a non-empty
 `WEBAPP_PUBLIC_ORIGIN` (HTTPS), and the inline button is shown only to an
 administrator from `TELEGRAM_ADMIN_IDS`. If the origin is empty, reinstall the
-Mini App without a domain: `sudo bash install.sh --webapp --no-terminal` — the
+Mini App without a domain: `sudo bash install.sh --webapp --no-terminal`. The
 installer sets up `sslip.io` + Caddy automatically. If the origin is set but
 there is no button:
 
@@ -919,20 +918,20 @@ there is no button:
 - restart the bot after editing `.env`:
   `sudo systemctl restart stacksentry-bot`;
 - `Не удалось поставить кнопку Mini App` in the log means Telegram rejected the
-  button — usually because of a wrong domain, HTTP instead of HTTPS, or an
+  button, usually because of a wrong domain, HTTP instead of HTTPS, or an
   unreachable URL.
 
 More in [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Documentation
 
-- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — OS, init, packages, panels, protocols, restart.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, data flow, security, extension.
-- [docs/RELEASING.md](docs/RELEASING.md) — versions, checking and applying updates.
-- [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
-- [SECURITY.md](SECURITY.md) — security policy and model.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, checks, PRs.
-- [CHANGELOG.md](CHANGELOG.md) — change history.
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md): OS, init, packages, panels, protocols, restart.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): components, data flow, security, extension.
+- [docs/RELEASING.md](docs/RELEASING.md): versions, checking and applying updates.
+- [SUPPORT.md](SUPPORT.md): where to ask and what to include.
+- [SECURITY.md](SECURITY.md): security policy and model.
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup, checks, PRs.
+- [CHANGELOG.md](CHANGELOG.md): change history.
 
 ## Versions and updates
 
@@ -961,14 +960,14 @@ Python 3.10 and 3.13, `shellcheck`, `bash -n` and `visudo -cf`.
 
 ## Project
 
-- [SECURITY.md](SECURITY.md) — how to report a vulnerability and what is protected.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — environment, required checks, style.
-- [SUPPORT.md](SUPPORT.md) — where to ask and what to include.
-- [docs/](docs/README.md) — compatibility, architecture, updates.
-- [CHANGELOG.md](CHANGELOG.md) — change history.
-- [`.env.example`](.env.example) — every setting with comments.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability and what is protected.
+- [CONTRIBUTING.md](CONTRIBUTING.md): environment, required checks, style.
+- [SUPPORT.md](SUPPORT.md): where to ask and what to include.
+- [docs/](docs/README.md): compatibility, architecture, updates.
+- [CHANGELOG.md](CHANGELOG.md): change history.
+- [`.env.example`](.env.example): every setting with comments.
 - [Русский README](README.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
